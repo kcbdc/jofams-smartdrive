@@ -6,5 +6,5 @@ pages_build_output_dir = "."
 [[d1_databases]]
 binding = "DB"
 database_name = "jofams-smartdrive-db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "6d6ea7da-2b05-4e66-8b6a-c6924c900d75"
 migrations_dir = "migrations"
