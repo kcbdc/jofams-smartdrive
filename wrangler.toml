@@ -1,10 +1,10 @@
-name = "drive"
+name = "jofams-smartdrive"
 compatibility_date = "2026-08-01"
 pages_build_output_dir = "."
 
 # 아래 database_id는 D1 생성 후 실제 값으로 교체하세요.
 [[d1_databases]]
 binding = "DB"
-database_name = "drive-db"
+database_name = "jofams-smartdrive-db"
 database_id = "REPLACE_WITH_D1_DATABASE_ID"
 migrations_dir = "migrations"
