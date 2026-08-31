@@ -1,0 +1,11 @@
+{
+  "name":"조팸스 스마트 드라이브 · Pre-5 MVP",
+  "short_name":"조팸스 Drive",
+  "start_url":"/",
+  "display":"standalone",
+  "orientation":"portrait-primary",
+  "background_color":"#f5f7fb",
+  "theme_color":"#f5f7fb",
+  "lang":"ko-KR",
+  "description":"상용화 화면 디자인을 적용한 다임·순식·훈민 캐릭터 기반 스마트 드라이브 Pre-5 MVP"
+}

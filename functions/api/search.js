@@ -1,0 +1,28 @@
+export async function onRequestGet({ request, env }) {
+  const url = new URL(request.url);
+  const q = (url.searchParams.get('q') || '').trim();
+  if (!q) return json({ items: [] });
+  const lng = url.searchParams.get('lng');
+  const lat = url.searchParams.get('lat');
+
+  if (env.KAKAO_REST_API_KEY) {
+    const api = new URL('https://dapi.kakao.com/v2/local/search/keyword.json');
+    api.searchParams.set('query', q);
+    api.searchParams.set('size', '10');
+    if (lng && lat) { api.searchParams.set('x', lng); api.searchParams.set('y', lat); api.searchParams.set('sort', 'distance'); }
+    const r = await fetch(api, { headers: { Authorization: `KakaoAK ${env.KAKAO_REST_API_KEY}` } });
+    if (r.ok) {
+      const d = await r.json();
+      return json({ provider: 'kakao', items: d.documents.map(x => ({ id:x.id, name:x.place_name, address:x.road_address_name || x.address_name, category:x.category_name, lng:Number(x.x), lat:Number(x.y), url:x.place_url })) });
+    }
+  }
+
+  // 개발·데모 fallback. 운영 환경에서는 상용 검색 API 사용을 권장합니다.
+  const n = new URL('https://nominatim.openstreetmap.org/search');
+  n.searchParams.set('format', 'jsonv2'); n.searchParams.set('limit', '8'); n.searchParams.set('q', q); n.searchParams.set('accept-language', 'ko');
+  const r = await fetch(n, { headers: { 'User-Agent': 'JofamsSmartDrive/1.0 (prototype)' } });
+  if (!r.ok) return json({ items: [] }, 502);
+  const d = await r.json();
+  return json({ provider:'nominatim', items:d.map((x,i)=>({id:String(x.place_id||i),name:(x.name||x.display_name.split(',')[0]),address:x.display_name,category:x.type,lng:Number(x.lon),lat:Number(x.lat)})) });
+}
+function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}})}

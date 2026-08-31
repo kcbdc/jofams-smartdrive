@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <meta name="theme-color" content="#f5f7fb" />
+  <meta name="description" content="다임·순식·훈민과 함께하는 상용화 전단계 스마트 드라이브 내비게이션 MVP" />
+  <title>조팸스 스마트 드라이브 · Pre-5 MVP</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="ui-home">
+  <div id="app">
+    <div id="map" aria-label="내비게이션 지도"></div>
+    <div class="map-softener"></div>
+
+    <header class="topbar app-surface">
+      <button class="brand-button" type="button" aria-label="조팸스 스마트 드라이브 홈">
+        <span class="brand-mark"><span>⌂</span></span>
+        <span class="brand-copy"><b>조팸스 스마트 드라이브</b><small>더 빠르고 · 더 안전하고 · 더 편안하게</small></span>
+      </button>
+      <div class="top-actions">
+        <button id="soundBtn" class="icon-btn" aria-label="음성 안내 켜기/끄기">🔊</button>
+        <button id="accountBtn" class="icon-btn account-btn" aria-label="사용자 계정">👤</button>
+      </div>
+    </header>
+
+    <!-- HOME / SEARCH -->
+    <section id="searchPanel" class="home-panel app-surface" aria-label="목적지 검색">
+      <div class="home-greeting">
+        <span class="eyebrow">SMART DRIVE</span>
+        <h1>어디로 이동할까요?</h1>
+        <p>다임·순식·훈민이 상황에 맞는 최적의 길을 함께 찾아드려요.</p>
+      </div>
+
+      <div class="search-shell">
+        <button id="locateBtn" class="search-locate" aria-label="현재 위치">⌖</button>
+        <input id="destinationInput" autocomplete="off" placeholder="장소, 주소, 전화번호 검색" />
+        <button id="searchBtn" class="search-mic" aria-label="검색">⌕</button>
+      </div>
+      <div id="searchResults" class="search-results" hidden></div>
+
+      <div class="place-shortcuts" aria-label="빠른 목적지">
+        <button type="button" data-suggest="집"><span>⌂</span>집</button>
+        <button type="button" data-suggest="회사"><span>▣</span>회사</button>
+        <button type="button" data-suggest="스타필드 코엑스몰"><span>★</span>즐겨찾기</button>
+      </div>
+
+      <div class="home-section">
+        <div class="section-title"><b>최근 목적지</b><button type="button" id="recentMoreBtn">전체보기 ›</button></div>
+        <div class="recent-list">
+          <button class="recent-item" type="button" data-suggest="스타필드 코엑스몰"><span class="recent-icon warm">◉</span><span><b>스타필드 코엑스몰</b><small>서울 강남구 영동대로 513</small></span><i>☆</i></button>
+          <button class="recent-item" type="button" data-suggest="롯데월드타워"><span class="recent-icon blue">◆</span><span><b>롯데월드타워</b><small>서울 송파구 올림픽로 300</small></span><i>›</i></button>
+          <button class="recent-item" type="button" data-suggest="인천국제공항 제1터미널"><span class="recent-icon navy">✈</span><span><b>인천국제공항 제1터미널</b><small>인천 중구 공항로 272</small></span><i>›</i></button>
+        </div>
+      </div>
+
+      <div class="home-section explore-section">
+        <div class="section-title"><b>주변 탐색</b><span>운전 중 필요한 곳을 빠르게</span></div>
+        <div id="idleActions" class="quick-actions">
+          <button data-quick="주유소"><span class="qa-icon fuel">⛽</span><b>주유소</b><small>가까운 곳</small></button>
+          <button data-quick="카페"><span class="qa-icon cafe">☕</span><b>카페</b><small>휴식</small></button>
+          <button data-quick="편의점"><span class="qa-icon store">▦</span><b>편의점</b><small>24시간</small></button>
+          <button data-quick="전기차 충전소"><span class="qa-icon charge">⚡</span><b>전기차 충전</b><small>충전기</small></button>
+        </div>
+      </div>
+
+      <div class="guide-intro-card">
+        <div class="guide-intro-head"><div><b>조팸스 가이드</b><small>상황에 따라 가장 알맞은 캐릭터가 안내합니다.</small></div><span class="auto-pill">AUTO</span></div>
+        <div class="guide-selector">
+          <button type="button" data-character="daim"><img src="/assets/daim.png" alt="다임"/><span><b>다임</b><small>정확한 길안내</small></span></button>
+          <button type="button" data-character="sunsik"><img src="/assets/sunsik.png" alt="순식"/><span><b>순식</b><small>교통·케어</small></span></button>
+          <button type="button" data-character="hunmin"><img src="/assets/hunmin.png" alt="훈민"/><span><b>훈민</b><small>재탐색·판단</small></span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ROUTE OPTIONS / SUMMARY -->
+    <section id="bottomSheet" class="route-sheet app-surface">
+      <div class="sheet-handle"></div>
+      <div id="routeSummary" class="route-summary hidden">
+        <div class="route-sheet-head">
+          <div><span class="eyebrow">ROUTE OPTIONS</span><h2>경로를 선택해 주세요</h2><p id="routeDestinationLabel">교통 상황과 비용을 비교했어요.</p></div>
+          <button id="cancelRouteBtn" class="round-close" aria-label="경로 취소">×</button>
+        </div>
+
+        <div class="route-options">
+          <button class="chip active" data-priority="RECOMMEND">추천</button>
+          <button class="chip" data-priority="TIME">빠른길</button>
+          <button class="chip" data-priority="DISTANCE">짧은길</button>
+          <button class="chip" data-priority="RECOMMEND" data-avoid="toll">무료도로</button>
+        </div>
+
+        <div class="selected-route-card">
+          <div class="selected-route-badge">추천 경로</div>
+          <div class="selected-route-metrics">
+            <div><small>예상 도착</small><b id="summaryEta">--:--</b></div>
+            <div><small>소요 시간</small><b id="summaryDuration">--분</b></div>
+            <div><small>거리</small><b id="summaryDistance">--km</b></div>
+          </div>
+          <div class="selected-route-meta"><span id="routeProvider">ROUTE</span><small id="guideCount">안내정보 --</small></div>
+        </div>
+
+        <div id="alternativePanel" class="alternative-panel hidden">
+          <div class="mini-panel-head"><b>경로 옵션</b><small id="alternativeHint">실시간 교통 반영</small></div>
+          <div id="alternativeList" class="alternative-list"></div>
+        </div>
+
+        <div id="parkingPanel" class="parking-panel hidden">
+          <div class="mini-panel-head"><b>목적지 주변 주차장</b><small id="parkingProvider">검색 중</small></div>
+          <div id="parkingList" class="parking-list"></div>
+        </div>
+
+        <div class="route-cta-row">
+          <button id="favoriteBtn" class="favorite-btn" aria-label="목적지 즐겨찾기">☆ 즐겨찾기</button>
+          <button id="startNavBtn" class="start-btn">안내 시작</button>
+        </div>
+      </div>
+
+      <div id="navActions" class="nav-actions hidden">
+        <button id="overviewBtn"><span>⌗</span>전체경로</button>
+        <button id="altBtn"><span>⇄</span>대안경로</button>
+        <button id="simBtn"><span>▶</span>가상주행</button>
+        <button id="arBtn" class="accent"><span>AR</span>AR 안내</button>
+        <button id="stopNavBtn" class="danger"><span>■</span>안내종료</button>
+      </div>
+    </section>
+
+    <!-- CHARACTER FLOATING GUIDE -->
+    <aside id="characterDock" class="character-dock app-surface">
+      <div class="avatar-frame"><img id="characterAvatar" src="/assets/daim.png" alt="다임 캐릭터" /></div>
+      <div class="character-copy">
+        <div class="character-head"><b id="characterName">다임</b><span id="characterRole">정확한 안내</span></div>
+        <p id="characterMessage">목적지를 검색하면 가장 알맞은 길을 꼼꼼하게 안내할게요.</p>
+      </div>
+      <button id="characterModeBtn" class="mode-btn" title="캐릭터 자동 전환">AUTO</button>
+    </aside>
+
+    <!-- DRIVING GUIDANCE -->
+    <section id="guidanceCard" class="guidance hidden" aria-live="polite">
+      <div class="maneuver-icon" id="maneuverIcon">↑</div>
+      <div class="guidance-main">
+        <div class="guidance-distance" id="maneuverDistance">경로 준비 중</div>
+        <div class="guidance-text" id="maneuverText">목적지를 선택해 주세요.</div>
+        <div class="road-caption" id="roadCaption">도로 정보를 확인합니다.</div>
+      </div>
+      <div class="eta-box"><b id="etaText">--:--</b><small id="remainText">-- km</small></div>
+    </section>
+
+    <section id="lanePanel" class="lane-panel hidden" aria-label="차로 안내">
+      <div class="lane-title"><span>추천 차로</span><small id="laneHint">가이드 기반</small></div>
+      <div class="lanes" id="lanes"></div>
+      <div class="lane-source"><span id="laneSourceBadge">WEB</span><span id="laneGuideLine">유도선 정보 없음</span></div>
+    </section>
+
+    <section id="intersectionPanel" class="intersection-panel hidden" aria-label="교차로 확대 안내">
+      <div class="intersection-head"><b>교차로 확대</b><span id="intersectionSource">WEB</span></div>
+      <img id="intersectionImage" class="intersection-image hidden" alt="교차로 확대 안내 이미지" />
+      <div id="intersectionFallback" class="intersection-fallback"><strong id="intersectionArrow">↑</strong><span id="intersectionText">교차로 안내를 준비합니다.</span></div>
+    </section>
+
+    <section id="driveHud" class="drive-hud hidden" aria-label="주행 모드 HUD">
+      <div class="hud-speed"><small>현재 속도</small><b id="hudSpeed">0</b><span>km/h</span></div>
+      <div class="hud-road"><small>현재 도로</small><b id="hudRoad">주행 경로</b><span id="hudTraffic">교통정보 확인 중</span><span id="hudSpeedLimit" class="hud-speed-limit hidden">제한 --</span><span id="hudSafety" class="hud-safety hidden">안전정보</span><span id="hudTunnel" class="hud-tunnel hidden">TUNNEL · DR</span></div>
+      <div class="hud-trip"><small>도착</small><b id="hudEta">--:--</b><span id="hudRemain">--km · --분</span></div>
+    </section>
+
+    <div class="right-controls">
+      <button id="zoomInBtn" class="map-btn" aria-label="확대">＋</button>
+      <button id="zoomOutBtn" class="map-btn" aria-label="축소">−</button>
+      <button id="recenterBtn" class="map-btn nav-focus" aria-label="내 위치">➤</button>
+    </div>
+
+    <section id="fasterRouteBanner" class="faster-route-banner app-surface hidden" aria-live="polite">
+      <div class="faster-icon">⚡</div>
+      <div><b id="fasterRouteTitle">더 빠른 경로 발견</b><small id="fasterRouteDetail">예상 시간을 줄일 수 있습니다.</small></div>
+      <button id="acceptFasterRouteBtn">전환</button><button id="dismissFasterRouteBtn" class="ghost">유지</button>
+    </section>
+
+    <!-- AR -->
+    <section id="arView" class="ar-view hidden" aria-label="AR 내비게이션">
+      <video id="arVideo" autoplay muted playsinline></video>
+      <canvas id="arCanvas" aria-hidden="true"></canvas>
+      <div class="ar-shade"></div>
+      <div class="ar-top">
+        <button id="closeArBtn" class="ar-close">‹ 지도 보기</button>
+        <div class="ar-top-actions"><button id="arCalibrateBtn" class="ar-calibrate">방향 보정</button><span id="arModeBadge" class="ar-badge">AR 준비</span></div>
+      </div>
+      <div id="arConfidence" class="ar-confidence"><span>AR 정합도</span><b id="arConfidenceValue">--</b></div>
+      <div id="arDirection" class="ar-direction">
+        <div id="arArrow" class="ar-arrow">↑</div>
+        <b id="arDistance">--m</b>
+        <span id="arText">다음 안내를 준비합니다.</span>
+      </div>
+      <div class="ar-character"><img id="arCharacter" src="/assets/daim.png" alt="안내 캐릭터" /><span id="arCharacterMsg">방향을 확인해 주세요.</span></div>
+      <div class="ar-speed-card"><strong id="arSpeedMirror">--</strong><small>km/h</small></div>
+      <div class="ar-trip-card"><small>목적지까지</small><b id="arTripMirror">경로 안내 중</b></div>
+      <div class="ar-safety">운전 중 화면 조작 금지 · 도로 상황을 우선 확인하세요.</div>
+    </section>
+
+    <!-- ACCOUNT / MY -->
+    <div id="accountModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="accountTitle">
+      <div class="modal-card app-surface">
+        <div class="modal-head">
+          <div><span class="eyebrow">MY DRIVE</span><b id="accountTitle">마이페이지</b><small id="accountStatus">게스트 모드</small></div>
+          <button id="closeAccountBtn" class="round-close">✕</button>
+        </div>
+        <div class="profile-hero">
+          <div class="profile-orb"><img id="userPhoto" src="/assets/daim.png" alt="프로필" /></div>
+          <div><b id="userName">조팸스 드라이버</b><small id="userEmail">로그인하면 주행기록이 동기화됩니다.</small></div>
+          <span class="sync-pill">SYNC</span>
+        </div>
+        <div id="signedOutBox" class="auth-box">
+          <p>Firebase를 연결하면 Google 로그인으로 즐겨찾기·주행기록·설정이 여러 기기에 동기화됩니다.</p>
+          <button id="googleLoginBtn" class="google-btn">G&nbsp;&nbsp;Google로 로그인</button>
+          <small id="firebaseHint">Firebase 미설정 시 로컬 게스트 저장소를 사용합니다.</small>
+        </div>
+        <div id="signedInBox" class="auth-box hidden"><button id="logoutBtn" class="ghost-btn">로그아웃</button></div>
+
+        <div class="account-quick-grid">
+          <button type="button" class="account-tab active" data-tab="favorites"><span>☆</span><b>즐겨찾기</b></button>
+          <button type="button" class="account-tab" data-tab="history"><span>⌖</span><b>주행기록</b></button>
+          <button type="button"><span>🔔</span><b>알림 설정</b></button>
+          <button type="button"><span>▤</span><b>주행 리포트</b></button>
+        </div>
+        <div id="favoritesList" class="account-list"></div>
+        <div id="historyList" class="account-list hidden"></div>
+
+        <div class="settings-card">
+          <div class="settings-title"><b>음성 가이드</b><span>상황별 안내 음성</span></div>
+          <div class="volume-demo"><span>🔈</span><div><i></i></div><b>80%</b></div>
+        </div>
+        <div class="settings-card">
+          <div class="settings-title"><b>조팸스 가이드 모드</b><span>AUTO 또는 캐릭터 고정</span></div>
+          <div class="guide-mode-grid">
+            <button type="button" data-character-mode="auto" class="active"><b>AUTO</b><small>상황별 자동 선택</small></button>
+            <button type="button" data-character-mode="daim"><b>다임</b><small>정확한 길안내</small></button>
+            <button type="button" data-character-mode="sunsik"><b>순식</b><small>교통·케어</small></button>
+            <button type="button" data-character-mode="hunmin"><b>훈민</b><small>재탐색·판단</small></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOTTOM NAV -->
+    <nav class="bottom-nav app-surface" aria-label="주요 메뉴">
+      <button class="active" type="button" data-nav="home"><span>⌂</span><b>홈</b></button>
+      <button type="button" data-nav="route"><span>◇</span><b>길찾기</b></button>
+      <button type="button" data-nav="drive"><span>➤</span><b>실시간</b></button>
+      <button type="button" data-nav="my"><span>●</span><b>MY</b></button>
+    </nav>
+
+    <div id="toast" class="toast" hidden></div>
+  </div>
+  <script src="/config.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
