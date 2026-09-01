@@ -64,3 +64,79 @@ body.ui-account .bottom-nav{display:none}
   .topbar{height:58px}.brand-copy small{display:none}.brand-copy b{font-size:13px}.home-panel{top:calc(var(--safe-top) + 70px);max-height:calc(100vh - 154px - var(--safe-bottom));padding:18px 15px 15px}.home-greeting h1{font-size:24px}.home-greeting p{font-size:11.5px}.guide-intro-head small{max-width:225px}.character-dock{left:14px;right:14px;width:auto;bottom:calc(86px + var(--safe-bottom))}.route-sheet{bottom:calc(77px + var(--safe-bottom));max-height:72vh}.guidance{grid-template-columns:68px 1fr 60px}.maneuver-icon{font-size:47px}.guidance-distance{font-size:24px}.guidance-text{font-size:12px}.drive-hud{grid-template-columns:82px 1fr 86px;height:82px}.hud-speed b{font-size:32px}.intersection-panel{width:150px}.bottom-nav{height:59px}.ar-character img{height:22vh}.ar-character span{right:75px;width:142px}.modal{padding:8px 8px calc(8px + var(--safe-bottom))}.modal-card{padding:15px}.guide-mode-grid small{font-size:6px}
 }
 @media (max-height:690px){.home-panel{max-height:calc(100vh - 142px)}.home-greeting p{display:none}.guide-intro-card{margin-top:10px}.quick-actions button{min-height:64px}.route-sheet{max-height:68vh}.modal-card{max-height:92vh}}
+
+/* === Pre-5 commercial polish overrides === */
+.svg-icon,.btn-icon,.nav-icon,.inline-icon{display:inline-flex;align-items:center;justify-content:center;line-height:0;vertical-align:middle}
+.svg-icon svg,.btn-icon svg,.nav-icon svg,.inline-icon svg{display:block;width:100%;height:100%}
+.brand-mark .svg-icon{width:20px;height:20px;color:#fff}
+.icon-btn .btn-icon{width:20px;height:20px;color:currentColor}
+.round-close .btn-icon{width:18px;height:18px;color:currentColor}
+.search-locate .svg-icon,.search-mic .svg-icon{width:22px;height:22px;color:var(--blue)}
+.map-btn .svg-icon{width:18px;height:18px;color:currentColor}
+.nav-icon{width:24px;height:24px;color:currentColor}
+.bottom-nav [data-icon="my-tab"]{width:26px;height:26px}
+.inline-icon{width:13px;height:13px;color:currentColor}
+.favorite-btn .svg-icon{width:16px;height:16px;color:currentColor}
+.favorite-btn{display:flex;align-items:center;justify-content:center;gap:7px}
+.favorite-btn .btn-label{display:inline-block}
+.maneuver-icon{display:flex;align-items:center;justify-content:center}
+.maneuver-icon .svg-icon,.ar-arrow .svg-icon,.intersection-arrow .svg-icon{width:58px;height:58px;color:#fff}
+.intersection-arrow{display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px}
+.intersection-arrow .svg-icon{width:44px;height:44px;color:#69a7ff}
+.ar-arrow{display:flex;align-items:center;justify-content:center;height:56px}
+.ar-arrow .svg-icon{width:50px;height:50px;color:#79b2ff}
+.lane svg{width:18px;height:18px;color:currentColor}
+.lane .lane-icon-wrap{display:flex;gap:1px;align-items:center;justify-content:center;flex-wrap:nowrap}
+.faster-icon .svg-icon{width:18px;height:18px;color:#bf7a00}
+.account-quick-grid .svg-icon{width:18px;height:18px;color:currentColor}
+.volume-demo>.svg-icon{width:18px;height:18px;color:var(--blue);align-self:center}
+.home-panel{padding-bottom:calc(104px + var(--safe-bottom))!important;max-height:calc(100vh - 186px - var(--safe-bottom))}
+.place-shortcuts{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0 20px}
+.shortcut-card{display:flex;align-items:center;justify-content:space-between;height:auto;min-height:56px;padding:10px 10px 10px 11px;border:1px solid var(--line);border-radius:15px;background:#f9fafc;color:var(--ink-2);text-align:left}
+.shortcut-main{display:flex;align-items:center;gap:9px;min-width:0}
+.shortcut-icon{width:28px;height:28px;border-radius:10px;background:#eef4ff;color:var(--blue);display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+.shortcut-icon .svg-icon{width:15px;height:15px}
+.shortcut-copy{display:flex;flex-direction:column;min-width:0}
+.shortcut-copy b{font-size:12px;line-height:1.1}
+.shortcut-copy small{margin-top:3px;font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:92px}
+.shortcut-edit{display:inline-flex;align-items:center;justify-content:center;padding:6px 8px;border-radius:999px;background:#fff;border:1px solid #dbe5f6;font-size:9px;font-weight:800;color:var(--blue);flex:0 0 auto}
+.shortcut-favorites{justify-content:flex-start}
+.shortcut-favorites .shortcut-copy small{max-width:none}
+.section-title button{display:inline-flex;align-items:center;gap:4px}
+.recent-item i{display:flex;align-items:center;justify-content:center}
+.recent-icon .svg-icon{width:14px;height:14px;color:currentColor}
+.qa-icon .svg-icon{width:15px;height:15px;color:currentColor}
+.route-cta-row{display:grid;grid-template-columns:140px 1fr;gap:10px}
+.nav-actions button{display:flex;align-items:center;justify-content:center;gap:6px}
+.nav-actions button .svg-icon{width:15px;height:15px;color:currentColor}
+.account-btn{position:relative}
+.account-btn.signed::after{content:'';position:absolute;right:4px;top:4px;width:10px;height:10px;border-radius:50%;background:#33a36b;border:2px solid #fff}
+.profile-orb{display:flex;align-items:center;justify-content:center;background:#eff5ff}
+.profile-orb img{width:100%;height:100%;object-fit:contain!important;object-position:center center!important;padding:4px}
+.account-list .account-item:last-child{border-bottom:0}
+.account-item{min-height:58px}
+.account-item-actions{display:flex;gap:6px;align-items:center;flex:0 0 auto}
+.account-item-actions button{min-width:46px}
+.account-item-actions .danger{background:#fff0f1;color:#d44956}
+.guidance{top:calc(var(--safe-top) + 2px)}
+.lane-panel{top:calc(var(--safe-top) + 126px);width:min(470px,calc(100vw - 28px))}
+.intersection-panel{top:calc(var(--safe-top) + 206px)}
+.drive-hud{bottom:calc(82px + var(--safe-bottom))}
+.faster-route-banner{top:auto;bottom:calc(186px + var(--safe-bottom));width:min(410px,calc(100vw - 28px))}
+.ar-character{right:12px;bottom:calc(116px + var(--safe-bottom))}
+.ar-character span{right:calc(100% - 36px);bottom:92px;width:172px;border-radius:14px 14px 14px 4px}
+.ar-character span::after{content:'';position:absolute;right:-10px;bottom:14px;border-width:8px 0 8px 10px;border-style:solid;border-color:transparent transparent transparent #fff}
+#firebaseHint{display:none!important}
+@media (max-width:520px){
+  .home-panel{padding-bottom:calc(98px + var(--safe-bottom))!important;max-height:calc(100vh - 170px - var(--safe-bottom))}
+  .shortcut-card{padding:10px 8px 10px 10px}
+  .shortcut-copy small{max-width:64px}
+  .route-cta-row{grid-template-columns:126px 1fr}
+  .faster-route-banner{bottom:calc(172px + var(--safe-bottom));grid-template-columns:32px 1fr auto auto}
+  .lane-panel{top:calc(var(--safe-top) + 120px);width:min(430px,calc(100vw - 24px))}
+  .intersection-panel{top:calc(var(--safe-top) + 214px);right:10px}
+  .ar-character{right:8px;bottom:calc(120px + var(--safe-bottom))}
+  .ar-character span{right:calc(100% - 26px);bottom:84px;width:148px;font-size:9px}
+}
+
+.ar-close{display:inline-flex;align-items:center;gap:6px}.ar-close .inline-icon{width:15px;height:15px;color:currentColor}

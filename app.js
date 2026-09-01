@@ -17,7 +17,7 @@ const state = {
   lastGpsAt:0,lastRealGps:null,positionSource:'gps',nativeTunnel:false,tunnel:{active:false,timer:null,distanceOnRoute:0,lastTick:0,lastSpeed:0},
   parking:[],parkingProvider:'',parkingLoadedFor:'',destinationCorrection:null,lastSafetySpeechKey:'',sim:{active:false,timer:null,index:0,speedKmh:45},haptic:true,
   firebase:{configured:false,ready:false,auth:null,db:null,user:null,mods:null},
-  favorites:[],history:[],activeAccountTab:'favorites',demoMode:null
+  favorites:[],history:[],activeAccountTab:'favorites',demoMode:null,savedPlaces:{home:null,work:null}
 };
 
 const characters = {
@@ -25,6 +25,147 @@ const characters = {
   sunsik:{name:'순식',role:'즐거운 동행',img:'/assets/sunsik.png',msg:'막히는 길도 너무 답답해하지 마세요. 제가 같이 갈게요!'},
   hunmin:{name:'훈민',role:'신속한 판단',img:'/assets/hunmin.png',msg:'상황 변화 감지. 가장 빠르게 다음 경로를 정리합니다.'}
 };
+
+function iconSvg(name){
+  switch(name){
+    case 'brand-home': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10.6 12 3.8l8.5 6.8"/><path d="M6.5 9.7V20h11V9.7"/><path d="M10.2 20v-5.6h3.6V20"/></svg>`;
+    case 'sound-on': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h4l5 4V6L8 10H4z"/><path d="M17 9.2c1.7 1.5 1.7 4.1 0 5.6"/><path d="M19.8 6.7c3 3.2 3 7.5 0 10.6"/></svg>`;
+    case 'sound-off': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h4l5 4V6L8 10H4z"/><path d="M17 9l4 6"/><path d="M21 9l-4 6"/></svg>`;
+    case 'account-outline': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.7"/><path d="M5 19c1.9-3 4.4-4.5 7-4.5s5.1 1.5 7 4.5"/></svg>`;
+    case 'locate': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v3"/><path d="M12 19v3"/><path d="M2 12h3"/><path d="M19 12h3"/><circle cx="12" cy="12" r="4.2"/></svg>`;
+    case 'search': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="5.8"/><path d="m15.2 15.2 4.3 4.3"/></svg>`;
+    case 'home': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10.4 12 3.9l8.5 6.5"/><path d="M6.3 9.8V20h11.4V9.8"/><path d="M10.3 20v-5.7h3.4V20"/></svg>`;
+    case 'office': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V5.8L12 4l7 1.8V20"/><path d="M9 9h.01M15 9h.01M9 13h.01M15 13h.01"/><path d="M10.4 20v-3.8h3.2V20"/></svg>`;
+    case 'star': return `<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 3.2 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.5 6.8 19.2l1-5.8-4.2-4.1 5.8-.8z"/></svg>`;
+    case 'chevron-right': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 6 7-6 7"/></svg>`;
+    case 'chevron-left': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5-6 7 6 7"/></svg>`;
+    case 'spark-pin': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s6-5.2 6-10a6 6 0 1 0-12 0c0 4.8 6 10 6 10Z"/><circle cx="12" cy="11" r="2.2"/><path d="M17.3 5.5h2.4M18.5 4.3v2.4"/></svg>`;
+    case 'tower': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M8.5 20h7"/><path d="m9.2 7.5 2.8-3 2.8 3"/><path d="m7 13 5-5 5 5"/><path d="M6 17h12"/></svg>`;
+    case 'plane': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m2.6 12.2 18.1-6.1-4.4 11.8-3.1-4.1-4.1 1.6-.9 4.2-1.9-5.5z"/></svg>`;
+    case 'fuel': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20V5.5A1.5 1.5 0 0 1 7.5 4h6A1.5 1.5 0 0 1 15 5.5V20"/><path d="M6 9.5h9"/><path d="m15.5 7 2.5 2.5V17a1.5 1.5 0 1 0 3 0v-4.5l-2.3-2.2"/></svg>`;
+    case 'cafe': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9h10v4.5A3.5 3.5 0 0 1 11.5 17h-3A3.5 3.5 0 0 1 5 13.5Z"/><path d="M15 10h1.8a2.2 2.2 0 1 1 0 4.4H15"/><path d="M7 20h9"/><path d="M8.5 5.2c-.8.8-.8 2 0 2.8M12 4.2c-1 1-1 2.7 0 3.8"/></svg>`;
+    case 'charge': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13.5 3-5 8h4l-2 10 7-10h-4z"/></svg>`;
+    case 'route-overview': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19c2-8 10-2 12-10"/><path d="M17 7h2v2"/><circle cx="6" cy="19" r="2" fill="currentColor" stroke="none"/></svg>`;
+    case 'swap': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h12"/><path d="m15 3 4 4-4 4"/><path d="M17 17H5"/><path d="m9 21-4-4 4-4"/></svg>`;
+    case 'play': return `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l10-6.5z"/></svg>`;
+    case 'stop': return `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2.2"/></svg>`;
+    case 'plus': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`;
+    case 'minus': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg>`;
+    case 'compass': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m15.8 8.2-2.2 5.6-5.4 2.2 2.2-5.6z" fill="currentColor" stroke="none"/></svg>`;
+    case 'flash': return `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 6.5 12H11L9.8 22 17.5 11.5H13Z"/></svg>`;
+    case 'close': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M6 6 18 18M18 6 6 18"/></svg>`;
+    case 'bell': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 16.5h11L16 14V10a4 4 0 1 0-8 0v4l-1.5 2.5Z"/><path d="M10 18.5a2 2 0 0 0 4 0"/></svg>`;
+    case 'report': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>`;
+    case 'route-tab': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.2s7-6 7-11a7 7 0 1 0-14 0c0 5 7 11 7 11Z"/><circle cx="12" cy="9.2" r="3.1"/></svg>`;
+    case 'drive': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17h10l1.2-5.2A2 2 0 0 0 16.3 9H7.7a2 2 0 0 0-1.9 2.8Z"/><path d="M8 17v2M16 17v2"/><circle cx="8.5" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1" fill="currentColor" stroke="none"/></svg>`;
+    case 'my-tab': return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="#D8ECFF"/><path d="M12 11.1a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5Z" fill="#ffffff"/><path d="M5.6 18.5a7.4 7.4 0 0 1 12.8 0" fill="#ffffff"/></svg>`;
+    default: return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/></svg>`;
+  }
+}
+function applyStaticIcons(root=document){root.querySelectorAll('[data-icon]').forEach(el=>{el.innerHTML=iconSvg(el.dataset.icon||'')})}
+function directionName(type){
+  if(type===101) return 'arrive';
+  if(type===3) return 'u-turn';
+  if(ROUNDABOUT_TYPES.has(type)) return 'roundabout';
+  if([7,42].includes(type)) return 'slight-right';
+  if([10,45].includes(type)) return 'merge';
+  if(LEFT_TYPES.has(type)) return 'turn-left';
+  if(RIGHT_TYPES.has(type)) return 'turn-right';
+  return 'straight';
+}
+function directionSvg(name,color='currentColor'){
+  const stroke = `stroke="${color}" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round" fill="none"`;
+  if(name==='arrive') return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="${color}" opacity=".16"/><path ${stroke} d="m7 12.2 3.2 3.2L17.5 8"/></svg>`;
+  if(name==='roundabout') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M7 10a5.5 5.5 0 1 1 2 8.4"/><path ${stroke} d="m6 7 1.2 3.7 3.8-1.1"/><path ${stroke} d="m18 16-1.2-3.7-3.8 1.1"/></svg>`;
+  if(name==='u-turn') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M15 19V9a3.5 3.5 0 1 0-7 0v2"/><path ${stroke} d="m4 9 4 4 4-4"/></svg>`;
+  if(name==='turn-left') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M18.5 7H10a5 5 0 0 0-5 5v5"/><path ${stroke} d="m10 3-4 4 4 4"/></svg>`;
+  if(name==='turn-right') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M5.5 7H14a5 5 0 0 1 5 5v5"/><path ${stroke} d="m14 3 4 4-4 4"/></svg>`;
+  if(name==='slight-left') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M17 18V9.8c0-1.8-1.3-3.1-3.1-3.1H9.5"/><path ${stroke} d="m10.5 3.5-4 3.2 4 3.2"/></svg>`;
+  if(name==='slight-right') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M7 18V9.8c0-1.8 1.3-3.1 3.1-3.1h4.4"/><path ${stroke} d="m13.5 3.5 4 3.2-4 3.2"/></svg>`;
+  if(name==='merge') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M12 18V5"/><path ${stroke} d="m8.5 8 3.5-3 3.5 3"/><path ${stroke} d="M6 18c0-2.9 1.5-4.7 4-5.8"/></svg>`;
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M12 19V5"/><path ${stroke} d="m8.5 8 3.5-3 3.5 3"/></svg>`;
+}
+function setDirectionIcon(el,type,color='currentColor'){if(el)el.innerHTML=`<span class="svg-icon">${directionSvg(directionName(type),color)}</span>`}
+function laneTurnNames(turnType){
+  const names=[];
+  if(turnType&1) names.push('u-turn');
+  if(turnType&2) names.push('turn-left');
+  if(turnType&4) names.push('slight-left');
+  if(turnType&8) names.push('straight');
+  if(turnType&16) names.push('slight-right');
+  if(turnType&32) names.push('turn-right');
+  return names.length?names:['straight'];
+}
+function laneIconsMarkup(names){return `<span class="lane-icon-wrap">${names.slice(0,2).map(name=>directionSvg(name,'currentColor')).join('')}</span>`}
+function placeLabel(kind){return kind==='home'?'집':'회사'}
+function normalizeQueryText(v=''){return String(v).toLowerCase().replace(/\s+/g,'').replace(/[()\-.,]/g,'')}
+function normalizePlaceData(place){
+  if(!place) return null;
+  const lng=Number(place.lng), lat=Number(place.lat);
+  if(!Number.isFinite(lng)||!Number.isFinite(lat)) return null;
+  return {id:place.id||null,lng,lat,name:place.name||'저장한 장소',address:place.address||''};
+}
+function normalizeSearchResults(query, items=[]){
+  const q=normalizeQueryText(query);
+  const isKomsco=q.includes('과학로8067')||q.includes('대전광역시과학로8067')||q.includes('대전유성구과학로8067');
+  if(isKomsco){
+    const base=items.find(x=>/한국조폐공사/.test(x.name||'')||/과학로 80-67/.test(x.address||''))||items[0]||{id:'komsco_hq',name:'한국조폐공사 본사',address:'대전광역시 유성구 과학로 80-67',lng:127.3847,lat:36.3784};
+    return [{...base,name:'한국조폐공사 본사',address:'대전광역시 유성구 과학로 80-67'}];
+  }
+  return items;
+}
+function updateHomeWorkButtons(){
+  const home=state.savedPlaces.home, work=state.savedPlaces.work;
+  const homeMeta=$('homeShortcutMeta'), workMeta=$('workShortcutMeta');
+  const editHome=$('editHomeBtn'), editWork=$('editWorkBtn');
+  if(homeMeta) homeMeta.textContent=home?(home.name||home.address||'등록됨'):'장소 등록';
+  if(workMeta) workMeta.textContent=work?(work.name||work.address||'등록됨'):'장소 등록';
+  if(editHome) editHome.textContent=home?'변경':'등록';
+  if(editWork) editWork.textContent=work?'변경':'등록';
+  const count = state.favorites.length;
+  if($('favoritesShortcutMeta')) $('favoritesShortcutMeta').textContent=count?`저장 ${count}곳 관리`:'자유롭게 관리';
+}
+function setSoundButtonIcon(){ const slot=$('soundBtn')?.querySelector('.btn-icon'); if(slot) slot.innerHTML=iconSvg(state.sound?'sound-on':'sound-off'); }
+function setAccountButtonIcon(){ const slot=$('accountBtn')?.querySelector('.btn-icon'); if(slot) slot.innerHTML=iconSvg('account-outline'); }
+async function searchFirstPlace(query){
+  const u=new URL('/api/search',location.origin);u.searchParams.set('q',query.trim());
+  if(state.user){u.searchParams.set('lng',state.user.lng);u.searchParams.set('lat',state.user.lat)}
+  const r=await fetch(u);if(!r.ok) throw new Error('검색 실패'); const data=await r.json();
+  return normalizeSearchResults(query,data.items||[])[0]||null;
+}
+async function saveSavedPlace(kind, place){ state.savedPlaces[kind]=normalizePlaceData(place); await savePreferences(); updateHomeWorkButtons(); renderAccount(); }
+async function promptSavePlace(kind){
+  const label = placeLabel(kind);
+  let place = state.destination ? normalizePlaceData(state.destination) : null;
+  if(!place){
+    const query = prompt(`${label}로 등록할 장소명 또는 주소를 입력해 주세요.`, state.savedPlaces[kind]?.name||'');
+    if(!query||!query.trim()) return;
+    try{ place = await searchFirstPlace(query.trim()); }catch{ place = null; }
+    if(!place){ toast(`${label}로 등록할 장소를 찾지 못했습니다.`,2800); return; }
+  }
+  await saveSavedPlace(kind, place); toast(`${label} 장소를 저장했습니다.`);
+}
+async function useSavedPlace(kind){ const place=state.savedPlaces[kind]; if(place) return selectDestination(place); await promptSavePlace(kind) }
+async function deleteFavoriteById(id){
+  if(state.firebase.user){ const {fsMod}=state.firebase.mods; await fsMod.deleteDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'favorites',id)); await loadCloudData(); }
+  else { state.favorites=state.favorites.filter(x=>x.id!==id); localStorage.setItem(GUEST_FAVORITES_KEY,JSON.stringify(state.favorites)); renderAccountLists(); }
+  updateFavoriteButton(); updateHomeWorkButtons(); toast('즐겨찾기에서 삭제했습니다.');
+}
+function setAccountTab(tab='favorites'){
+  state.activeAccountTab=tab;
+  document.querySelectorAll('.account-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+  $('favoritesList').classList.toggle('hidden',tab!=='favorites');
+  $('historyList').classList.toggle('hidden',tab!=='history');
+}
+async function syncAuthState(user){
+  state.firebase.user=user||null;
+  if(user) await loadCloudData(); else loadGuestData();
+  await loadPreferences();
+  renderAccount();
+  updateFavoriteButton();
+  updateHomeWorkButtons();
+}
+
 
 function setUiStage(stage){
   document.body.classList.remove('ui-home','ui-route','ui-account');
@@ -120,8 +261,9 @@ async function searchPlaces(query){
     const u=new URL('/api/search',location.origin);u.searchParams.set('q',query.trim());
     if(state.user){u.searchParams.set('lng',state.user.lng);u.searchParams.set('lat',state.user.lat)}
     const r=await fetch(u);if(!r.ok)throw new Error('검색 실패');const data=await r.json();box.innerHTML='';
-    if(!data.items?.length){box.innerHTML='<button class="result-item">검색 결과가 없습니다.</button>';return}
-    data.items.slice(0,8).forEach(item=>{const b=document.createElement('button');b.className='result-item';b.innerHTML=`<b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.address||item.category||'')}</small>`;b.onclick=()=>selectDestination(item);box.appendChild(b)});
+    const items=normalizeSearchResults(query,data.items||[]);
+    if(!items.length){box.innerHTML='<button class="result-item">검색 결과가 없습니다.</button>';return}
+    items.slice(0,8).forEach(item=>{const b=document.createElement('button');b.className='result-item';b.innerHTML=`<b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.address||item.category||'')}</small>`;b.onclick=()=>selectDestination(item);box.appendChild(b)});
   }catch(e){box.innerHTML='<button class="result-item">검색 서버에 연결하지 못했습니다.</button>';toast(e.message)}
 }
 
@@ -257,7 +399,7 @@ function updateNavigation(pos){
   const totalGeom=Math.max(1,state.route.geometryDistance||state.route.distance);const remainGeom=Math.max(0,totalGeom-(state.route.cumulative[near.i]||0));const scale=(state.route.distance||totalGeom)/totalGeom;const remainDistance=remainGeom*scale;const remainDuration=(state.route.duration||0)*(remainDistance/Math.max(1,state.route.distance||totalGeom));
   state.route.liveRemainDistance=remainDistance;state.route.liveRemainDuration=remainDuration;
   const destDist=haversine(pos.lat,pos.lng,state.destination.lat,state.destination.lng);
-  if(destDist<32){$('maneuverDistance').textContent='도착';$('maneuverText').textContent=state.destination.name;$('maneuverIcon').textContent='✓';stopNavigation({arrived:true});return}
+  if(destDist<32){$('maneuverDistance').textContent='도착';$('maneuverText').textContent=state.destination.name;setDirectionIcon($('maneuverIcon'),101,'#ffffff');stopNavigation({arrived:true});return}
   const road=currentRoad(near.i);maybeManageTunnel(pos,road);const ng=nextGuideInfo(near.i);state.nextGuide=ng.guide;state.nextGuideDistance=ng.distance;renderGuidance(pos,ng.guide,ng.distance,remainDistance,remainDuration,road);
   renderIntersectionGuide(ng.guide,ng.distance);renderSafetyState(pos,road);autoCharacter(pos,ng.guide,ng.distance,road);maybeSpeakGuide(ng.guide,ng.distance);
   const heading=Number.isFinite(pos.heading)?pos.heading:(state.deviceHeading??state.map.getBearing());state.map.easeTo({center:[pos.lng,pos.lat],zoom:17.2,bearing:heading||0,pitch:42,duration:550});updateAROverlay();
@@ -265,7 +407,7 @@ function updateNavigation(pos){
 
 function renderGuidance(pos,guide,distance,remainDistance,remainDuration,road){
   const type=guide?.type??0;const text=guide?.guidance||guide?.name||'경로를 따라 직진';const roadName=guide?.roadName||road?.name||'주행 경로';
-  $('maneuverIcon').textContent=maneuverIcon(type);$('maneuverDistance').textContent=distance<60?'곧':`${km(distance)} 후`;$('maneuverText').textContent=text;$('roadCaption').textContent=roadName;
+  setDirectionIcon($('maneuverIcon'),type,'#ffffff');$('maneuverDistance').textContent=distance<60?'곧':`${km(distance)} 후`;$('maneuverText').textContent=text;$('roadCaption').textContent=roadName;
   $('etaText').textContent=eta(remainDuration);$('remainText').textContent=km(remainDistance);$('summaryEta').textContent=eta(remainDuration);$('summaryDuration').textContent=durationText(remainDuration);$('summaryDistance').textContent=km(remainDistance);
   const speedKmh=Number.isFinite(pos.speed)?Math.max(0,Math.round(pos.speed*3.6)):0;$('hudSpeed').textContent=speedKmh;$('hudRoad').textContent=roadName;$('hudTraffic').textContent=trafficText(road?.trafficState);$('hudEta').textContent=eta(remainDuration);$('hudRemain').textContent=`${km(remainDistance)} · ${durationText(remainDuration)}`;
   if($('arSpeedMirror'))$('arSpeedMirror').textContent=speedKmh;if($('arTripMirror'))$('arTripMirror').textContent=`${eta(remainDuration)} · ${km(remainDistance)} · ${durationText(remainDuration)}`;
@@ -273,21 +415,27 @@ function renderGuidance(pos,guide,distance,remainDistance,remainDuration,road){
 }
 
 function maneuverIcon(type){
-  if(type===101)return '✓';if(type===3)return '⤴';if(ROUNDABOUT_TYPES.has(type))return '⟳';if(LEFT_TYPES.has(type))return '↰';if(RIGHT_TYPES.has(type))return '↱';if([7,42].includes(type))return '⇱';if([10,45].includes(type))return '⇧';return '↑';
+  return directionName(type);
 }
 function laneTurnIcons(turnType){
-  const icons=[];if(turnType&1)icons.push('⤴');if(turnType&2)icons.push('↰');if(turnType&4)icons.push('↖');if(turnType&8)icons.push('↑');if(turnType&16)icons.push('↗');if(turnType&32)icons.push('↱');return icons.length?icons.join('·'):'↑';
+  return laneTurnNames(turnType).join(' · ');
 }
 function guideLineColor(code){return ({0:'분홍 유도선',1:'연녹색 유도선',2:'녹색 유도선',3:'하늘색 유도선'})[code]||'유도선 정보 없음'}
 function renderLaneHint(type){
   const box=$('lanes');box.innerHTML='';const packet=state.nativeLane;const nativeLanes=packet?.lanes;
   if(Array.isArray(nativeLanes)&&nativeLanes.length){
-    nativeLanes.slice(0,10).forEach((lane,i)=>{const el=document.createElement('span');el.className='lane native';el.textContent=laneTurnIcons(Number(lane.turnType)||0);if(Number(lane.suggest)===1||Number(lane.highlightType)>0)el.classList.add('active');if(Number(lane.busType)>0)el.classList.add('bus');if(Number(lane.pocketType)>0)el.classList.add('pocket');el.title=`${i+1}차로`;box.appendChild(el)});
+    nativeLanes.slice(0,10).forEach((lane,i)=>{const el=document.createElement('span');el.className='lane native';el.innerHTML=laneIconsMarkup(laneTurnNames(Number(lane.turnType)||0));if(Number(lane.suggest)===1||Number(lane.highlightType)>0)el.classList.add('active');if(Number(lane.busType)>0)el.classList.add('bus');if(Number(lane.pocketType)>0)el.classList.add('pocket');el.title=`${i+1}차로`;box.appendChild(el)});
     $('laneHint').textContent=`실제 ${nativeLanes.length}개 차로 · Kakao Navi SDK`;$('laneSourceBadge').textContent='NATIVE';$('laneSourceBadge').classList.add('native');
     const colored=nativeLanes.find(x=>Number(x.colorType)>=0&&Number(x.colorType)<=3);$('laneGuideLine').textContent=colored?guideLineColor(Number(colored.colorType)):'유도선 정보 없음';return;
   }
   const count=4;const active=LEFT_TYPES.has(type)?[0,1]:RIGHT_TYPES.has(type)?[2,3]:type===3?[0]:[1,2];
-  for(let i=0;i<count;i++){const el=document.createElement('span');el.className='lane';el.textContent='↑';if(active.includes(i))el.classList.add('active');if(LEFT_TYPES.has(type)&&i===0)el.textContent='↰';if(RIGHT_TYPES.has(type)&&i===3)el.textContent='↱';if(type===3&&i===0)el.textContent='⤴';box.appendChild(el)}
+  for(let i=0;i<count;i++){
+    const el=document.createElement('span');el.className='lane';
+    const laneName=LEFT_TYPES.has(type)&&i===0?'turn-left':RIGHT_TYPES.has(type)&&i===3?'turn-right':type===3&&i===0?'u-turn':'straight';
+    el.innerHTML=laneIconsMarkup([laneName]);
+    if(active.includes(i))el.classList.add('active');
+    box.appendChild(el)
+  }
   const label=LEFT_TYPES.has(type)?'좌측 차로를 미리 이용':RIGHT_TYPES.has(type)?'우측 차로를 미리 이용':type===3?'유턴 가능 차로 확인':ROUNDABOUT_TYPES.has(type)?'회전교차로 진출 방향 확인':'직진 차로 유지';
   $('laneHint').textContent=`${label} · 웹 추정`;$('laneSourceBadge').textContent='WEB';$('laneSourceBadge').classList.remove('native');$('laneGuideLine').textContent='네이티브 SDK 연결 시 실제 유도선 표시';
 }
@@ -298,7 +446,7 @@ function renderIntersectionGuide(guide,distance){
   const packetDistance=Number(packet?.distance);const nearNative=packet&&(!Number.isFinite(packetDistance)||packetDistance<900);const showNative=nearNative&&typeof nativeImg==='string'&&nativeImg.startsWith('data:image/');const showFallback=complex&&distance<360;
   if(!showNative&&!showFallback){panel.classList.add('hidden');return}panel.classList.remove('hidden');
   if(showNative){$('intersectionImage').src=nativeImg;$('intersectionImage').classList.remove('hidden');$('intersectionFallback').classList.add('hidden');$('intersectionSource').textContent='KAKAO SDK';$('intersectionSource').classList.add('native')}
-  else{$('intersectionImage').classList.add('hidden');$('intersectionFallback').classList.remove('hidden');$('intersectionArrow').textContent=maneuverIcon(guide?.type??0);$('intersectionText').textContent=`${distance<60?'곧':km(distance)+' 후'} ${guide?.guidance||'교차로 방향을 확인하세요.'}`;$('intersectionSource').textContent='WEB';$('intersectionSource').classList.remove('native')}
+  else{$('intersectionImage').classList.add('hidden');$('intersectionFallback').classList.remove('hidden');setDirectionIcon($('intersectionArrow'),guide?.type??0,'#69a7ff');$('intersectionText').textContent=`${distance<60?'곧':km(distance)+' 후'} ${guide?.guidance||'교차로 방향을 확인하세요.'}`;$('intersectionSource').textContent='WEB';$('intersectionSource').classList.remove('native')}
 }
 function numericSafetyLimit(x){for(const v of [x?.speedLimit,x?.speed_limit,x?.limitSpeed,x?.limit_speed]){const n=Number(v);if(Number.isFinite(n)&&n>0)return n}return 0}
 function eventMessage(e){if(!e)return '';const code=Number(e.code);const type=Number(e.type);const kind=code===0?'사고':code===1?'공사':code===2?'행사':code===3?'통제':'도로 유고';return e.message||e.title||e.desc||`${kind}${type===1?' · 전면 통제':type===2?' · 부분 통제':''}`}
@@ -382,7 +530,7 @@ function drawRouteCorridor(){
 }
 function calibrateAR(){const gps=state.user?.heading;if(Number.isFinite(gps)&&Number.isFinite(state.smoothedHeading)){state.arHeadingOffset=normalizeAngle(gps-state.smoothedHeading);savePreferences();toast('현재 주행 방향을 기준으로 AR을 보정했습니다.')}else{state.arHeadingOffset=0;toast('GPS 진행방향이 확보되면 더 정확하게 보정할 수 있습니다.')}}
 function updateAROverlay(){
-  if(!$('arView')||$('arView').classList.contains('hidden')||!state.user||!state.nextGuide)return;const g=state.nextGuide;$('arArrow').textContent=maneuverIcon(g.type);$('arDistance').textContent=state.nextGuideDistance<60?'곧':km(state.nextGuideDistance);$('arText').textContent=g.guidance||g.name||'다음 방향';
+  if(!$('arView')||$('arView').classList.contains('hidden')||!state.user||!state.nextGuide)return;const g=state.nextGuide;setDirectionIcon($('arArrow'),g.type,'#79b2ff');$('arDistance').textContent=state.nextGuideDistance<60?'곧':km(state.nextGuideDistance);$('arText').textContent=g.guidance||g.name||'다음 방향';
   const target=bearingTo(state.user.lat,state.user.lng,g.y,g.x),heading=arHeading();if(Number.isFinite(heading)){const diff=normalizeAngle(target-heading),offset=clamp(diff/70,-1,1)*Math.min(innerWidth*.3,145);$('arDirection').style.transform=`translateX(calc(-50% + ${offset}px))`;}
   $('arConfidenceValue').textContent=`${arConfidence()}%`;drawRouteCorridor();
 }
@@ -408,14 +556,15 @@ function toggleSimulation(){state.sim.active?stopSimulation():startSimulation()}
 
 /* Favorites + Firebase */
 function localPreferences(){try{return JSON.parse(localStorage.getItem(GUEST_SETTINGS_KEY)||'{}')}catch{return {}}}
-function applyPreferences(p={}){if(typeof p.sound==='boolean')state.sound=p.sound;if(typeof p.autoCharacter==='boolean')state.autoCharacter=p.autoCharacter;if(p.character&&characters[p.character])state.currentCharacter=p.character;if(Number.isFinite(Number(p.arHeadingOffset)))state.arHeadingOffset=Number(p.arHeadingOffset);$('soundBtn').textContent=state.sound?'🔊':'🔇';$('characterModeBtn').textContent=state.autoCharacter?'AUTO':'FIX';setCharacter(state.currentCharacter);syncCharacterButtons()}
-async function savePreferences(){const p={sound:state.sound,autoCharacter:state.autoCharacter,character:state.currentCharacter,arHeadingOffset:state.arHeadingOffset,updatedAt:Date.now()};localStorage.setItem(GUEST_SETTINGS_KEY,JSON.stringify(p));if(state.firebase.user){const {fsMod}=state.firebase.mods;await fsMod.setDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'),{...p,updatedAt:fsMod.serverTimestamp()},{merge:true}).catch(()=>{})}}
+function applyPreferences(p={}){if(typeof p.sound==='boolean')state.sound=p.sound;if(typeof p.autoCharacter==='boolean')state.autoCharacter=p.autoCharacter;if(p.character&&characters[p.character])state.currentCharacter=p.character;if(Number.isFinite(Number(p.arHeadingOffset)))state.arHeadingOffset=Number(p.arHeadingOffset);state.savedPlaces.home=normalizePlaceData(p.homePlace)||null;state.savedPlaces.work=normalizePlaceData(p.workPlace)||null;setSoundButtonIcon();$('characterModeBtn').textContent=state.autoCharacter?'AUTO':'FIX';setCharacter(state.currentCharacter);syncCharacterButtons();updateHomeWorkButtons()}
+async function savePreferences(){const p={sound:state.sound,autoCharacter:state.autoCharacter,character:state.currentCharacter,arHeadingOffset:state.arHeadingOffset,homePlace:state.savedPlaces.home||null,workPlace:state.savedPlaces.work||null,updatedAt:Date.now()};localStorage.setItem(GUEST_SETTINGS_KEY,JSON.stringify(p));if(state.firebase.user){const {fsMod}=state.firebase.mods;await fsMod.setDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'),{...p,updatedAt:fsMod.serverTimestamp()},{merge:true}).catch(()=>{})}}
 async function loadPreferences(){let p=localPreferences();if(state.firebase.user){try{const {fsMod}=state.firebase.mods,snap=await fsMod.getDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'));if(snap.exists())p={...p,...snap.data()}}catch{}}applyPreferences(p)}
 
 function firebaseConfig(){return window.__APP_CONFIG__?.firebase||{}}
 function isFirebaseConfigured(){const c=firebaseConfig();return Boolean(c.apiKey&&c.authDomain&&c.projectId&&c.appId)}
 async function initFirebase(){
-  state.firebase.configured=isFirebaseConfigured();if(!state.firebase.configured){$('firebaseHint').textContent='Firebase가 아직 설정되지 않아 이 기기의 로컬 저장소에 저장합니다.';loadGuestData();renderAccount();return}
+  state.firebase.configured=isFirebaseConfigured();
+  if(!state.firebase.configured){loadGuestData();renderAccount();updateHomeWorkButtons();return}
   try{
     const [appMod,authMod,fsMod]=await Promise.all([
       import(`https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-app.js`),
@@ -423,17 +572,31 @@ async function initFirebase(){
       import(`https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-firestore.js`)
     ]);
     const app=appMod.initializeApp(firebaseConfig());const auth=authMod.getAuth(app);await authMod.setPersistence(auth,authMod.browserLocalPersistence);const db=fsMod.getFirestore(app);
-    state.firebase={configured:true,ready:true,auth,db,user:null,mods:{authMod,fsMod}};$('firebaseHint').textContent='Firebase 연결됨 · 로그인하면 Firestore에 동기화됩니다.';
-    authMod.onAuthStateChanged(auth,async user=>{state.firebase.user=user||null;if(user)await loadCloudData();else loadGuestData();await loadPreferences();renderAccount();updateFavoriteButton()});
+    state.firebase={configured:true,ready:true,auth,db,user:null,mods:{authMod,fsMod}};
+    authMod.onAuthStateChanged(auth,async user=>{await syncAuthState(user)});
     await authMod.getRedirectResult(auth).catch(()=>null);
-  }catch(e){console.warn('Firebase init failed',e);state.firebase.ready=false;loadGuestData();$('firebaseHint').textContent='Firebase 초기화 실패 · 게스트 로컬 저장소로 계속합니다.';renderAccount()}
+  }catch(e){console.warn('Firebase init failed',e);state.firebase.ready=false;loadGuestData();renderAccount();updateHomeWorkButtons()}
 }
 async function loginGoogle(){
   if(!state.firebase.ready){toast('config.js에 Firebase 웹 앱 설정을 먼저 입력해 주세요.',3200);return}
   const {authMod}=state.firebase.mods;const provider=new authMod.GoogleAuthProvider();
-  try{await authMod.signInWithPopup(state.firebase.auth,provider)}catch(e){if(['auth/popup-blocked','auth/operation-not-supported-in-this-environment'].includes(e.code)){await authMod.signInWithRedirect(state.firebase.auth,provider)}else toast(`로그인 실패: ${e.code||e.message}`,3200)}
+  const btn=$('googleLoginBtn');if(btn){btn.disabled=true;btn.textContent='로그인 중...'}
+  $('accountStatus').textContent='Google 로그인 중';
+  try{
+    const result=await authMod.signInWithPopup(state.firebase.auth,provider);
+    if(result?.user) await syncAuthState(result.user);
+    toast('로그인되었습니다.');
+  }catch(e){
+    if(['auth/popup-blocked','auth/operation-not-supported-in-this-environment'].includes(e.code)){
+      await authMod.signInWithRedirect(state.firebase.auth,provider);
+      return;
+    }
+    toast(`로그인 실패: ${e.code||e.message}`,3200)
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='G  Google로 로그인'}
+  }
 }
-async function logout(){if(state.firebase.ready)await state.firebase.mods.authMod.signOut(state.firebase.auth)}
+async function logout(){if(!state.firebase.ready)return;const btn=$('logoutBtn');if(btn)btn.disabled=true;$('accountStatus').textContent='로그아웃 중';try{await state.firebase.mods.authMod.signOut(state.firebase.auth);await syncAuthState(null);toast('로그아웃되었습니다.')}finally{if(btn)btn.disabled=false}}
 function favoriteId(d){return `p_${Number(d.lat).toFixed(5).replace('.','_')}_${Number(d.lng).toFixed(5).replace('.','_')}`}
 function loadGuestData(){
   try{state.favorites=JSON.parse(localStorage.getItem(GUEST_FAVORITES_KEY)||'[]');state.history=JSON.parse(localStorage.getItem(GUEST_HISTORY_KEY)||'[]')}catch{state.favorites=[];state.history=[]}renderAccountLists();
@@ -450,7 +613,7 @@ async function toggleFavorite(){
   else{if(exists)state.favorites=state.favorites.filter(x=>x.id!==id);else state.favorites.unshift({id,name:state.destination.name,address:state.destination.address,lng:state.destination.lng,lat:state.destination.lat,createdAt:Date.now()});localStorage.setItem(GUEST_FAVORITES_KEY,JSON.stringify(state.favorites));renderAccountLists()}
   updateFavoriteButton();toast(exists?'즐겨찾기에서 삭제했습니다.':'즐겨찾기에 저장했습니다.');
 }
-function updateFavoriteButton(){if(!state.destination)return;const exists=state.favorites.some(x=>x.id===favoriteId(state.destination));$('favoriteBtn').classList.toggle('active',exists);$('favoriteBtn').textContent=exists?'★ 저장됨':'☆ 즐겨찾기'}
+function updateFavoriteButton(){if(!state.destination){$('favoriteBtn').classList.remove('active');$('favoriteBtn').innerHTML=`${iconSvg('star')}<span class="btn-label">즐겨찾기</span>`;return}const exists=state.favorites.some(x=>x.id===favoriteId(state.destination));$('favoriteBtn').classList.toggle('active',exists);$('favoriteBtn').innerHTML=`${iconSvg('star')}<span class="btn-label">${exists?'저장됨':'즐겨찾기'}</span>`}
 async function saveTripRecord({arrived,finishedAt}){
   if(!state.tripStartedAt||!state.destination||!state.route)return;const record={destination:state.destination.name,address:state.destination.address||'',lng:state.destination.lng,lat:state.destination.lat,distance:Math.round(state.route.distance||0),duration:Math.round((finishedAt-state.tripStartedAt)/1000),plannedDuration:Math.round(state.route.duration||0),provider:state.route.provider||'',arrived:Boolean(arrived)};
   if(state.firebase.user){const {fsMod}=state.firebase.mods;await fsMod.addDoc(fsMod.collection(state.firebase.db,'users',state.firebase.user.uid,'trips'),{...record,createdAt:fsMod.serverTimestamp()}).catch(console.warn);await loadCloudData()}
@@ -458,34 +621,38 @@ async function saveTripRecord({arrived,finishedAt}){
   state.tripStartedAt=null;
 }
 function renderAccount(){
-  const u=state.firebase.user;$('signedOutBox').classList.toggle('hidden',Boolean(u));$('signedInBox').classList.toggle('hidden',!u);$('accountBtn').classList.toggle('signed',Boolean(u));
-  if(u){$('accountStatus').textContent='Firebase 동기화 중';$('userName').textContent=u.displayName||'사용자';$('userEmail').textContent=u.email||'';$('userPhoto').src=u.photoURL||'/assets/daim.png';$('accountBtn').textContent='✓'}else{$('accountStatus').textContent=state.firebase.configured?'로그인 전 · 게스트 저장':'게스트 모드 · 로컬 저장';$('accountBtn').textContent='👤'}renderAccountLists();
+  const u=state.firebase.user;$('signedOutBox').classList.toggle('hidden',Boolean(u));$('signedInBox').classList.toggle('hidden',!u);$('accountBtn').classList.toggle('signed',Boolean(u));setAccountButtonIcon();
+  if(u){$('accountStatus').textContent='Google 로그인 완료';$('userName').textContent=u.displayName||'사용자';$('userEmail').textContent=u.email||'';$('userPhoto').src=u.photoURL||'/assets/daim.png'}else{$('accountStatus').textContent=state.firebase.configured?'로그인 전 · 게스트 저장':'게스트 모드 · 로컬 저장';$('userName').textContent='조팸스 드라이버';$('userEmail').textContent='로그인하면 주행기록이 동기화됩니다.';$('userPhoto').src='/assets/daim.png'}renderAccountLists();
 }
 function itemDate(v){if(!v)return '';if(typeof v.toDate==='function')return v.toDate().toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});const d=new Date(typeof v==='number'?v:v.seconds? v.seconds*1000:Date.now());return d.toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}
 function renderAccountLists(){
   const fav=$('favoritesList'),hist=$('historyList');fav.innerHTML='';hist.innerHTML='';
-  if(!state.favorites.length)fav.innerHTML='<div class="list-empty">아직 저장한 목적지가 없습니다.</div>';else state.favorites.forEach(f=>fav.appendChild(accountItem(f.name,f.address||'저장한 장소','안내',()=>{closeAccount();selectDestination(f)})));
-  if(!state.history.length)hist.innerHTML='<div class="list-empty">아직 주행 기록이 없습니다.</div>';else state.history.forEach(h=>hist.appendChild(accountItem(h.destination,`${itemDate(h.createdAt)} · ${km(h.distance)} · ${durationText(h.duration)}`,h.arrived?'도착':'종료')));
+  if(!state.favorites.length)fav.innerHTML='<div class="list-empty">아직 저장한 목적지가 없습니다.</div>';else state.favorites.forEach(f=>fav.appendChild(accountItem(f.name,f.address||'저장한 장소',[{label:'안내',onClick:()=>{closeAccount();selectDestination(f)}},{label:'삭제',danger:true,onClick:()=>deleteFavoriteById(f.id)}])));
+  if(!state.history.length)hist.innerHTML='<div class="list-empty">아직 주행 기록이 없습니다.</div>';else state.history.forEach(h=>hist.appendChild(accountItem(h.destination,`${itemDate(h.createdAt)} · ${km(h.distance)} · ${durationText(h.duration)}`,[{label:h.arrived?'도착':'종료',disabled:true}])));
+  updateHomeWorkButtons();
 }
-function accountItem(title,sub,action,onClick){const row=document.createElement('div');row.className='account-item';const copy=document.createElement('div');copy.className='item-copy';const b=document.createElement('b');b.textContent=title||'장소';const s=document.createElement('small');s.textContent=sub||'';copy.append(b,s);const btn=document.createElement('button');btn.textContent=action||'보기';if(onClick)btn.onclick=onClick;else btn.disabled=true;row.append(copy,btn);return row}
-function openAccount(){setUiStage('account');$('accountModal').classList.remove('hidden');renderAccount()}
+function accountItem(title,sub,actions=[]){const row=document.createElement('div');row.className='account-item';const copy=document.createElement('div');copy.className='item-copy';const b=document.createElement('b');b.textContent=title||'장소';const s=document.createElement('small');s.textContent=sub||'';copy.append(b,s);const actionsBox=document.createElement('div');actionsBox.className='account-item-actions';(actions||[]).forEach(({label,onClick,danger=false,disabled=false})=>{const btn=document.createElement('button');btn.textContent=label||'보기';if(danger)btn.classList.add('danger');btn.disabled=Boolean(disabled);if(onClick)btn.onclick=onClick;actionsBox.appendChild(btn)});row.append(copy,actionsBox);return row}
+function openAccount(tab='favorites'){setUiStage('account');$('accountModal').classList.remove('hidden');renderAccount();setAccountTab(tab)}
 function closeAccount(){$('accountModal').classList.add('hidden');setUiStage(state.navigating?'drive':state.route?'route':'home')}
 
 function bindUI(){
+  applyStaticIcons();
   $('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});$('locateBtn').onclick=()=>locate(true);$('recenterBtn').onclick=()=>locate(true);$('zoomInBtn').onclick=()=>state.map.zoomIn();$('zoomOutBtn').onclick=()=>state.map.zoomOut();
   $('startNavBtn').onclick=startNavigation;$('stopNavBtn').onclick=()=>stopNavigation();$('cancelRouteBtn').onclick=clearRoute;$('overviewBtn').onclick=()=>state.route&&drawRoutes({fit:true});$('altBtn').onclick=()=>{renderAlternativeRoutes();$('fasterRouteBanner').classList.add('hidden');if(state.navigating)checkAlternativeRoutes();toast(state.routeOptions.length>1?'대안 경로를 확인하고 최신 경로도 조회합니다.':'최신 대안 경로를 조회합니다.')};$('simBtn').onclick=toggleSimulation;$('arBtn').onclick=startAR;$('closeArBtn').onclick=stopAR;$('arCalibrateBtn').onclick=calibrateAR;$('favoriteBtn').onclick=toggleFavorite;
   document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.priority=b.dataset.priority||'RECOMMEND';state.avoid=b.dataset.avoid||null;if(state.destination)requestRoute()});
   document.querySelectorAll('[data-quick]').forEach(b=>b.onclick=()=>quickSearch(b.dataset.quick));
   document.querySelectorAll('[data-suggest]').forEach(b=>b.onclick=()=>{const q=b.dataset.suggest||'';$('destinationInput').value=q;searchPlaces(q)});
+  $('homeShortcutBtn').onclick=()=>useSavedPlace('home');$('workShortcutBtn').onclick=()=>useSavedPlace('work');$('favoritesShortcutBtn').onclick=()=>openAccount('favorites');
+  $('editHomeBtn').onclick=e=>{e.stopPropagation();promptSavePlace('home')};$('editWorkBtn').onclick=e=>{e.stopPropagation();promptSavePlace('work')};
   document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>{state.autoCharacter=false;setCharacter(b.dataset.character);$('characterModeBtn').textContent='FIX';savePreferences();toast(`${characters[b.dataset.character]?.name||'가이드'} 고정 안내로 변경했습니다.`)});
   document.querySelectorAll('[data-character-mode]').forEach(b=>b.onclick=()=>{const mode=b.dataset.characterMode;if(mode==='auto'){state.autoCharacter=true;$('characterModeBtn').textContent='AUTO';toast('상황별 캐릭터 자동 전환을 사용합니다.')}else{state.autoCharacter=false;setCharacter(mode);$('characterModeBtn').textContent='FIX';toast(`${characters[mode]?.name||'가이드'} 고정 안내로 변경했습니다.`)}syncCharacterButtons();savePreferences()});
-  document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.nav;if(nav==='my'){openAccount();return}if(nav==='home'){setUiStage('home');return}if(nav==='route'){if(state.route)setUiStage('route');else{setUiStage('home');$('destinationInput').focus();toast('목적지를 먼저 검색해 주세요.')}return}if(nav==='drive'){if(state.navigating){setUiStage('drive');return}if(state.route){toast('안내 시작을 눌러 실시간 주행을 시작해 주세요.');setUiStage('route')}else toast('먼저 목적지를 선택해 주세요.')}});
-  $('soundBtn').onclick=()=>{state.sound=!state.sound;$('soundBtn').textContent=state.sound?'🔊':'🔇';savePreferences();toast(state.sound?'음성 안내 켜짐':'음성 안내 꺼짐')};
+  document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.nav;if(nav==='my'){openAccount('favorites');return}if(nav==='home'){setUiStage('home');return}if(nav==='route'){if(state.route)setUiStage('route');else{setUiStage('home');$('destinationInput').focus();toast('목적지를 먼저 검색해 주세요.')}return}if(nav==='drive'){if(state.navigating){setUiStage('drive');return}if(state.route){toast('안내 시작을 눌러 실시간 주행을 시작해 주세요.');setUiStage('route')}else toast('먼저 목적지를 선택해 주세요.')}});
+  $('soundBtn').onclick=()=>{state.sound=!state.sound;setSoundButtonIcon();savePreferences();toast(state.sound?'음성 안내 켜짐':'음성 안내 꺼짐')};
   $('acceptFasterRouteBtn').onclick=acceptPendingAlternative;$('dismissFasterRouteBtn').onclick=()=>{$('fasterRouteBanner').classList.add('hidden');state.pendingAlternative=null;state.nativeMultiRoute=null};
   $('characterModeBtn').onclick=()=>{state.autoCharacter=!state.autoCharacter;$('characterModeBtn').textContent=state.autoCharacter?'AUTO':'FIX';syncCharacterButtons();savePreferences();toast(state.autoCharacter?'상황별 캐릭터 자동 전환':'현재 캐릭터 고정')};
-  $('accountBtn').onclick=openAccount;$('closeAccountBtn').onclick=closeAccount;$('accountModal').addEventListener('click',e=>{if(e.target===$('accountModal'))closeAccount()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;
-  document.querySelectorAll('.account-tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.account-tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.activeAccountTab=b.dataset.tab;$('favoritesList').classList.toggle('hidden',state.activeAccountTab!=='favorites');$('historyList').classList.toggle('hidden',state.activeAccountTab!=='history')});
-  syncCharacterButtons();setUiStage('home');
+  $('accountBtn').onclick=()=>openAccount(state.activeAccountTab||'favorites');$('closeAccountBtn').onclick=closeAccount;$('accountModal').addEventListener('click',e=>{if(e.target===$('accountModal'))closeAccount()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;
+  document.querySelectorAll('.account-tab').forEach(b=>b.onclick=()=>setAccountTab(b.dataset.tab||'favorites'));
+  syncCharacterButtons();setSoundButtonIcon();setAccountButtonIcon();setUiStage('home');updateHomeWorkButtons();setAccountTab('favorites');updateFavoriteButton();
 }
 
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
