@@ -12,7 +12,7 @@ const state = {
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
   savedPlaces:{home:null,work:null},favorites:[],placeKind:null,origin:null,originMode:'current',
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,
-  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,supertonic:null,supertonicLoading:null,supertonicAudio:null,
+  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
 };
 
@@ -507,55 +507,67 @@ async function changeDestinationWhileDriving(item){
 
 /* ---------- SPEECH ---------- */
 function koreanVoices(){
-  return speechSynthesis.getVoices().filter(v=>/^ko(-|_)/i.test(v.lang||'')||/korean|한국|ko-KR/i.test(`${v.lang||''} ${v.name||''} ${v.voiceURI||''}`));
+  if(!('speechSynthesis' in window)) return [];
+  return speechSynthesis.getVoices().filter(v=>
+    (v.lang||'').toLowerCase().startsWith('ko') ||
+    /korean|한국|ko-kr/i.test(`${v.lang||''} ${v.name||''} ${v.voiceURI||''}`)
+  );
 }
-function voiceText(v){return `${v.name||''} ${v.voiceURI||''} ${v.lang||''}`.toLowerCase()}
-function voiceScore(v,positive=[],negative=[]){
-  const text=voiceText(v);
-  return positive.reduce((n,t)=>n+(text.includes(String(t).toLowerCase())?20:0),0)-negative.reduce((n,t)=>n+(text.includes(String(t).toLowerCase())?24:0),0);
-}
-function pickCharacterVoice(character){
-  const voices=koreanVoices();if(!voices.length)return null;
 
-  // SpeechSynthesis does not expose a standardized gender property.  We therefore
-  // strongly prefer known/labelled Korean male voices and use pitch/rate as a
-  // second layer so 순식 and 훈민 remain audibly distinct on each device.
-  const female=['female','woman','girl','여성','여자','sunhi','sun-hi','yuna','yoona','sora','seoyeon','seo-yeon','유나','서연'];
-  const male=['male','man','masculine','남성','남자','injoon','in-joon','인준','hyunsu','hyun-su','현수','minho','min-ho','민호','joon','jun','준','yong','youngho','seongho','donghyun'];
+// Web Speech API does not expose a standardized gender field, so Korean
+// voices whose names imply a male voice are preferred. This follows the
+// device/browser voice list and falls back to the first Korean voice.
+function pickMaleKoreanVoice(preferredCharacter='sunsik'){
+  const voices=koreanVoices();
+  if(!voices.length) return null;
+  const maleRegex=/male|man|남성|남자|injoon|in-joon|인준|jinho|jin-ho|진호|hyunsu|hyun-su|현수|minho|min-ho|민호|joon|jun|준|youngho|seongho|donghyun/i;
+  const femaleRegex=/female|woman|여성|여자|sunhi|sun-hi|yuna|yoona|sora|seoyeon|seo-yeon|유나|서연/i;
+  const maleVoices=voices.filter(v=>maleRegex.test(`${v.name||''} ${v.voiceURI||''}`) && !femaleRegex.test(`${v.name||''} ${v.voiceURI||''}`));
+  if(!maleVoices.length) return voices.find(v=>!femaleRegex.test(`${v.name||''} ${v.voiceURI||''}`)) || voices[0] || null;
 
-  if(character==='sunsik'){
-    const mature=['injoon','in-joon','인준','hyunsu','hyun-su','현수','deep','bass','baritone','mature','middle','older','저음','중년'];
-    return [...voices].sort((a,b)=>{
-      const sa=voiceScore(a,[...male,...mature],female), sb=voiceScore(b,[...male,...mature],female);
-      return sb-sa;
-    })[0]||voices[0];
+  // Keep the two male guides distinguishable when multiple voices exist.
+  if(preferredCharacter==='hunmin' && maleVoices.length>1){
+    const bright=/minho|min-ho|민호|joon|jun|준|young|youth|bright|청년|젊|밝/i;
+    return maleVoices.find(v=>bright.test(`${v.name||''} ${v.voiceURI||''}`)) || maleVoices[1];
   }
-  if(character==='hunmin'){
-    const youthful=['minho','min-ho','민호','joon','jun','준','young','youth','bright','junior','청년','젊','밝'];
-    const mature=['deep','bass','baritone','mature','middle','older','저음','중년','injoon','in-joon','인준'];
-    const sunsikVoice=voices.length>1?pickCharacterVoice('sunsik'):null;
-    const ranked=[...voices].sort((a,b)=>{
-      const sa=voiceScore(a,[...male,...youthful],[...female,...mature]), sb=voiceScore(b,[...male,...youthful],[...female,...mature]);
-      return sb-sa;
-    });
-    // Where two Korean male voices are installed, keep 훈민 on a different voice.
-    return ranked.find(v=>!sunsikVoice||v.voiceURI!==sunsikVoice.voiceURI)||ranked[0]||voices[0];
+  if(preferredCharacter==='sunsik'){
+    const mature=/injoon|in-joon|인준|jinho|jin-ho|진호|hyunsu|hyun-su|현수|deep|bass|baritone|mature|middle|저음|중년/i;
+    return maleVoices.find(v=>mature.test(`${v.name||''} ${v.voiceURI||''}`)) || maleVoices[0];
   }
-  return [...voices].sort((a,b)=>voiceScore(b,['female','woman','여성','여자','sunhi','sun-hi','yuna','yoona','sora','seoyeon'],male)-voiceScore(a,['female','woman','여성','여자','sunhi','sun-hi','yuna','yoona','sora','seoyeon'],male))[0]||voices[0];
+  return maleVoices[0];
 }
-async function initSupertonicTTS(){
-  if(state.supertonic)return state.supertonic;if(state.supertonicLoading)return state.supertonicLoading;
-  state.supertonicLoading=(async()=>{const {pipeline}=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers');state.supertonic=await pipeline('text-to-speech','onnx-community/Supertonic-TTS-2-ONNX');return state.supertonic})();
-  try{return await state.supertonicLoading}finally{state.supertonicLoading=null}
+
+function pickDaimVoice(){
+  const voices=koreanVoices();
+  if(!voices.length) return null;
+  const female=/female|woman|여성|여자|sunhi|sun-hi|yuna|yoona|sora|seoyeon|seo-yeon|유나|서연/i;
+  return voices.find(v=>female.test(`${v.name||''} ${v.voiceURI||''}`)) || voices[0] || null;
 }
-async function speakSupertonic(text,character){
-  const pipe=await initSupertonicTTS();const speed=character==='sunsik'?.92:1.08;
-  const audio=await pipe(text,{speaker_embeddings:'https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/main/voices/M1.bin',num_inference_steps:8,speed});
-  const blob=await audio.toBlob();if(state.supertonicAudio){try{state.supertonicAudio.pause();URL.revokeObjectURL(state.supertonicAudio.src)}catch{}}
-  const player=new Audio(URL.createObjectURL(blob));player.volume=state.voiceVolume;state.supertonicAudio=player;await player.play()
+
+function speak(text){
+  if(!state.sound||!text||!('speechSynthesis' in window)) return;
+  const c=characterDefs[state.character];
+  const u=new SpeechSynthesisUtterance(text);
+  u.lang='ko-KR';
+  u.volume=state.voiceVolume;
+
+  if(state.character==='sunsik'){
+    u.voice=pickMaleKoreanVoice('sunsik');
+    u.rate=.82;
+    u.pitch=.58;
+  }else if(state.character==='hunmin'){
+    u.voice=pickMaleKoreanVoice('hunmin');
+    u.rate=1.08;
+    u.pitch=.92;
+  }else{
+    u.voice=pickDaimVoice();
+    u.rate=c.rate;
+    u.pitch=c.pitch;
+  }
+
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
 }
-function speakSystem(text){if(!('speechSynthesis'in window))return;const c=characterDefs[state.character],u=new SpeechSynthesisUtterance(text);u.lang='ko-KR';u.rate=c.rate;u.pitch=c.pitch;u.volume=state.voiceVolume;const chosen=pickCharacterVoice(state.character);if(chosen)u.voice=chosen;speechSynthesis.cancel();speechSynthesis.speak(u)}
-function speak(text){if(!state.sound||!text)return;if(state.character==='sunsik'||state.character==='hunmin'){speakSupertonic(text,state.character).catch(e=>{console.warn('Supertonic TTS fallback',e);speakSystem(text)});return}speakSystem(text)}
 
 function loadLocal(){try{const p=JSON.parse(localStorage.getItem(SETTINGS)||'{}');if(p.character&&characterDefs[p.character])state.character=p.character;if(Number.isFinite(Number(p.voiceVolume)))state.voiceVolume=Number(p.voiceVolume);state.savedPlaces.home=p.home||null;state.savedPlaces.work=p.work||null;state.favorites=JSON.parse(localStorage.getItem(FAVS)||'[]');state.tripHistory=JSON.parse(localStorage.getItem(TRIP_HISTORY)||'[]')}catch{}syncCharacterUI();updateSavedLabels();updateVolumeUI()}
 function saveLocalSettings(){localStorage.setItem(SETTINGS,JSON.stringify({character:state.character,voiceVolume:state.voiceVolume,home:state.savedPlaces.home,work:state.savedPlaces.work}))}
