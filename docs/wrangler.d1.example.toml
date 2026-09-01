@@ -1,0 +1,9 @@
+name = "jofams-smartdrive"
+compatibility_date = "2026-08-01"
+pages_build_output_dir = "."
+
+[[d1_databases]]
+binding = "DB"
+database_name = "jofams-smartdrive-db"
+database_id = "PUT_REAL_D1_UUID_HERE"
+migrations_dir = "migrations"

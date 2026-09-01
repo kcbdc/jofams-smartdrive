@@ -12,6 +12,9 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebSettings
+import android.webkit.WebResourceError
+import android.webkit.WebResourceResponse
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONObject
@@ -45,6 +48,11 @@ class MainActivity : AppCompatActivity() {
             mediaPlaybackRequiresUserGesture = true
             allowFileAccess = false
             allowContentAccess = false
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            setSupportMultipleWindows(false)
+            builtInZoomControls = false
+            displayZoomControls = false
+            userAgentString = userAgentString + " JofamsSmartDrive/5-pre"
         }
 
         bridge = JofamsWebBridge(webView, nativeARAvailable = false, commandHandler = ::handleBridgeCommand)
@@ -56,6 +64,12 @@ class MainActivity : AppCompatActivity() {
                 if (uri.scheme == "https" && uri.host == allowedHost) return false
                 startActivity(Intent(Intent.ACTION_VIEW, uri))
                 return true
+            }
+
+            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                if (request.isForMainFrame) {
+                    view.postDelayed({ if (!isFinishing) view.reload() }, 1500L)
+                }
             }
         }
         webView.webChromeClient = object : WebChromeClient() {

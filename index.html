@@ -105,6 +105,12 @@
           <button class="chip" data-priority="RECOMMEND" data-avoid="toll">무료도로</button>
         </div>
 
+        <button id="hunminFreeRouteCard" class="hunmin-free-route-card" type="button">
+          <img src="/assets/hunmin.png" alt="훈민" />
+          <span class="hunmin-free-copy"><b>훈민의 무료도로 추천</b><small id="hunminFreeRouteText">통행료를 줄이는 경로를 별도로 비교합니다.</small></span>
+          <span class="hunmin-free-badge">무료도로</span>
+        </button>
+
         <div class="selected-route-card">
           <div class="selected-route-badge">추천 경로</div>
           <div class="selected-route-metrics">
@@ -234,6 +240,17 @@
         </div>
         <div id="favoritesList" class="account-list"></div>
         <div id="historyList" class="account-list hidden"></div>
+
+        <div class="settings-card integration-check-card">
+          <div class="settings-title"><b>서비스 연동 상태</b><span>Cloudflare · D1 · Firebase 연결을 현재 환경에서 점검합니다.</span></div>
+          <div id="integrationStatusList" class="integration-status-list">
+            <span><i class="status-dot idle"></i><b>Cloudflare API</b><small>점검 전</small></span>
+            <span><i class="status-dot idle"></i><b>D1</b><small>점검 전</small></span>
+            <span><i class="status-dot idle"></i><b>Firebase Auth</b><small>점검 전</small></span>
+            <span><i class="status-dot idle"></i><b>Firestore</b><small>점검 전</small></span>
+          </div>
+          <button id="integrationCheckBtn" class="integration-check-btn" type="button">연동 상태 점검</button>
+        </div>
 
         <div class="settings-card voice-settings-card">
           <div class="settings-title"><b>음성 가이드</b><span>안내 음량을 0~100%로 조절할 수 있습니다.</span></div>

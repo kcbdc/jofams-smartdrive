@@ -2,7 +2,7 @@ export async function onRequestGet({ env }) {
   return new Response(JSON.stringify({
     ok:true,
     service:'jofams-smartdrive',
-    version:'4.0.0',
+    version:'5.0.0-pre',
     integrations:{
       kakao:Boolean(env.KAKAO_REST_API_KEY),
       kakaoDirectionsTier:String(env.KAKAO_DIRECTIONS_TIER||'standard').toLowerCase(),

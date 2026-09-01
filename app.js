@@ -15,7 +15,7 @@ const state = {
   arHeadingOffset:0,arFrame:0,tripStartedAt:null,tripStartPosition:null,nativeLane:null,safety:null,imageDirection:null,roadEvents:[],nativeMultiRoute:null,
   routeOptions:[],selectedRouteIndex:0,pendingAlternative:null,alternativeTimer:null,lastAlternativeCheck:0,
   lastGpsAt:0,lastRealGps:null,positionSource:'gps',nativeTunnel:false,tunnel:{active:false,timer:null,distanceOnRoute:0,lastTick:0,lastSpeed:0},
-  parking:[],parkingProvider:'',parkingLoadedFor:'',destinationCorrection:null,lastSafetySpeechKey:'',sim:{active:false,timer:null,index:0,speedKmh:45},haptic:true,
+  parking:[],parkingProvider:'',parkingLoadedFor:'',destinationCorrection:null,lastSafetySpeechKey:'',hunminFreeRoute:null,sim:{active:false,timer:null,index:0,speedKmh:45},haptic:true,
   firebase:{configured:false,ready:false,auth:null,db:null,user:null,mods:null},
   favorites:[],history:[],activeAccountTab:'favorites',demoMode:null,savedPlaces:{home:null,work:null},registerKind:null,
   speechVoices:[],layerLayoutRaf:0
@@ -368,6 +368,31 @@ async function selectDestination(item){
   await requestRoute();
 }
 
+async function fetchHunminFreeRoute(){
+  if(!state.user||!state.destination)return null;
+  try{
+    const r=await fetch('/api/route',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({origin:state.user,destination:state.destination,priority:'RECOMMEND',avoid:'toll',alternatives:false,destinationCorrection:state.destinationCorrection})});
+    if(!r.ok)return null;const data=await r.json();if(data.provider!=='kakao'){state.hunminFreeRoute=null;const text=$('hunminFreeRouteText');if(text)text.textContent='Kakao 길찾기 연결 시 통행료 회피 경로를 비교합니다.';return null}const route=prepareRoute({...data,intent:'toll-free',guideCharacter:'hunmin',avoid:'toll'});
+    state.hunminFreeRoute=route;updateHunminFreeRouteCard();return route;
+  }catch{state.hunminFreeRoute=null;updateHunminFreeRouteCard();return null}
+}
+function updateHunminFreeRouteCard(){
+  const card=$('hunminFreeRouteCard'),text=$('hunminFreeRouteText');if(!card||!text)return;
+  const r=state.hunminFreeRoute;
+  card.classList.toggle('ready',Boolean(r));
+  if(!r){text.textContent='통행료를 줄이는 경로를 별도로 비교합니다.';return}
+  const base=state.routeOptions[0];const extra=base?Math.round(((r.duration||0)-(base.duration||0))/60):0;
+  const suffix=extra>0?` · 추천 경로보다 ${extra}분 더 소요`:extra<0?` · ${Math.abs(extra)}분 단축`:' · 예상시간 비슷함';
+  text.textContent=`${durationText(r.duration)} · ${km(r.distance)}${suffix}`;
+}
+function chooseHunminFreeRoute(){
+  const r=state.hunminFreeRoute;if(!r){toast('무료도로 경로를 계산 중입니다.');fetchHunminFreeRoute();return}
+  const existing=state.routeOptions.findIndex(x=>x.intent==='toll-free');
+  if(existing>=0){selectRouteOption(existing,{fit:true,announce:true});return}
+  state.routeOptions.push(r);selectRouteOption(state.routeOptions.length-1,{fit:true,announce:true});renderAlternativeRoutes();
+  setCharacter('hunmin','통행료를 줄이는 무료도로 경로를 선택했습니다. 빠르게 안내하겠습니다.',true);
+}
+
 async function requestRoute({reroute=false,silent=false}={}){
   if(!state.user||!state.destination)return;
   if(reroute)setCharacter('hunmin','경로 이탈 감지. 새 경로를 계산합니다.',true);
@@ -375,8 +400,8 @@ async function requestRoute({reroute=false,silent=false}={}){
     const r=await fetch('/api/route',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({origin:state.user,destination:state.destination,priority:state.priority,avoid:state.avoid,alternatives:true,destinationCorrection:state.destinationCorrection})});
     const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||`경로 계산 실패 (${r.status})`);
     const rawOptions=[data,...(data.alternatives||[])].map(x=>{const y={...x};delete y.alternatives;return y});
-    state.routeOptions=rawOptions.map(prepareRoute);state.selectedRouteIndex=0;state.route=state.routeOptions[0];state.currentRouteIndex=0;state.nextGuide=null;state.nativeLane=null;state.imageDirection=null;state.lastGuideSpeechKey='';
-    drawRoutes();showRouteSummary(state.route);renderAlternativeRoutes();if(!reroute)loadParkingNearDestination();
+    state.routeOptions=rawOptions.map((x,i)=>prepareRoute({...x,intent:i===0?'recommend':i===1?'fast':'alternative'}));state.selectedRouteIndex=0;state.route=state.routeOptions[0];state.currentRouteIndex=0;state.nextGuide=null;state.nativeLane=null;state.imageDirection=null;state.lastGuideSpeechKey='';
+    drawRoutes();showRouteSummary(state.route);renderAlternativeRoutes();if(!reroute){loadParkingNearDestination();fetchHunminFreeRoute().then(r=>{if(r&&!state.routeOptions.some(x=>x.intent==='toll-free')){state.routeOptions.push(r);renderAlternativeRoutes();drawRoutes({fit:false})}})}
     if(reroute){state.lastRerouteAt=Date.now();setCharacter('hunmin','재탐색 완료. 새 경로로 바로 안내합니다.',true)}
     else if(!silent&&state.routeOptions.length>1)toast(`${state.routeOptions.length}개 경로를 비교했습니다.`);
   }catch(e){if(!silent){toast(e.message,3200);setCharacter('daim','경로를 계산하지 못했어요. 네트워크와 API 설정을 확인해 주세요.')}}
@@ -416,15 +441,15 @@ function renderAlternativeRoutes(){
   const panel=$('alternativePanel'),list=$('alternativeList');if(!panel||!list)return;list.innerHTML='';
   if(state.routeOptions.length<2){panel.classList.add('hidden');return}panel.classList.remove('hidden');
   const base=state.routeOptions[0]?.duration||0;
-  const guideKeys=['daim','sunsik','hunmin'];
   state.routeOptions.forEach((r,i)=>{
     const b=document.createElement('button');b.className='alternative-card'+(i===state.selectedRouteIndex?' active':'');
     const diff=Math.round(((r.duration||0)-base)/60);
-    const diffText=i===0?'가장 균형 잡힌 경로':diff===0?'추천 경로와 비슷한 시간':diff>0?`${diff}분 더 소요`:`${Math.abs(diff)}분 단축`;
-    const guideKey=guideKeys[i]||guideKeys[i%guideKeys.length],guide=characters[guideKey];
-    const title=i===0?'추천':i===1?'빠른길':'무료도로';
-    b.innerHTML=`<div class="alt-main"><div class="alt-badge">${title}</div><div class="alt-metrics"><b>${durationText(r.duration)}</b><small>${km(r.distance)} · ${escapeHtml(diffText)}</small></div></div><div class="alt-guide"><img src="${guide.img}" alt="${guide.name}"><span><b>${guide.name}</b><small>${escapeHtml(guide.role)}</small></span></div>`;
-    b.onclick=()=>selectRouteOption(i,{fit:true});list.appendChild(b)
+    const isFree=r.intent==='toll-free'||r.avoid==='toll';
+    const guideKey=isFree?'hunmin':i===0?'daim':i===1?'sunsik':'daim',guide=characters[guideKey];
+    const title=isFree?'무료도로':i===0?'추천':i===1?'빠른길':`대안 ${i}`;
+    const diffText=isFree?'통행료 절약 우선':i===0?'가장 균형 잡힌 경로':diff===0?'추천 경로와 비슷한 시간':diff>0?`${diff}분 더 소요`:`${Math.abs(diff)}분 단축`;
+    b.innerHTML=`<div class="alt-main"><div class="alt-badge ${isFree?'free':''}">${title}</div><div class="alt-metrics"><b>${durationText(r.duration)}</b><small>${km(r.distance)} · ${escapeHtml(diffText)}</small></div></div><div class="alt-guide"><img src="${guide.img}" alt="${guide.name}"><span><b>${guide.name}</b><small>${escapeHtml(isFree?'무료도로 · 빠른 판단':guide.role)}</small></span></div>`;
+    b.onclick=()=>selectRouteOption(i,{fit:true,announce:true});list.appendChild(b)
   });
 }
 function candidateRoutesFromPayload(data){const raw=[data,...(data?.alternatives||[])].filter(Boolean);return raw.map(x=>{const y={...x};delete y.alternatives;return prepareRoute(y)})}
@@ -487,7 +512,7 @@ function clearRoute(){
   if(state.navigating)stopNavigation();state.route=null;state.destination=null;state.currentRouteIndex=0;state.nextGuide=null;
   if(state.destMarker){state.destMarker.remove();state.destMarker=null}
   for(const id of ['route','route-shadow','alternatives'])if(state.map.getLayer(id))state.map.removeLayer(id);for(const id of ['route','alternatives'])if(state.map.getSource(id))state.map.removeSource(id);
-  state.routeOptions=[];state.parking=[];state.parkingLoadedFor='';state.destinationCorrection=null;$('destinationInput').value='';$('routeSummary').classList.add('hidden');$('alternativePanel').classList.add('hidden');$('parkingPanel').classList.add('hidden');$('idleActions').classList.remove('hidden');$('navActions').classList.add('hidden');setUiStage('home');
+  state.routeOptions=[];state.hunminFreeRoute=null;state.parking=[];state.parkingLoadedFor='';state.destinationCorrection=null;$('destinationInput').value='';$('routeSummary').classList.add('hidden');$('alternativePanel').classList.add('hidden');$('parkingPanel').classList.add('hidden');$('idleActions').classList.remove('hidden');$('navActions').classList.add('hidden');setUiStage('home');
 }
 
 function nearestPointInfo(pos,coords){
@@ -691,6 +716,19 @@ async function loadPreferences(){let p=localPreferences();if(state.firebase.user
 
 function firebaseConfig(){return window.__APP_CONFIG__?.firebase||{}}
 function isFirebaseConfigured(){const c=firebaseConfig();return Boolean(c.apiKey&&c.authDomain&&c.projectId&&c.appId)}
+function setIntegrationStatus(items){
+  const root=$('integrationStatusList');if(!root)return;
+  const rows=[['Cloudflare API',items.cloudflare],['D1',items.d1],['Firebase Auth',items.auth],['Firestore',items.firestore]];
+  root.innerHTML=rows.map(([name,v])=>`<span><i class="status-dot ${v?.ok?'ok':v?.warn?'warn':'fail'}"></i><b>${name}</b><small>${escapeHtml(v?.text||'확인 불가')}</small></span>`).join('');
+}
+async function runIntegrationCheck(){
+  const btn=$('integrationCheckBtn');if(btn){btn.disabled=true;btn.textContent='점검 중...'}
+  const result={cloudflare:{ok:false,text:'응답 없음'},d1:{warn:true,text:'미확인'},auth:{warn:true,text:'미설정'},firestore:{warn:true,text:'로그인 필요'}};
+  try{const r=await fetch('/api/health',{cache:'no-store'});const d=await r.json();result.cloudflare={ok:Boolean(r.ok&&d.ok),text:r.ok?'API 정상':'API 오류'};result.d1=d.integrations?.d1?{ok:true,text:'D1 연결됨'}:{warn:true,text:'D1 바인딩 없음'};}catch{result.cloudflare={ok:false,text:'API 접속 실패'}}
+  if(state.firebase.configured&&state.firebase.ready){result.auth={ok:true,text:state.firebase.user?'Google 로그인 완료':'Firebase Auth 준비됨'};if(state.firebase.user){try{const {fsMod}=state.firebase.mods;await fsMod.getDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'));result.firestore={ok:true,text:'읽기 권한 정상'}}catch{result.firestore={ok:false,text:'Rules 또는 권한 확인'}}}else result.firestore={warn:true,text:'로그인 후 점검 가능'};}
+  setIntegrationStatus(result);if(btn){btn.disabled=false;btn.textContent='연동 상태 다시 점검'}
+}
+
 async function initFirebase(){
   state.firebase.configured=isFirebaseConfigured();
   if(!state.firebase.configured){loadGuestData();renderAccount();updateHomeWorkButtons();return}
@@ -767,7 +805,7 @@ function closeAccount(){$('accountModal').classList.add('hidden');setUiStage(sta
 function bindUI(){
   applyStaticIcons();
   $('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});$('locateBtn').onclick=()=>locate(true);$('recenterBtn').onclick=()=>locate(true);$('zoomInBtn').onclick=()=>state.map.zoomIn();$('zoomOutBtn').onclick=()=>state.map.zoomOut();
-  $('startNavBtn').onclick=startNavigation;$('stopNavBtn').onclick=()=>stopNavigation();$('cancelRouteBtn').onclick=clearRoute;$('overviewBtn').onclick=()=>state.route&&drawRoutes({fit:true});$('altBtn').onclick=()=>{renderAlternativeRoutes();$('fasterRouteBanner').classList.add('hidden');if(state.navigating)checkAlternativeRoutes();toast(state.routeOptions.length>1?'대안 경로를 확인하고 최신 경로도 조회합니다.':'최신 대안 경로를 조회합니다.')};$('simBtn').onclick=toggleSimulation;$('arBtn').onclick=startAR;$('closeArBtn').onclick=stopAR;$('arCalibrateBtn').onclick=calibrateAR;$('favoriteBtn').onclick=toggleFavorite;
+  $('startNavBtn').onclick=startNavigation;$('hunminFreeRouteCard').onclick=chooseHunminFreeRoute;$('stopNavBtn').onclick=()=>stopNavigation();$('cancelRouteBtn').onclick=clearRoute;$('overviewBtn').onclick=()=>state.route&&drawRoutes({fit:true});$('altBtn').onclick=()=>{renderAlternativeRoutes();$('fasterRouteBanner').classList.add('hidden');if(state.navigating)checkAlternativeRoutes();toast(state.routeOptions.length>1?'대안 경로를 확인하고 최신 경로도 조회합니다.':'최신 대안 경로를 조회합니다.')};$('simBtn').onclick=toggleSimulation;$('arBtn').onclick=startAR;$('closeArBtn').onclick=stopAR;$('arCalibrateBtn').onclick=calibrateAR;$('favoriteBtn').onclick=toggleFavorite;
   document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.priority=b.dataset.priority||'RECOMMEND';state.avoid=b.dataset.avoid||null;if(state.destination)requestRoute()});
   document.querySelectorAll('[data-quick]').forEach(b=>b.onclick=()=>quickSearch(b.dataset.quick));
   document.querySelectorAll('[data-suggest]').forEach(b=>b.onclick=()=>{const q=b.dataset.suggest||'';$('destinationInput').value=q;searchPlaces(q)});$('recentMoreBtn').onclick=()=>toast('최근 목적지 전체보기는 다음 단계에서 확장됩니다.');
@@ -785,7 +823,7 @@ function bindUI(){
   $('closeNoticeBtn').onclick=closeNoticeModal;$('noticeModal').addEventListener('click',e=>{if(e.target===$('noticeModal'))closeNoticeModal()});
   $('voiceVolume').addEventListener('input',e=>{state.voiceVolume=Math.max(0,Math.min(1,Number(e.target.value)/100));if(state.voiceVolume===0)state.sound=false;else if(!state.sound)state.sound=true;updateVoiceControls()});$('voiceVolume').addEventListener('change',()=>savePreferences());
   $('voiceToggleBtn').onclick=()=>{state.sound=!state.sound;if(state.sound&&state.voiceVolume===0)state.voiceVolume=.5;updateVoiceControls();savePreferences();toast(state.sound?'음성 안내 켜짐':'음성 안내 꺼짐')};
-  $('voicePreviewBtn').onclick=()=>{if(!state.sound||state.voiceVolume<=0){state.sound=true;if(state.voiceVolume<=0)state.voiceVolume=.5;updateVoiceControls();savePreferences()}previewCharacterVoice(state.currentCharacter)};
+  $('integrationCheckBtn').onclick=runIntegrationCheck;$('voicePreviewBtn').onclick=()=>{if(!state.sound||state.voiceVolume<=0){state.sound=true;if(state.voiceVolume<=0)state.voiceVolume=.5;updateVoiceControls();savePreferences()}previewCharacterVoice(state.currentCharacter)};
   document.querySelectorAll('[data-voice-profile]').forEach(el=>el.onclick=()=>{const key=el.dataset.voiceProfile;if(!characters[key])return;state.autoCharacter=false;setCharacter(key);$('characterModeBtn').textContent='FIX';syncCharacterButtons();savePreferences();previewCharacterVoice(key)});
   window.addEventListener('resize',scheduleLayerLayout,{passive:true});if('speechSynthesis' in window){refreshSpeechVoices();window.speechSynthesis.onvoiceschanged=refreshSpeechVoices;}
   document.querySelectorAll('.account-tab').forEach(b=>b.onclick=()=>setAccountTab(b.dataset.tab||'favorites'));

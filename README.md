@@ -1,27 +1,36 @@
-# 조팸스 스마트 드라이브 · MVP5 프리 고도화
+# 조팸스 스마트 드라이브 · MVP5 Pre Final
 
-종전 상용화 디자인 시안을 기준으로 UI/UX와 캐릭터 음성 시스템, 주행 레이어 안정성을 고도화한 버전입니다.
+첨부된 상용화 UI 시안을 기준으로 홈 / 경로선택 / 주행 HUD / AR / 주차장 / MY 화면을 통합 정리한 MVP5 직전 최종 프리버전입니다.
 
-## 주요 개선
+## UI/UX
+- 홈: 햄버거 / 알림 / 목적지 검색 / 집·회사 / 즐겨찾기 / 최근 목적지 / 주변 탐색
+- 캐릭터: 다임·순식·훈민 카드와 캐릭터별 TTS 프로필
+- 경로선택: 추천·빠른길·대안경로 + **훈민 무료도로 추천**
+- HUD: 상단 방향 카드 → 차로 카드 → 교차로 카드 → 하단 속도·도착 카드 자동 배치
+- AR: 원근형 파란 경로 리본 + 방향 화살표 + 캐릭터 말풍선
+- 주차: 상태 배지 + 거리/요금 힌트 + 바로 안내
+- MY: Google 로그인, 즐겨찾기, 주행기록, 음성 볼륨/캐릭터 음성, 연동 상태 점검
 
-- 다임 / 순식 / 훈민별 TTS 음성 프로필 적용
-  - 다임: 차분하고 또렷한 안내
-  - 순식: 친근하고 여유로운 안내
-  - 훈민: 짧고 신속한 안내
-- 기기에 한국어 TTS 음성이 여러 개 있으면 캐릭터마다 서로 다른 음성을 우선 배정하고, 음성이 하나뿐이어도 rate/pitch 프로필로 차이를 유지합니다.
-- 마이페이지에서 현재 캐릭터 음성을 바로 미리듣기 가능
-- 캐릭터 고정 변경 시 음성 프로필도 즉시 함께 변경
-- 홈 / 경로 선택 / HUD / AR / 주차 / MY 카드 시각 체계 정돈
-- 경로 선택 화면의 별도 캐릭터 플로팅 레이어 제거: 경로 카드의 캐릭터와 중복되지 않도록 정리
-- 주행 중 `guidance → lane → intersection`을 실제 렌더링 높이를 기준으로 순차 배치
-- 화면 높이가 부족한 경우 보조 교차로 확대 레이어를 자동 축약하여 HUD와 중첩 방지
-- 주행 중 지도 확대/축소 버튼을 숨기고 현재 위치 버튼만 HUD 위 안전 영역에 표시
-- AR 캐릭터 / 말풍선 / 속도 / 도착정보 영역 재배치
-- 반복적인 캐릭터 DOM 갱신 최소화
-- 서비스워커 캐시 버전 갱신
+## Cloudflare / D1
+`wrangler.toml`에는 가짜 D1 UUID를 넣지 않았습니다. GitHub Pages 배포 후 Dashboard에서 `DB` binding을 연결하면 됩니다.
+상세: `docs/DEPLOYMENT_FINAL.md`
 
-## 기존 연동 유지
+## Firebase
+`config.js`에 Firebase Web 설정을 입력한 뒤 Google 로그인과 Firestore rules를 설정합니다.
+MY 화면의 **서비스 연동 상태 > 연동 상태 점검**에서 Auth/Firestore 상태를 확인할 수 있습니다.
+상세: `docs/FIREBASE_CHECK.md`
 
-Cloudflare Pages / Functions / D1, Kakao API, Firebase Auth / Firestore, Android WebView Native Bridge 구조는 기존과 동일하게 유지합니다.
+## Android WebView
+`android-app/gradle.properties`의 `SMARTDRIVE_URL`을 실제 Pages 주소로 변경합니다.
+- targetSdk 36
+- 카메라 / GPS
+- HTTPS WebView
+- Native Bridge
+- 네트워크 오류 재시도
+상세: `android-app/docs/FINAL_WEBVIEW_SETUP.md`
 
-실운영 배포 전에는 `config.js`, `wrangler.toml`, Cloudflare Secret / D1 Binding 값을 기존 운영값으로 유지하세요.
+## 데모
+- `/?demo=home`
+- `/?demo=route`
+- `/?demo=drive`
+- `/?demo=my`

@@ -11,8 +11,8 @@ android {
         applicationId = "com.komsco.jofams.smartdrive"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "4.0.0-mvp"
+        versionCode = 5
+        versionName = "5.0.0-pre"
         val smartDriveUrl = providers.gradleProperty("SMARTDRIVE_URL").orElse("https://example.pages.dev/").get()
         buildConfigField("String", "SMARTDRIVE_URL", "\"${smartDriveUrl}\"")
     }
