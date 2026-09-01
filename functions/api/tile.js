@@ -16,8 +16,8 @@ export async function onRequestGet(context) {
   if (cached) return cached;
 
   const sources = [
-    `https://a.basemaps.cartocdn.com/light_all/${z}/${x}/${y}.png`,
-    `https://tile.openstreetmap.org/${z}/${x}/${y}.png`
+    `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
+    `https://tile.openstreetmap.fr/hot/${z}/${x}/${y}.png`
   ];
 
   let lastStatus = 502;

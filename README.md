@@ -37,3 +37,10 @@ Pages Functions가 정상 배포되어 있다면 HTTP 200 및 PNG 이미지가 �
 - targetSdk 36
 - versionCode 64
 - versionName 6.4.0
+
+
+## MVP 6.5 지도 스타일 수정
+- 기본 지도: OpenFreeMap Liberty 컬러 벡터 스타일 (`https://tiles.openfreemap.org/styles/liberty`)
+- API KEY REQUIRED 워터마크를 발생시키던 기존 Carto 타일 경로 제거
+- OpenFreeMap 로딩 실패 시 OpenStreetMap Standard → OSM HOT 컬러 타일 순서로 fallback
+- 지도는 흑백이 아니라 도로·공원·수계·POI가 구분되는 컬러 스타일을 기본 적용

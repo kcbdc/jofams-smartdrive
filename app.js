@@ -78,12 +78,11 @@ async function loadMapLibre(){
   }
   throw lastError||new Error('MapLibre module unavailable');
 }
-function rasterStyle(provider='proxy'){
-  const tiles=provider==='proxy'
-    ? [`${location.origin}/api/tile?z={z}&x={x}&y={y}`]
-    : provider==='osm'
-      ? ['https://tile.openstreetmap.org/{z}/{x}/{y}.png']
-      : ['https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png','https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png','https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'];
+const COLOR_MAP_STYLE='https://tiles.openfreemap.org/styles/liberty';
+function rasterStyle(provider='osm'){
+  const tiles=provider==='osm'
+    ? ['https://tile.openstreetmap.org/{z}/{x}/{y}.png']
+    : ['https://tile.openstreetmap.fr/hot/{z}/{x}/{y}.png'];
   return {version:8,sources:{base:{type:'raster',tiles,tileSize:256,attribution:'© OpenStreetMap contributors'}},layers:[{id:'base',type:'raster',source:'base',minzoom:0,maxzoom:20}]};
 }
 function mapHasRenderedTiles(){
@@ -91,7 +90,7 @@ function mapHasRenderedTiles(){
 }
 function useMapFallback(){
   if(!state.map)return;
-  const next=state.mapFallbackTried===false?'osm':state.mapFallbackTried==='osm'?'carto':null;
+  const next=state.mapFallbackTried===false?'osm':state.mapFallbackTried==='osm'?'hot':null;
   if(!next)return;
   state.mapFallbackTried=next;
   try{
@@ -103,7 +102,7 @@ async function initMap(){
   try{
     await loadMapLibre();
     if(!maplibregl?.Map)throw new Error('MapLibre library unavailable');
-    state.map=new maplibregl.Map({container:'map',style:rasterStyle('proxy'),center:[127.3847,36.3784],zoom:14,attributionControl:false,fadeDuration:0,refreshExpiredTiles:false});
+    state.map=new maplibregl.Map({container:'map',style:COLOR_MAP_STYLE,center:[127.3847,36.3784],zoom:14,attributionControl:true,fadeDuration:0,refreshExpiredTiles:false});
     state.map.on('load',()=>{
       state.mapReady=true;state.map.resize();
       if(state.pendingRouteDraw){const p=state.pendingRouteDraw;state.pendingRouteDraw=null;drawRoute(p.route,p.options)}
