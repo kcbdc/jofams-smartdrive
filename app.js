@@ -288,16 +288,15 @@ function drawARScene(){
   const ctx=canvas.getContext('2d');ctx.clearRect(0,0,w,h);ctx.save();ctx.scale(dpr,dpr);
   const W=rect.width,H=rect.height,horizon=H*.27,bottom=H*.90;
 
-  // MVP 7.4: thicker, screen-filling chevrons with a strong blue glow halo.
-  // No separate inner specular highlight layer — just one clean glowing gradient fill per arrow.
-  // Non-linear spacing keeps distant arrows separated while making the guide feel long and deep.
-  const positions=[.91,.80,.70,.61,.53,.46,.40,.35,.30,.26,.225,.195,.168,.145,.124,.105];
+  // MVP 7.5: fewer, noticeably larger chevrons with a strong blue glow halo — matches the
+  // reference AR guide-line look (big bold arrows receding into the distance, not a dense trail).
+  const positions=[.90,.74,.60,.48,.38,.30,.23,.17];
   ctx.lineCap='butt';ctx.lineJoin='miter';ctx.miterLimit=3;
 
   function chevronPath(cx,cy,halfWidth,height,thickness){
     const p=new Path2D();
     const yTop=cy-height*.56, yMid=cy-height*.05, yBottom=cy+height*.52;
-    const innerHalf=Math.max(2,halfWidth-thickness);
+    const innerHalf=Math.max(3,halfWidth-thickness);
     p.moveTo(cx-halfWidth,yMid);
     p.lineTo(cx,yTop);
     p.lineTo(cx+halfWidth,yMid);
@@ -310,17 +309,17 @@ function drawARScene(){
 
   for(let i=positions.length-1;i>=0;i--){
     const t=positions[i], y=horizon+(bottom-horizon)*t;
-    const perspective=.18+.98*Math.pow(t,.82);
-    const half=Math.min(W*.42,58*perspective);
-    const height=46*perspective;
-    const thickness=Math.max(8,25*perspective);
+    const perspective=.22+1.05*Math.pow(t,.78);
+    const half=Math.min(W*.5,82*perspective);
+    const height=66*perspective;
+    const thickness=Math.max(12,36*perspective);
     const path=chevronPath(W/2,y,half,height,thickness);
 
     // Wide, strong blue glow halo around the arrow (double pass = bolder, more luminous).
     ctx.save();
     ctx.shadowColor='rgba(20,150,255,.95)';
-    ctx.shadowBlur=36*perspective+16;
-    ctx.fillStyle=`rgba(10,140,255,${.24+.32*t})`;
+    ctx.shadowBlur=44*perspective+20;
+    ctx.fillStyle=`rgba(10,140,255,${.26+.34*t})`;
     ctx.fill(path);
     ctx.fill(path);
     ctx.restore();
@@ -328,7 +327,7 @@ function drawARScene(){
     // Solid glowing body: one clean gradient fill, no extra inner sparkle/highlight layer.
     ctx.save();
     ctx.shadowColor='rgba(70,200,255,.9)';
-    ctx.shadowBlur=12*perspective+5;
+    ctx.shadowBlur=16*perspective+6;
     const grad=ctx.createLinearGradient(W/2,y-height*.65,W/2,y+height*.65);
     grad.addColorStop(0,`rgba(130,232,255,${.58+.3*t})`);
     grad.addColorStop(.5,`rgba(32,172,255,${.64+.3*t})`);
