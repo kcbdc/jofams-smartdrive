@@ -1,9 +1,10 @@
 const $ = id => document.getElementById(id);
 const CONFIG = window.__APP_CONFIG__ || {};
+let maplibregl = null;
 const characterDefs = {
   daim:{name:'다임',car:'/assets/daim_car.png',marker:'/assets/daim_car_marker.png',avatar:'/assets/daim.png',rate:.96,pitch:1.08,voiceLabel:'다임 보이스'},
-  sunsik:{name:'순식',car:'/assets/sunsik_car.png',marker:'/assets/sunsik_car_marker.png',avatar:'/assets/sunsik.png',rate:.98,pitch:.72,voiceLabel:'순식 남성 보이스'},
-  hunmin:{name:'훈민',car:'/assets/hunmin_car.png',marker:'/assets/hunmin_car_marker.png',avatar:'/assets/hunmin.png',rate:1.08,pitch:.82,voiceLabel:'훈민 보이스'}
+  sunsik:{name:'순식',car:'/assets/sunsik_car.png',marker:'/assets/sunsik_car_marker.png',avatar:'/assets/sunsik.png',rate:.86,pitch:.62,voiceLabel:'순식 · 저음 중년남성 보이스'},
+  hunmin:{name:'훈민',car:'/assets/hunmin_car.png',marker:'/assets/hunmin_car_marker.png',avatar:'/assets/hunmin.png',rate:1.12,pitch:1.08,voiceLabel:'훈민 · 밝은 청년남성 보이스'}
 };
 const state = {
   map:null,mapReady:false,pendingRouteDraw:null,mapFallbackTried:false,mapWatchdog:0,user:null, destination:null, routeOptions:[], route:null, selectedRoute:0,
@@ -65,33 +66,50 @@ function buildCumulative(route){const g=route?.geometry||[],arr=new Array(g.leng
 function normalizedPlace(x){return x?{id:x.id||'',name:x.name||'목적지',address:x.address||'',lng:Number(x.lng),lat:Number(x.lat)}:null}
 
 /* ---------- MAP ---------- */
-function rasterStyle(provider='carto'){
-  const tiles=provider==='osm'
-    ? ['https://tile.openstreetmap.org/{z}/{x}/{y}.png']
-    : ['https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png','https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png','https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'];
+async function loadMapLibre(){
+  if(maplibregl)return maplibregl;
+  const sources=[
+    'https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.mjs',
+    'https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.mjs'
+  ];
+  let lastError=null;
+  for(const src of sources){
+    try{maplibregl=await import(src);return maplibregl}catch(e){lastError=e;console.warn('MapLibre module load failed',src,e)}
+  }
+  throw lastError||new Error('MapLibre module unavailable');
+}
+function rasterStyle(provider='proxy'){
+  const tiles=provider==='proxy'
+    ? [`${location.origin}/api/tile?z={z}&x={x}&y={y}`]
+    : provider==='osm'
+      ? ['https://tile.openstreetmap.org/{z}/{x}/{y}.png']
+      : ['https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png','https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png','https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'];
   return {version:8,sources:{base:{type:'raster',tiles,tileSize:256,attribution:'© OpenStreetMap contributors'}},layers:[{id:'base',type:'raster',source:'base',minzoom:0,maxzoom:20}]};
 }
 function mapHasRenderedTiles(){
   try{return Boolean(state.map?.getCanvas()?.width&&state.map?.getCanvas()?.height&&state.map?.isStyleLoaded()&&(typeof state.map.areTilesLoaded!=='function'||state.map.areTilesLoaded()))}catch{return false}
 }
 function useMapFallback(){
-  if(!state.map||state.mapFallbackTried)return;
-  state.mapFallbackTried=true;
+  if(!state.map)return;
+  const next=state.mapFallbackTried===false?'osm':state.mapFallbackTried==='osm'?'carto':null;
+  if(!next)return;
+  state.mapFallbackTried=next;
   try{
-    state.map.setStyle(rasterStyle('osm'));
-    state.map.once('styledata',()=>{state.mapReady=true;refreshMapLayout({fitRoute:Boolean(state.route)});if(state.route)drawRoute(state.route,{fit:true})});
+    state.map.setStyle(rasterStyle(next));
+    state.map.once('styledata',()=>{state.mapReady=true;refreshMapLayout({fitRoute:Boolean(state.route)});if(state.route)drawRoute(state.route,{fit:true});setTimeout(()=>{if(!mapHasRenderedTiles())useMapFallback()},2600)});
   }catch(e){console.warn('map fallback failed',e)}
 }
-function initMap(){
+async function initMap(){
   try{
-    if(typeof maplibregl==='undefined')throw new Error('MapLibre library unavailable');
-    state.map=new maplibregl.Map({container:'map',style:rasterStyle('carto'),center:[127.3847,36.3784],zoom:14,attributionControl:false,fadeDuration:0,refreshExpiredTiles:false});
+    await loadMapLibre();
+    if(!maplibregl?.Map)throw new Error('MapLibre library unavailable');
+    state.map=new maplibregl.Map({container:'map',style:rasterStyle('proxy'),center:[127.3847,36.3784],zoom:14,attributionControl:false,fadeDuration:0,refreshExpiredTiles:false});
     state.map.on('load',()=>{
       state.mapReady=true;state.map.resize();
       if(state.pendingRouteDraw){const p=state.pendingRouteDraw;state.pendingRouteDraw=null;drawRoute(p.route,p.options)}
       permissionStatus('geolocation').then(s=>{if(s==='granted')locate(false)});
       clearTimeout(state.mapWatchdog);
-      state.mapWatchdog=setTimeout(()=>{if(!mapHasRenderedTiles())useMapFallback()},3500);
+      state.mapWatchdog=setTimeout(()=>{if(!mapHasRenderedTiles())useMapFallback()},2200);
     });
     let sourceErrors=0;
     state.map.on('error',e=>{
@@ -268,17 +286,22 @@ function checkOffRoute(idx){if(Date.now()-state.lastRerouteAt<15000)return;const
 function koreanVoices(){return speechSynthesis.getVoices().filter(v=>/^ko(-|_)/i.test(v.lang||'')||/korean|한국|ko-KR/i.test(`${v.lang||''} ${v.name||''}`))}
 function pickCharacterVoice(character){
   const voices=koreanVoices();if(!voices.length)return null;
-  const score=(v,terms)=>terms.reduce((n,t)=>n+(new RegExp(t,'i').test(`${v.name||''} ${v.voiceURI||''}`)?10:0),0);
+  const meta=v=>`${v.name||''} ${v.voiceURI||''}`;
+  const score=(v,positive=[],negative=[])=>positive.reduce((n,t)=>n+(new RegExp(t,'i').test(meta(v))?12:0),0)-negative.reduce((n,t)=>n+(new RegExp(t,'i').test(meta(v))?8:0),0);
   if(character==='sunsik'){
-    const maleTerms=['InJoon','In-Joon','Minho','Min-ho','Joon','Hyun','Male','Man','남성','남자'];
-    return [...voices].sort((a,b)=>score(b,maleTerms)-score(a,maleTerms))[0]||voices[0];
+    const mature=['InJoon','In-Joon','Hyun','Hyeon','Mature','Deep','Bass','Baritone','Older','Middle','Male','Man','남성','남자'];
+    const youthful=['Young','Youth','Joon','Minho','Min-ho','Bright','Junior','청년','젊'];
+    return [...voices].sort((a,b)=>score(b,mature,youthful)-score(a,mature,youthful))[0]||voices[0];
   }
-  if(character==='daim'){
-    const femaleTerms=['SunHi','Sun-Hi','Yuna','YoonA','Female','Woman','여성','여자'];
-    return [...voices].sort((a,b)=>score(b,femaleTerms)-score(a,femaleTerms))[0]||voices[0];
+  if(character==='hunmin'){
+    const youthful=['Minho','Min-ho','Joon','Young','Youth','Bright','Junior','Male','Man','청년','젊','밝'];
+    const mature=['Deep','Bass','Baritone','Older','Mature','Middle','저음','중년'];
+    const sorted=[...voices].sort((a,b)=>score(b,youthful,mature)-score(a,youthful,mature));
+    const sunsikVoice=voices.length>1?pickCharacterVoice('sunsik'):null;
+    return sorted.find(v=>!sunsikVoice||v.voiceURI!==sunsikVoice.voiceURI)||sorted[0]||voices[0];
   }
-  const maleTerms=['InJoon','Minho','Joon','Male','Man','남성'];
-  return [...voices].sort((a,b)=>score(b,maleTerms)-score(a,maleTerms))[0]||voices.at(-1)||voices[0];
+  const female=['SunHi','Sun-Hi','Yuna','YoonA','Female','Woman','여성','여자'];
+  return [...voices].sort((a,b)=>score(b,female)-score(a,female))[0]||voices[0];
 }
 function speak(text){
   if(!state.sound||!('speechSynthesis'in window)||!text)return;

@@ -1,4 +1,4 @@
-const CACHE='jofams-smartdrive-mvp6-3-map-permission-20260901';
+const CACHE='jofams-smartdrive-mvp6-4-map-voice-20260901';
 const STATIC=[
   '/','/index.html','/styles.css','/app.js','/manifest.webmanifest',
   '/assets/daim.png','/assets/sunsik.png','/assets/hunmin.png',
