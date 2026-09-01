@@ -235,9 +235,14 @@
         <div id="favoritesList" class="account-list"></div>
         <div id="historyList" class="account-list hidden"></div>
 
-        <div class="settings-card">
-          <div class="settings-title"><b>음성 가이드</b><span>상황별 안내 음성</span></div>
-          <div class="volume-demo"><span class="svg-icon" data-icon="sound-on"></span><div><i></i></div><b>80%</b></div>
+        <div class="settings-card voice-settings-card">
+          <div class="settings-title"><b>음성 가이드</b><span>안내 음량을 0~100%로 조절할 수 있습니다.</span></div>
+          <div class="volume-control-row">
+            <button id="voiceToggleBtn" class="voice-toggle-btn" type="button" aria-label="음성 안내 켜기/끄기"><span class="svg-icon" data-icon="sound-on"></span></button>
+            <input id="voiceVolume" class="voice-volume-slider" type="range" min="0" max="100" step="5" value="80" aria-label="음성 안내 볼륨" />
+            <output id="voiceVolumeValue" for="voiceVolume">80%</output>
+          </div>
+          <div class="voice-preview-row"><button id="voicePreviewBtn" type="button">안내 음성 미리듣기</button><small id="voiceGuideStatus">음성 안내 켜짐</small></div>
         </div>
         <div class="settings-card">
           <div class="settings-title"><b>조팸스 가이드 모드</b><span>AUTO 또는 캐릭터 고정</span></div>

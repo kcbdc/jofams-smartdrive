@@ -9,7 +9,7 @@ const GUEST_SETTINGS_KEY = 'jofams.v4.settings';
 
 const state = {
   map:null,user:null,destination:null,route:null,userMarker:null,destMarker:null,watchId:null,
-  navigating:false,sound:true,autoCharacter:true,priority:'RECOMMEND',avoid:null,currentCharacter:'daim',
+  navigating:false,sound:true,voiceVolume:.8,autoCharacter:true,priority:'RECOMMEND',avoid:null,currentCharacter:'daim',
   lastSpeech:'',lastRerouteAt:0,offRouteCount:0,currentRouteIndex:0,nextGuide:null,nextGuideDistance:0,
   lastGuideSpeechKey:'',deviceHeading:null,smoothedHeading:null,devicePitch:null,arStream:null,arMode:'off',xrSession:null,xrGl:null,
   arHeadingOffset:0,arFrame:0,tripStartedAt:null,tripStartPosition:null,nativeLane:null,safety:null,imageDirection:null,roadEvents:[],nativeMultiRoute:null,
@@ -261,10 +261,19 @@ function setCharacter(key,message,speakIt=false){
   syncCharacterButtons();
   if(speakIt)speak(message||c.msg);
 }
-function speak(text){
-  if(!state.sound||!('speechSynthesis' in window)||!text||text===state.lastSpeech)return;
-  state.lastSpeech=text;window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='ko-KR';u.rate=1.02;window.speechSynthesis.speak(u);
+function speak(text,{force=false}={}){
+  if(!state.sound||state.voiceVolume<=0||!('speechSynthesis' in window)||!text||(!force&&text===state.lastSpeech))return;
+  state.lastSpeech=text;window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='ko-KR';u.rate=1.02;u.volume=Math.max(0,Math.min(1,Number(state.voiceVolume)||0));window.speechSynthesis.speak(u);
 }
+function updateVoiceControls(){
+  const pct=Math.round((Number(state.voiceVolume)||0)*100);
+  if($('voiceVolume')) $('voiceVolume').value=String(pct);
+  if($('voiceVolumeValue')) $('voiceVolumeValue').textContent=`${pct}%`;
+  if($('voiceGuideStatus')) $('voiceGuideStatus').textContent=state.sound&&pct>0?'음성 안내 켜짐':'음성 안내 꺼짐';
+  const slot=$('voiceToggleBtn')?.querySelector('.svg-icon');if(slot)slot.innerHTML=iconSvg(state.sound&&pct>0?'sound-on':'sound-off');
+  $('voiceToggleBtn')?.classList.toggle('off',!state.sound||pct===0);
+}
+
 
 async function locate(fly=true){
   if(!navigator.geolocation){toast('이 기기는 위치 기능을 지원하지 않습니다.');return}
@@ -625,8 +634,8 @@ function toggleSimulation(){state.sim.active?stopSimulation():startSimulation()}
 
 /* Favorites + Firebase */
 function localPreferences(){try{return JSON.parse(localStorage.getItem(GUEST_SETTINGS_KEY)||'{}')}catch{return {}}}
-function applyPreferences(p={}){if(typeof p.sound==='boolean')state.sound=p.sound;if(typeof p.autoCharacter==='boolean')state.autoCharacter=p.autoCharacter;if(p.character&&characters[p.character])state.currentCharacter=p.character;if(Number.isFinite(Number(p.arHeadingOffset)))state.arHeadingOffset=Number(p.arHeadingOffset);state.savedPlaces.home=normalizePlaceData(p.homePlace)||null;state.savedPlaces.work=normalizePlaceData(p.workPlace)||null;setSoundButtonIcon();$('characterModeBtn').textContent=state.autoCharacter?'AUTO':'FIX';setCharacter(state.currentCharacter);syncCharacterButtons();updateHomeWorkButtons()}
-async function savePreferences(){const p={sound:state.sound,autoCharacter:state.autoCharacter,character:state.currentCharacter,arHeadingOffset:state.arHeadingOffset,homePlace:state.savedPlaces.home||null,workPlace:state.savedPlaces.work||null,updatedAt:Date.now()};localStorage.setItem(GUEST_SETTINGS_KEY,JSON.stringify(p));if(state.firebase.user){const {fsMod}=state.firebase.mods;await fsMod.setDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'),{...p,updatedAt:fsMod.serverTimestamp()},{merge:true}).catch(()=>{})}}
+function applyPreferences(p={}){if(typeof p.sound==='boolean')state.sound=p.sound;if(Number.isFinite(Number(p.voiceVolume)))state.voiceVolume=Math.max(0,Math.min(1,Number(p.voiceVolume)));if(typeof p.autoCharacter==='boolean')state.autoCharacter=p.autoCharacter;if(p.character&&characters[p.character])state.currentCharacter=p.character;if(Number.isFinite(Number(p.arHeadingOffset)))state.arHeadingOffset=Number(p.arHeadingOffset);state.savedPlaces.home=normalizePlaceData(p.homePlace)||null;state.savedPlaces.work=normalizePlaceData(p.workPlace)||null;setSoundButtonIcon();$('characterModeBtn').textContent=state.autoCharacter?'AUTO':'FIX';setCharacter(state.currentCharacter);syncCharacterButtons();updateHomeWorkButtons();updateVoiceControls()}
+async function savePreferences(){const p={sound:state.sound,voiceVolume:state.voiceVolume,autoCharacter:state.autoCharacter,character:state.currentCharacter,arHeadingOffset:state.arHeadingOffset,homePlace:state.savedPlaces.home||null,workPlace:state.savedPlaces.work||null,updatedAt:Date.now()};localStorage.setItem(GUEST_SETTINGS_KEY,JSON.stringify(p));if(state.firebase.user){const {fsMod}=state.firebase.mods;await fsMod.setDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'),{...p,updatedAt:fsMod.serverTimestamp()},{merge:true}).catch(()=>{})}}
 async function loadPreferences(){let p=localPreferences();if(state.firebase.user){try{const {fsMod}=state.firebase.mods,snap=await fsMod.getDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'));if(snap.exists())p={...p,...snap.data()}}catch{}}applyPreferences(p)}
 
 function firebaseConfig(){return window.__APP_CONFIG__?.firebase||{}}
@@ -721,10 +730,13 @@ function bindUI(){
   $('acceptFasterRouteBtn').onclick=acceptPendingAlternative;$('dismissFasterRouteBtn').onclick=()=>{$('fasterRouteBanner').classList.add('hidden');state.pendingAlternative=null;state.nativeMultiRoute=null};
   $('characterModeBtn').onclick=()=>{state.autoCharacter=!state.autoCharacter;$('characterModeBtn').textContent=state.autoCharacter?'AUTO':'FIX';syncCharacterButtons();savePreferences();toast(state.autoCharacter?'상황별 캐릭터 자동 전환':'현재 캐릭터 고정')};
   $('closeAccountBtn').onclick=closeAccount;$('accountModal').addEventListener('click',e=>{if(e.target===$('accountModal'))closeAccount()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;
-  $('closeMenuBtn').onclick=closeMenuDrawer;$('menuBackdrop').onclick=closeMenuDrawer;document.querySelectorAll('[data-menu-action]').forEach(b=>b.onclick=()=>{const action=b.dataset.menuAction;closeMenuDrawer();if(action==='home')setUiStage('home');else if(action==='route')menuRoutePreview();else if(action==='drive')toggleDemoMode('drive');else if(action==='parking')menuParkingPreview();else if(action==='my')openAccount('favorites');else if(action==='sound'){state.sound=!state.sound;savePreferences();toast(state.sound?'음성 안내 켜짐':'음성 안내 꺼짐')}});
+  $('closeMenuBtn').onclick=closeMenuDrawer;$('menuBackdrop').onclick=closeMenuDrawer;document.querySelectorAll('[data-menu-action]').forEach(b=>b.onclick=()=>{const action=b.dataset.menuAction;closeMenuDrawer();if(action==='home')setUiStage('home');else if(action==='route')menuRoutePreview();else if(action==='drive'){if(state.navigating)setUiStage('drive');else if(state.route){setUiStage('route');toast('안내 시작을 누르면 주행 HUD가 표시됩니다.')}else{setUiStage('home');toast('목적지를 먼저 선택해 주세요.')}}else if(action==='parking')menuParkingPreview();else if(action==='my')openAccount('favorites');else if(action==='sound'){state.sound=!state.sound;updateVoiceControls();savePreferences();toast(state.sound?'음성 안내 켜짐':'음성 안내 꺼짐')}});
   $('closeNoticeBtn').onclick=closeNoticeModal;$('noticeModal').addEventListener('click',e=>{if(e.target===$('noticeModal'))closeNoticeModal()});
+  $('voiceVolume').addEventListener('input',e=>{state.voiceVolume=Math.max(0,Math.min(1,Number(e.target.value)/100));if(state.voiceVolume===0)state.sound=false;else if(!state.sound)state.sound=true;updateVoiceControls()});$('voiceVolume').addEventListener('change',()=>savePreferences());
+  $('voiceToggleBtn').onclick=()=>{state.sound=!state.sound;if(state.sound&&state.voiceVolume===0)state.voiceVolume=.5;updateVoiceControls();savePreferences();toast(state.sound?'음성 안내 켜짐':'음성 안내 꺼짐')};
+  $('voicePreviewBtn').onclick=()=>{if(!state.sound||state.voiceVolume<=0){state.sound=true;if(state.voiceVolume<=0)state.voiceVolume=.5;updateVoiceControls();savePreferences()}state.lastSpeech='';speak('다임입니다. 음성 안내 볼륨을 확인해 주세요.',{force:true})};
   document.querySelectorAll('.account-tab').forEach(b=>b.onclick=()=>setAccountTab(b.dataset.tab||'favorites'));
-  syncCharacterButtons();updateSimButton();setUiStage('home');updateHomeWorkButtons();setAccountTab('favorites');updateFavoriteButton();
+  syncCharacterButtons();updateVoiceControls();updateSimButton();setUiStage('home');updateHomeWorkButtons();setAccountTab('favorites');updateFavoriteButton();
 }
 
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));

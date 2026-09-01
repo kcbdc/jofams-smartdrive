@@ -28,3 +28,14 @@
 ## 참고
 - 기존 환경설정 파일을 유지하면서 UI 중심 고도화가 가능하도록 구성했습니다.
 - 브라우저 캐시가 남아 있으면 새 UI가 늦게 반영될 수 있으므로 강력 새로고침 또는 서비스워커 갱신 후 확인하세요.
+
+## 2026-09-01 Stable UI 수정
+- 누적 CSS override를 제거하고 반응형 CSS를 단일 규칙으로 재구성
+- 햄버거 메뉴 `주행 화면` 클릭 시 존재하지 않는 함수 호출 오류 수정
+- Drawer를 `position: fixed` 기준으로 재구성하여 클릭/오버레이 오류 방지
+- 홈/경로/주행/AR/MY의 z-index, bottom safe-area, max-height 충돌 정리
+- 마이페이지 음성 가이드 볼륨 0~100% 슬라이더 추가
+- 볼륨 값은 localStorage 및 로그인 시 Firestore preferences에 동기화
+- TTS `SpeechSynthesisUtterance.volume`에 실제 볼륨 값 적용
+- 음성 ON/OFF 및 미리듣기 기능 추가
+- 서비스워커 캐시 키 갱신
