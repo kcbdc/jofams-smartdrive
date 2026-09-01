@@ -85,6 +85,7 @@
 
       <button id="driveVoiceBtn" class="floating-voice" aria-label="음성안내"><span data-icon="mic"></span></button>
       <button id="arOpenBtn" class="floating-ar" aria-label="AR 안내">AR</button>
+      <div id="driveDestinationPill" class="drive-destination-pill"><span>목적지</span><b id="driveDestinationName">목적지</b></div>
 
       <div id="safetyAlert" class="safety-alert hidden" role="status" aria-live="polite">
         <div id="safetyAlertIcon" class="safety-alert-icon"></div>
@@ -93,8 +94,6 @@
       </div>
 
       <div id="vmsBanner" class="vms-banner hidden" role="status" aria-live="polite"><span>전광판</span><b id="vmsText">전방 교통정보를 확인하세요.</b></div>
-
-      <div id="laneGuideOverlay" class="lane-guide-overlay hidden" aria-label="차로 안내"><small>차로 안내</small><div id="laneGuideArrows"></div></div>
 
       <div id="trafficStatus" class="traffic-status traffic-unknown" role="status" aria-live="polite">
         <span class="traffic-dot"></span>
@@ -260,7 +259,7 @@
         <div class="ar-guide-card"><div id="arTurnIcon" class="ar-turn-icon"></div><div><b id="arTurnDistance">--m</b><small id="arTurnRoad">다음 안내</small></div></div>
       </header>
       <div class="ar-center-distance" id="arCenterDistance">--m</div>
-      <div class="ar-character-car"><img id="arCharacterCar" src="/assets/daim_car_marker.png" alt="안내 캐릭터 자동차"><div id="arSpeech">안전하게 안내할게요.</div></div>
+      <div id="arCharacterMarker" class="ar-character-car"><img id="arCharacterCar" src="/assets/daim_car_marker.png" alt="안내 캐릭터 자동차"></div>
       <div class="ar-bottom-info"><div><strong id="arSpeed">0</strong><span>km/h</span></div><div><small>도착</small><b id="arEta">--:--</b><span id="arRemain">--km</span></div></div>
     </section>
 
