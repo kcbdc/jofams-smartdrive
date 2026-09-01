@@ -12,7 +12,7 @@ const state = {
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
   savedPlaces:{home:null,work:null},favorites:[],placeKind:null,origin:null,originMode:'current',
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,
-  firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
+  tripHistory:[],firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
 };
 
 /* ---------- SVG ICONS ---------- */
@@ -95,16 +95,24 @@ function useMapFallback(){
   state.mapFallbackTried=next;
   try{
     state.map.setStyle(rasterStyle(next));
-    state.map.once('styledata',()=>{state.mapReady=true;refreshMapLayout({fitRoute:Boolean(state.route)});if(state.route)drawRoute(state.route,{fit:true});setTimeout(()=>{if(!mapHasRenderedTiles())useMapFallback()},2600)});
+    state.map.once('styledata',()=>{state.mapReady=true;enforce2DMap();refreshMapLayout({fitRoute:Boolean(state.route)});if(state.route)drawRoute(state.route,{fit:true});setTimeout(()=>{if(!mapHasRenderedTiles())useMapFallback()},2600)});
   }catch(e){console.warn('map fallback failed',e)}
+}
+function enforce2DMap(){
+  if(!state.map)return;
+  try{
+    state.map.setPitch(0);
+    const layers=state.map.getStyle()?.layers||[];
+    layers.filter(l=>l.type==='fill-extrusion').forEach(l=>{try{state.map.setLayoutProperty(l.id,'visibility','none')}catch{}});
+  }catch(e){console.warn('2D map enforcement failed',e)}
 }
 async function initMap(){
   try{
     await loadMapLibre();
     if(!maplibregl?.Map)throw new Error('MapLibre library unavailable');
-    state.map=new maplibregl.Map({container:'map',style:COLOR_MAP_STYLE,center:[127.3847,36.3784],zoom:14,attributionControl:true,fadeDuration:0,refreshExpiredTiles:false});
+    state.map=new maplibregl.Map({container:'map',style:COLOR_MAP_STYLE,center:[127.3847,36.3784],zoom:14,pitch:0,maxPitch:0,bearing:0,pitchWithRotate:false,dragRotate:false,touchPitch:false,attributionControl:true,fadeDuration:0,refreshExpiredTiles:false});
     state.map.on('load',()=>{
-      state.mapReady=true;state.map.resize();
+      state.mapReady=true;enforce2DMap();state.map.resize();
       if(state.pendingRouteDraw){const p=state.pendingRouteDraw;state.pendingRouteDraw=null;drawRoute(p.route,p.options)}
       permissionStatus('geolocation').then(s=>{if(s==='granted')locate(false)});
       clearTimeout(state.mapWatchdog);
@@ -250,20 +258,28 @@ function drawARScene(){
 }
 
 /* ---------- DRIVE ---------- */
+function saveTripHistory(){try{localStorage.setItem(TRIP_HISTORY,JSON.stringify(state.tripHistory.slice(0,50)))}catch{}}
+function addTripHistory(entry){state.tripHistory=[entry,...state.tripHistory].slice(0,50);saveTripHistory();updateTripHistorySummary()}
+function updateTripHistorySummary(){if($('tripHistorySummary'))$('tripHistorySummary').textContent=state.tripHistory.length?`최근 ${state.tripHistory.length}건 저장`:'주행 기록이 없습니다.'}
+function openInfoModal(title,html){$('infoModalTitle').textContent=title;$('infoModalBody').innerHTML=html;$('infoModal').classList.remove('hidden');applyIcons($('infoModalBody'))}
+function closeInfoModal(){$('infoModal').classList.add('hidden')}
+function openTripHistory(){const items=state.tripHistory||[];const html=items.length?`<div class="history-list">${items.map(x=>`<article><b>${escapeHtml(x.destination||'목적지')}</b><small>${escapeHtml(x.date||'')} · ${km(Number(x.distance)||0)} · ${mins(Number(x.duration)||0)}</small><em>${escapeHtml(characterDefs[x.character]?.name||'')}</em></article>`).join('')}</div>`:'<div class="empty-info">저장된 주행 기록이 없습니다.</div>';openInfoModal('주행기록',html)}
+function openAppInfo(){openInfoModal('앱정보','<div class="info-card"><h3>조팸스 스마트 드라이브</h3><p><b>버전</b> MVP 6.6</p><p>2D 컬러 지도, 길찾기, AR 안내와 다임·순식·훈민 캐릭터 음성 안내를 제공합니다.</p></div>')}
+function openPrivacy(){openInfoModal('개인정보처리방침','<div class="info-card privacy-copy"><h3>개인정보 처리 안내</h3><p>길안내를 위해 사용자가 허용한 경우 현재 위치 정보를 이용합니다. AR 안내는 카메라 영상을 기기 화면에 표시하며, 본 앱 소스에서는 카메라 영상을 서버에 저장하지 않습니다.</p><p>Google 로그인 사용 시 계정의 기본 프로필 정보와 사용자가 저장한 설정·즐겨찾기를 Firebase에 동기화할 수 있습니다. 권한은 브라우저 또는 앱 설정에서 언제든 변경할 수 있습니다.</p><p>실제 상용 배포 전에는 운영주체, 처리 목적, 보유기간, 제3자 제공·처리위탁, 이용자 권리 및 문의처를 반영한 공식 개인정보처리방침으로 교체해야 합니다.</p></div>')}
 async function logTrip(event){try{await fetch('/api/trip',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({event,destination:state.destination?.name||null,distance:state.route?.distance||null,duration:state.tripStartedAt?Math.round((Date.now()-state.tripStartedAt)/1000):null,character:state.character,provider:state.route?.provider||null,guideType:null})})}catch{}}
 function setView(view){
   $('homeView').classList.toggle('hidden',view!=='home');$('routeView').classList.toggle('hidden',view!=='route');$('driveView').classList.toggle('hidden',view!=='drive');
   $('bottomNav').classList.toggle('hidden',view==='drive'||state.arRunning);
   document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.classList.toggle('active',b.dataset.bottomNav===view||(view==='drive'&&b.dataset.bottomNav==='realtime')));
-  if(view==='home'&&state.map){state.map.easeTo({pitch:0,bearing:0})}
+  if(state.map){enforce2DMap();if(view==='home')state.map.easeTo({pitch:0,bearing:0})}
   refreshMapLayout({fitRoute:view==='route'&&Boolean(state.route)});
 }
 function startNavigation(){if(!state.route||!state.destination)return;cancelAutoStart();state.tripStartedAt=Date.now();logTrip('start');setView('drive');startWatch();ensureUserMarker();updateCarMarkerImage();state.routeCumulative=buildCumulative(state.route);drawRoute(state.route,{fit:false});updateDriving(true);speak(`${characterDefs[state.character].name}이 안내를 시작합니다.`)}
-function stopNavigation(){if(state.tripStartedAt)logTrip('finish');state.tripStartedAt=0;stopAR();stopWatch();cancelAutoStart();$('driveMenu').classList.add('hidden');clearRouteLayer();state.route=null;state.routeOptions=[];if(state.destMarker){state.destMarker.remove();state.destMarker=null}if(state.originMarker){state.originMarker.remove();state.originMarker=null}state.destination=null;state.origin=null;state.originMode='current';setView('home');toast('안내를 종료했습니다.')}
+function stopNavigation(){if(state.tripStartedAt){logTrip('finish');addTripHistory({destination:state.destination?.name||'목적지',date:new Date().toLocaleString('ko-KR'),distance:state.route?.distance||0,duration:Math.round((Date.now()-state.tripStartedAt)/1000),character:state.character})}state.tripStartedAt=0;stopAR();stopWatch();cancelAutoStart();$('driveMenu').classList.add('hidden');clearRouteLayer();state.route=null;state.routeOptions=[];if(state.destMarker){state.destMarker.remove();state.destMarker=null}if(state.originMarker){state.originMarker.remove();state.originMarker=null}state.destination=null;state.origin=null;state.originMode='current';setView('home');toast('안내를 종료했습니다.')}
 function updateDriving(force=false){
   if(!state.user||!state.route?.geometry?.length)return;const g=state.route.geometry,idx=nearestIndex(state.user.lng,state.user.lat,g);state.currentRouteIndex=idx;ensureUserMarker();
   const nextPoint=g[Math.min(g.length-1,idx+3)],heading=Number.isFinite(state.user.heading)?state.user.heading:(nextPoint?bearing(state.user.lat,state.user.lng,nextPoint[1],nextPoint[0]):0);
-  state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:48,bearing:heading,duration:force?0:650,padding:{top:120,bottom:170,left:0,right:0}});
+  state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:0,bearing:heading,duration:force?0:650,padding:{top:120,bottom:170,left:0,right:0}});
   updateProgressUI(idx);if(state.arRunning)updateAROverlay();checkOffRoute(idx);
 }
 function updateProgressUI(idx){
@@ -308,7 +324,7 @@ function speak(text){
   const chosen=pickCharacterVoice(state.character);if(chosen)u.voice=chosen;
   speechSynthesis.cancel();speechSynthesis.speak(u)
 }
-function loadLocal(){try{const p=JSON.parse(localStorage.getItem(SETTINGS)||'{}');if(p.character&&characterDefs[p.character])state.character=p.character;if(Number.isFinite(Number(p.voiceVolume)))state.voiceVolume=Number(p.voiceVolume);state.savedPlaces.home=p.home||null;state.savedPlaces.work=p.work||null;state.favorites=JSON.parse(localStorage.getItem(FAVS)||'[]')}catch{}syncCharacterUI();updateSavedLabels();updateVolumeUI()}
+function loadLocal(){try{const p=JSON.parse(localStorage.getItem(SETTINGS)||'{}');if(p.character&&characterDefs[p.character])state.character=p.character;if(Number.isFinite(Number(p.voiceVolume)))state.voiceVolume=Number(p.voiceVolume);state.savedPlaces.home=p.home||null;state.savedPlaces.work=p.work||null;state.favorites=JSON.parse(localStorage.getItem(FAVS)||'[]');state.tripHistory=JSON.parse(localStorage.getItem(TRIP_HISTORY)||'[]')}catch{}syncCharacterUI();updateSavedLabels();updateVolumeUI()}
 function saveLocalSettings(){localStorage.setItem(SETTINGS,JSON.stringify({character:state.character,voiceVolume:state.voiceVolume,home:state.savedPlaces.home,work:state.savedPlaces.work}))}
 function favoriteId(p){return `${Number(p.lat).toFixed(5)}_${Number(p.lng).toFixed(5)}`}
 async function toggleFavorite(){if(!state.destination)return;const id=favoriteId(state.destination),i=state.favorites.findIndex(x=>x.id===id);if(i>=0)state.favorites.splice(i,1);else state.favorites.unshift({...state.destination,id});localStorage.setItem(FAVS,JSON.stringify(state.favorites));updateSavedLabels();await saveCloudFavorites();toast(i>=0?'즐겨찾기에서 삭제했습니다.':'즐겨찾기에 저장했습니다.')}
@@ -390,7 +406,7 @@ function startVoiceCommand(){
 
 function openDriveMenu(){$('driveMenu').classList.remove('hidden')}
 function closeDriveMenu(){$('driveMenu').classList.add('hidden')}
-function openMy(){$('myModal').classList.remove('hidden');renderProfile();syncCharacterUI();updateVolumeUI()}
+function openMy(){$('myModal').classList.remove('hidden');renderProfile();syncCharacterUI();updateVolumeUI();updateTripHistorySummary()}
 function closeMy(){$('myModal').classList.add('hidden')}
 function toggleSettingPanel(buttonId,panelId){const btn=$(buttonId),panel=$(panelId),open=panel.classList.contains('hidden');panel.classList.toggle('hidden',!open);btn.setAttribute('aria-expanded',String(open));if(open)setTimeout(()=>panel.scrollIntoView({behavior:'smooth',block:'nearest'}),50)}
 async function shareArrival(){if(!state.destination)return;const text=`${state.destination.name}으로 이동 중입니다. 예상 도착 ${$('arrivalTime').textContent.replace('도착 ','')}`;try{if(navigator.share)await navigator.share({title:'조팸스 스마트 드라이브',text});else await navigator.clipboard.writeText(text),toast('도착 정보를 복사했습니다.')}catch{}}
@@ -403,9 +419,9 @@ function bindUI(){
   $('voiceGuideSettingBtn').onclick=()=>toggleSettingPanel('voiceGuideSettingBtn','voiceGuidePanel');$('characterSettingBtn').onclick=()=>toggleSettingPanel('characterSettingBtn','characterSettingPanel');$('voicePreviewBtn').onclick=()=>speak(`${characterDefs[state.character].name}이 길안내를 시작합니다. 안전운전하세요.`);
   $('menuBtn').onclick=openMy;$('myBtn').onclick=openMy;$('routeBackBtn').onclick=()=>{cancelAutoStart();setView('home')};$('routeFavoriteBtn').onclick=toggleFavorite;$('startBtn').onclick=startNavigation;$('routeOriginBtn').onclick=openOriginModal;
   $('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=reroute;$('driveVoiceBtn').onclick=startVoiceCommand;$('arOpenBtn').onclick=startAR;$('driveArBtn').onclick=startAR;document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{closeDriveMenu();stopWatch();setView('route');loadRouteOptions()};$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;
-  $('guideVolume').oninput=e=>changeVolume(e.target.value);$('myGuideVolume').oninput=e=>changeVolume(e.target.value);$('myCloseBtn').onclick=closeMy;$('myModal').addEventListener('click',e=>{if(e.target===$('myModal'))closeMy()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;$('myFavoritesBtn').onclick=()=>toast(state.favorites.length?`즐겨찾기 ${state.favorites.length}곳이 저장되어 있습니다.`:'저장된 즐겨찾기가 없습니다.');
+  $('guideVolume').oninput=e=>changeVolume(e.target.value);$('myGuideVolume').oninput=e=>changeVolume(e.target.value);$('myCloseBtn').onclick=closeMy;$('myModal').addEventListener('click',e=>{if(e.target===$('myModal'))closeMy()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;$('myFavoritesBtn').onclick=()=>toast(state.favorites.length?`즐겨찾기 ${state.favorites.length}곳이 저장되어 있습니다.`:'저장된 즐겨찾기가 없습니다.');$('tripHistoryBtn').onclick=openTripHistory;$('appInfoBtn').onclick=openAppInfo;$('privacyBtn').onclick=openPrivacy;$('infoModalClose').onclick=closeInfoModal;$('infoModal').addEventListener('click',e=>{if(e.target===$('infoModal'))closeInfoModal()});
   $('originModalClose').onclick=closeOriginModal;$('useCurrentOriginBtn').onclick=useCurrentOrigin;$('originSearchBtn').onclick=()=>searchOrigins($('originSearchInput').value);$('originSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchOrigins(e.target.value)});$('originModal').addEventListener('click',e=>{if(e.target===$('originModal'))closeOriginModal()});$('arCloseBtn').onclick=stopAR;document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.bottomNav;if(nav==='home'){cancelAutoStart();setView('home')}else if(nav==='route'){if(state.destination){setView('route');refreshMapLayout({fitRoute:true})}else{setView('home');$('destinationInput').focus();toast('목적지를 검색해 주세요.')}}else if(nav==='realtime'){if(state.route&&state.destination){if(state.tripStartedAt)setView('drive');else startNavigation()}else toast('먼저 길찾기를 완료해 주세요.')}else if(nav==='my')openMy()});$('placeModalClose').onclick=()=>$('placeModal').classList.add('hidden');$('placeSearchBtn').onclick=()=>searchPlaces($('placeSearchInput').value,'placeSearchResults');$('placeSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value,'placeSearchResults')});$('placeModal').addEventListener('click',e=>{if(e.target===$('placeModal'))$('placeModal').classList.add('hidden')});
 }
 
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
-applyIcons();loadLocal();bindUI();initMap();initFirebase();renderProfile();updateOriginUI();setView('home');if('speechSynthesis'in window){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices()}setTimeout(showPermissionGate,180);
+applyIcons();loadLocal();bindUI();initMap();initFirebase();renderProfile();updateOriginUI();updateTripHistorySummary();setView('home');if('speechSynthesis'in window){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices()}setTimeout(showPermissionGate,180);

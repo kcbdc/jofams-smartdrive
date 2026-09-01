@@ -39,8 +39,14 @@ Pages Functions가 정상 배포되어 있다면 HTTP 200 및 PNG 이미지가 �
 - versionName 6.4.0
 
 
-## MVP 6.5 지도 스타일 수정
+## MVP 6.6 지도 스타일 수정
 - 기본 지도: OpenFreeMap Liberty 컬러 벡터 스타일 (`https://tiles.openfreemap.org/styles/liberty`)
 - API KEY REQUIRED 워터마크를 발생시키던 기존 Carto 타일 경로 제거
 - OpenFreeMap 로딩 실패 시 OpenStreetMap Standard → OSM HOT 컬러 타일 순서로 fallback
 - 지도는 흑백이 아니라 도로·공원·수계·POI가 구분되는 컬러 스타일을 기본 적용
+
+
+## MVP 6.6 변경
+- 장소 검색 결과를 검색어 포함/정확 일치 우선으로 재정렬하고 역명 검색을 보강했습니다.
+- 지도는 pitch 0의 2D 컬러 탑뷰로 고정하며 3D 건물 레이어를 숨깁니다.
+- MY에 주행기록, 앱정보, 개인정보처리방침 메뉴를 추가했습니다.

@@ -137,6 +137,7 @@
         </div>
         <div class="setting-list">
           <button id="myFavoritesBtn"><span data-icon="star-outline"></span><span><b>즐겨찾기</b><small id="myFavoriteCount">0곳 저장</small></span><i data-icon="chevron"></i></button>
+          <button id="tripHistoryBtn"><span data-icon="routes"></span><span><b>주행기록</b><small id="tripHistorySummary">최근 주행 내역</small></span><i data-icon="chevron"></i></button>
           <button id="voiceGuideSettingBtn" aria-expanded="false"><span data-icon="volume"></span><span><b>음성 가이드</b><small id="voiceCharacterLabel">다임 보이스</small></span><i data-icon="chevron"></i></button>
           <div id="voiceGuidePanel" class="setting-expand hidden">
             <div class="voice-choice-grid" role="group" aria-label="음성 가이드 선택">
@@ -155,7 +156,17 @@
               <button type="button" data-my-character="hunmin"><img src="/assets/hunmin_car.png" alt="훈민 자동차"><span><b>훈민</b><small>재탐색을 명확하게</small></span></button>
             </div>
           </div>
+          <button id="appInfoBtn"><span data-icon="settings"></span><span><b>앱정보</b><small>버전 및 서비스 정보</small></span><i data-icon="chevron"></i></button>
+          <button id="privacyBtn"><span data-icon="user"></span><span><b>개인정보처리방침</b><small>위치·카메라·계정 정보 안내</small></span><i data-icon="chevron"></i></button>
         </div>
+      </section>
+    </div>
+
+    <!-- INFO / HISTORY -->
+    <div id="infoModal" class="modal hidden">
+      <section class="simple-sheet info-sheet">
+        <header><b id="infoModalTitle">정보</b><button id="infoModalClose" class="circle-btn"><span data-icon="close"></span></button></header>
+        <div id="infoModalBody" class="info-modal-body"></div>
       </section>
     </div>
 
