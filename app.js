@@ -23,7 +23,7 @@ const state = {
 
 const characters = {
   daim:{name:'다임',role:'정확한 안내',img:'/assets/daim.png',msg:'복잡한 구간도 차근차근 정확하게 안내할게요.',voice:{rate:.96,pitch:1.16,label:'차분하고 또렷한 음성'}},
-  sunsik:{name:'순식',role:'즐거운 동행',img:'/assets/sunsik.png',msg:'막히는 길도 너무 답답해하지 마세요. 제가 같이 갈게요!',voice:{rate:.94,pitch:.88,label:'친근하고 여유로운 음성'}},
+  sunsik:{name:'순식',role:'즐거운 동행',img:'/assets/sunsik.png',msg:'막히는 길도 너무 답답해하지 마세요. 제가 같이 갈게요!',voice:{rate:.92,pitch:.62,label:'든든하고 여유로운 남성 음성',gender:'male'}},
   hunmin:{name:'훈민',role:'신속한 판단',img:'/assets/hunmin.png',msg:'상황 변화 감지. 가장 빠르게 다음 경로를 정리합니다.',voice:{rate:1.10,pitch:.72,label:'짧고 신속한 음성'}}
 };
 
@@ -77,16 +77,19 @@ function directionName(type){
   return 'straight';
 }
 function directionSvg(name,color='currentColor'){
-  const stroke = `stroke="${color}" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round" fill="none"`;
-  if(name==='arrive') return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="${color}" opacity=".16"/><path ${stroke} d="m7 12.2 3.2 3.2L17.5 8"/></svg>`;
-  if(name==='roundabout') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M7 10a5.5 5.5 0 1 1 2 8.4"/><path ${stroke} d="m6 7 1.2 3.7 3.8-1.1"/><path ${stroke} d="m18 16-1.2-3.7-3.8 1.1"/></svg>`;
-  if(name==='u-turn') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M15 19V9a3.5 3.5 0 1 0-7 0v2"/><path ${stroke} d="m4 9 4 4 4-4"/></svg>`;
-  if(name==='turn-left') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M18.5 7H10a5 5 0 0 0-5 5v5"/><path ${stroke} d="m10 3-4 4 4 4"/></svg>`;
-  if(name==='turn-right') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M5.5 7H14a5 5 0 0 1 5 5v5"/><path ${stroke} d="m14 3 4 4-4 4"/></svg>`;
-  if(name==='slight-left') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M17 18V9.8c0-1.8-1.3-3.1-3.1-3.1H9.5"/><path ${stroke} d="m10.5 3.5-4 3.2 4 3.2"/></svg>`;
-  if(name==='slight-right') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M7 18V9.8c0-1.8 1.3-3.1 3.1-3.1h4.4"/><path ${stroke} d="m13.5 3.5 4 3.2-4 3.2"/></svg>`;
-  if(name==='merge') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M12 18V5"/><path ${stroke} d="m8.5 8 3.5-3 3.5 3"/><path ${stroke} d="M6 18c0-2.9 1.5-4.7 4-5.8"/></svg>`;
-  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M12 19V5"/><path ${stroke} d="m8.5 8 3.5-3 3.5 3"/></svg>`;
+  // Thick rounded stem + a solid filled arrowhead, matching the bold single-color turn
+  // arrows used on the reference HUD / AR guidance banners.
+  const stroke = `stroke="${color}" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round" fill="none"`;
+  const head = `fill="${color}" stroke="none"`;
+  if(name==='arrive') return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="${color}" opacity=".18"/><path stroke="${color}" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round" fill="none" d="m7 12.2 3.2 3.2L17.5 8"/></svg>`;
+  if(name==='roundabout') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M7 10a5.5 5.5 0 1 1 2 8.4"/><path ${head} d="m5.4 6.4 1.5 4.3 4.2-1.4-2.2-1.1-1-2.2z"/></svg>`;
+  if(name==='u-turn') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M15 19V9a3.5 3.5 0 1 0-7 0v2"/><path ${head} d="M4 9h8l-4 5z"/></svg>`;
+  if(name==='turn-left') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M18.5 7H10a5 5 0 0 0-5 5v5"/><path ${head} d="M10 3 6 7l4 4z"/></svg>`;
+  if(name==='turn-right') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M5.5 7H14a5 5 0 0 1 5 5v5"/><path ${head} d="M14 3 18 7l-4 4z"/></svg>`;
+  if(name==='slight-left') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M17 18V9.8c0-1.8-1.3-3.1-3.1-3.1H9.5"/><path ${head} d="m10.5 3.5-4 3.2 4 3.2z"/></svg>`;
+  if(name==='slight-right') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M7 18V9.8c0-1.8 1.3-3.1 3.1-3.1h4.4"/><path ${head} d="m13.5 3.5 4 3.2-4 3.2z"/></svg>`;
+  if(name==='merge') return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M12 18V6.4"/><path ${head} d="M8.5 8 12 5l3.5 3z"/><path ${stroke} d="M6 18c0-2.9 1.5-4.7 4-5.8"/></svg>`;
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path ${stroke} d="M12 19V6.4"/><path ${head} d="M8.5 8 12 5l3.5 3z"/></svg>`;
 }
 function setDirectionIcon(el,type,color='currentColor'){if(el)el.innerHTML=`<span class="svg-icon">${directionSvg(directionName(type),color)}</span>`}
 function laneTurnNames(turnType){
@@ -278,12 +281,27 @@ function refreshSpeechVoices(){
   state.speechVoices=voices.filter(v=>/^ko([-_]|$)/i.test(v.lang||''));
   return state.speechVoices;
 }
+const MALE_VOICE_HINT=/male|man\b|남성|남자|injoon|in-?joon|철수|민수|현우|승기|준서|훈|dongho|donghyun/i;
+const FEMALE_VOICE_HINT=/female|woman|여성|여자|heami|sunhi|yuna|지민|서현|나연|유나|희진/i;
 function voiceForCharacter(key){
   const voices=state.speechVoices.length?state.speechVoices:refreshSpeechVoices();
   if(!voices.length)return null;
   const sorted=[...voices].sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
   const preferred=sorted.filter(v=>/google|microsoft|samsung|apple|korean|한국/i.test(v.name||''));
   const pool=preferred.length?preferred:sorted;
+  const c=characters[key];
+  // Sunsik always speaks with an explicitly male-sounding voice when the device exposes one.
+  if(c?.voice?.gender==='male'){
+    const male=pool.find(v=>MALE_VOICE_HINT.test(v.name||'')&&!FEMALE_VOICE_HINT.test(v.name||''));
+    if(male)return male;
+    // No device voice is labeled male: fall back to the last voice in the pool, which is
+    // most often distinct from the default (typically female) system voice used by 다임.
+    return pool[pool.length-1]||pool[0]||null;
+  }
+  if(c?.voice?.gender==='female'){
+    const female=pool.find(v=>FEMALE_VOICE_HINT.test(v.name||'')&&!MALE_VOICE_HINT.test(v.name||''));
+    if(female)return female;
+  }
   const index=key==='daim'?0:key==='sunsik'?Math.min(1,pool.length-1):pool.length-1;
   return pool[Math.max(0,index)]||pool[0]||null;
 }
@@ -606,7 +624,7 @@ function numericSafetyLimit(x){for(const v of [x?.speedLimit,x?.speed_limit,x?.l
 function eventMessage(e){if(!e)return '';const code=Number(e.code);const type=Number(e.type);const kind=code===0?'사고':code===1?'공사':code===2?'행사':code===3?'통제':'도로 유고';return e.message||e.title||e.desc||`${kind}${type===1?' · 전면 통제':type===2?' · 부분 통제':''}`}
 function renderSafetyState(pos,road){
   const native=state.safety||{};const routeSafety=(road?.safeties||[])[0]||{};const speedLimit=numericSafetyLimit(native)||numericSafetyLimit(routeSafety)||Number(road?.speedLimit)||0;const speed=Number.isFinite(pos?.speed)?Math.max(0,pos.speed*3.6):0;
-  const lim=$('hudSpeedLimit');lim.textContent=speedLimit?`제한 ${Math.round(speedLimit)}`:'제한 --';lim.classList.toggle('hidden',!speedLimit);const over=speedLimit>0&&speed>speedLimit+4;$('hudSpeed').closest('.hud-speed')?.classList.toggle('overspeed',over);
+  const lim=$('hudSpeedLimit');lim.textContent=speedLimit?String(Math.round(speedLimit)):'--';lim.classList.toggle('hidden',!speedLimit);const over=speedLimit>0&&speed>speedLimit+4;$('hudSpeed').closest('.hud-speed')?.classList.toggle('overspeed',over);
   const nativeMsg=native.message||native.name||'';const events=(state.roadEvents?.length?state.roadEvents:(road?.roadEvents||state.route?.roadEvents||[]));const event=events.find(x=>!x.passed)||events[0];const msg=nativeMsg||eventMessage(event);const el=$('hudSafety');el.textContent=msg||'안전정보';el.classList.toggle('hidden',!msg);
   if(over){const key=`over:${Math.round(speedLimit)}`;if(state.lastSafetySpeechKey!==key){state.lastSafetySpeechKey=key;speak(`제한속도 ${Math.round(speedLimit)}킬로미터 구간입니다. 속도를 줄여 주세요.`,{characterKey:'hunmin'});if(navigator.vibrate)navigator.vibrate([120,60,120])}}
   else if(state.lastSafetySpeechKey?.startsWith('over:'))state.lastSafetySpeechKey='';if(msg&&(native.urgent||Number(event?.type)>0))setCharacter('hunmin',msg,false)
@@ -687,25 +705,33 @@ function drawRouteCorridor(){
   }
   if(pts.length<2)return;
   ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.globalCompositeOperation='source-over';
-  // Perspective blue route ribbon: draw far-to-near so the lower part naturally widens.
+  // Flat blue guide lane (thin bright edges over a soft blue fill), matching the simple
+  // virtual guide-line style used on the reference AR screen rather than a glowing tube.
   for(let i=pts.length-2;i>=0;i--){
-    const a=pts[i],b=pts[i+1],near=(a.near+b.near)/2,width=18+near*74;
-    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle=`rgba(0,116,255,${.38+near*.34})`;ctx.lineWidth=width+14;ctx.shadowColor='rgba(0,166,255,.85)';ctx.shadowBlur=18+near*20;ctx.stroke();
-    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle=`rgba(16,126,244,${.54+near*.28})`;ctx.lineWidth=width;ctx.shadowBlur=0;ctx.stroke();
-    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle=`rgba(84,195,255,${.65+near*.28})`;ctx.lineWidth=Math.max(2,width*.08);ctx.stroke();
+    const a=pts[i],b=pts[i+1],near=(a.near+b.near)/2,width=16+near*66;
+    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle=`rgba(20,120,255,${.30+near*.28})`;ctx.lineWidth=width;ctx.shadowBlur=0;ctx.stroke();
   }
-  // Repeated white chevrons like a commercial AR navigation lane.
-  const step=Math.max(2,Math.floor(pts.length/7));
+  // Large, evenly spaced solid chevrons pointing up the lane, like the reference overlay.
+  const step=Math.max(3,Math.floor(pts.length/5));
   for(let i=1;i<pts.length-1;i+=step){
-    const p=pts[i],next=pts[Math.min(pts.length-1,i+1)],dx=next.x-p.x,dy=next.y-p.y,len=Math.hypot(dx,dy)||1,fx=dx/len,fy=dy/len,nx=-fy,ny=fx,size=10+p.near*25,half=8+p.near*19;
-    const tipX=p.x+fx*size*.7,tipY=p.y+fy*size*.7,backX=p.x-fx*size*.55,backY=p.y-fy*size*.55;
-    ctx.beginPath();ctx.moveTo(backX+nx*half,backY+ny*half);ctx.lineTo(tipX,tipY);ctx.lineTo(backX-nx*half,backY-ny*half);ctx.strokeStyle=`rgba(255,255,255,${.78+p.near*.2})`;ctx.lineWidth=3+p.near*6;ctx.shadowColor='rgba(0,92,190,.55)';ctx.shadowBlur=8;ctx.stroke();
+    const p=pts[i],next=pts[Math.min(pts.length-1,i+1)],dx=next.x-p.x,dy=next.y-p.y,len=Math.hypot(dx,dy)||1,fx=dx/len,fy=dy/len,nx=-fy,ny=fx,size=16+p.near*34,half=12+p.near*26;
+    const tipX=p.x+fx*size*.85,tipY=p.y+fy*size*.85,backX=p.x-fx*size*.4,backY=p.y-fy*size*.4;
+    ctx.beginPath();
+    ctx.moveTo(backX+nx*half,backY+ny*half);
+    ctx.lineTo(tipX,tipY);
+    ctx.lineTo(backX-nx*half,backY-ny*half);
+    ctx.lineTo(p.x-fx*size*.05+nx*half*.4,p.y-fy*size*.05+ny*half*.4);
+    ctx.lineTo(p.x-fx*size*.05-nx*half*.4,p.y-fy*size*.05-ny*half*.4);
+    ctx.closePath();
+    ctx.fillStyle=`rgba(255,255,255,${.88+p.near*.12})`;
+    ctx.shadowColor='rgba(15,90,220,.5)';ctx.shadowBlur=6;
+    ctx.fill();
   }
   ctx.restore();
 }
 function calibrateAR(){const gps=state.user?.heading;if(Number.isFinite(gps)&&Number.isFinite(state.smoothedHeading)){state.arHeadingOffset=normalizeAngle(gps-state.smoothedHeading);savePreferences();toast('현재 주행 방향을 기준으로 AR을 보정했습니다.')}else{state.arHeadingOffset=0;toast('GPS 진행방향이 확보되면 더 정확하게 보정할 수 있습니다.')}}
 function updateAROverlay(){
-  if(!$('arView')||$('arView').classList.contains('hidden')||!state.user||!state.nextGuide)return;const g=state.nextGuide;setDirectionIcon($('arArrow'),g.type,'#79b2ff');$('arDistance').textContent=state.nextGuideDistance<60?'곧':km(state.nextGuideDistance);$('arText').textContent=g.guidance||g.name||'다음 방향';
+  if(!$('arView')||$('arView').classList.contains('hidden')||!state.user||!state.nextGuide)return;const g=state.nextGuide;setDirectionIcon($('arArrow'),g.type,'#ffffff');$('arDistance').textContent=state.nextGuideDistance<60?'곧':km(state.nextGuideDistance);$('arText').textContent=g.guidance||g.name||'다음 방향';
   const target=bearingTo(state.user.lat,state.user.lng,g.y,g.x),heading=arHeading();if(Number.isFinite(heading)){const diff=normalizeAngle(target-heading),offset=clamp(diff/70,-1,1)*Math.min(innerWidth*.3,145);$('arDirection').style.transform=`translateX(calc(-50% + ${offset}px))`;}
   $('arConfidenceValue').textContent=`${arConfidence()}%`;drawRouteCorridor();
 }
