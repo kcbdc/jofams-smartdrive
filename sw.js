@@ -1,4 +1,4 @@
-const CACHE='jofams-smartdrive-mvp5-pre-stable-20260901b';
+const CACHE='jofams-smartdrive-mvp5-pre-voice-ui-20260901';
 const STATIC=['/','/index.html','/styles.css','/app.js','/native-bridge.js','/manifest.webmanifest','/assets/daim.png','/assets/sunsik.png','/assets/hunmin.png'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(STATIC)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(Promise.all([caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))),self.clients.claim()])));

@@ -17,13 +17,14 @@ const state = {
   lastGpsAt:0,lastRealGps:null,positionSource:'gps',nativeTunnel:false,tunnel:{active:false,timer:null,distanceOnRoute:0,lastTick:0,lastSpeed:0},
   parking:[],parkingProvider:'',parkingLoadedFor:'',destinationCorrection:null,lastSafetySpeechKey:'',sim:{active:false,timer:null,index:0,speedKmh:45},haptic:true,
   firebase:{configured:false,ready:false,auth:null,db:null,user:null,mods:null},
-  favorites:[],history:[],activeAccountTab:'favorites',demoMode:null,savedPlaces:{home:null,work:null},registerKind:null
+  favorites:[],history:[],activeAccountTab:'favorites',demoMode:null,savedPlaces:{home:null,work:null},registerKind:null,
+  speechVoices:[],layerLayoutRaf:0
 };
 
 const characters = {
-  daim:{name:'다임',role:'정확한 안내',img:'/assets/daim.png',msg:'복잡한 구간도 차근차근 정확하게 안내할게요.'},
-  sunsik:{name:'순식',role:'즐거운 동행',img:'/assets/sunsik.png',msg:'막히는 길도 너무 답답해하지 마세요. 제가 같이 갈게요!'},
-  hunmin:{name:'훈민',role:'신속한 판단',img:'/assets/hunmin.png',msg:'상황 변화 감지. 가장 빠르게 다음 경로를 정리합니다.'}
+  daim:{name:'다임',role:'정확한 안내',img:'/assets/daim.png',msg:'복잡한 구간도 차근차근 정확하게 안내할게요.',voice:{rate:.96,pitch:1.16,label:'차분하고 또렷한 음성'}},
+  sunsik:{name:'순식',role:'즐거운 동행',img:'/assets/sunsik.png',msg:'막히는 길도 너무 답답해하지 마세요. 제가 같이 갈게요!',voice:{rate:.94,pitch:.88,label:'친근하고 여유로운 음성'}},
+  hunmin:{name:'훈민',role:'신속한 판단',img:'/assets/hunmin.png',msg:'상황 변화 감지. 가장 빠르게 다음 경로를 정리합니다.',voice:{rate:1.10,pitch:.72,label:'짧고 신속한 음성'}}
 };
 
 function iconSvg(name){
@@ -131,7 +132,6 @@ function updateHomeWorkButtons(){
   if($('favoritesShortcutMeta')) $('favoritesShortcutMeta').textContent=count?`저장 ${count}곳 관리`:'자유롭게 관리';
 }
 function setSoundButtonIcon(){ document.querySelectorAll('[data-menu-action="sound"] .svg-icon').forEach(slot=>{slot.innerHTML=iconSvg(state.sound?'sound-on':'sound-off')}) }
-function setAccountButtonIcon(){}
 async function searchFirstPlace(query){
   const u=new URL('/api/search',location.origin);u.searchParams.set('q',query.trim());
   if(state.user){u.searchParams.set('lng',state.user.lng);u.searchParams.set('lat',state.user.lat)}
@@ -251,27 +251,84 @@ function normalizeAngle(a){let x=(a+180)%360;if(x<0)x+=360;return x-180}
 function haversine(lat1,lon1,lat2,lon2){const R=6371000,p=Math.PI/180;const a=Math.sin((lat2-lat1)*p/2)**2+Math.cos(lat1*p)*Math.cos(lat2*p)*Math.sin((lon2-lon1)*p/2)**2;return 2*R*Math.asin(Math.sqrt(a))}
 function bearingTo(lat1,lon1,lat2,lon2){const p=Math.PI/180;const y=Math.sin((lon2-lon1)*p)*Math.cos(lat2*p);const x=Math.cos(lat1*p)*Math.sin(lat2*p)-Math.sin(lat1*p)*Math.cos(lat2*p)*Math.cos((lon2-lon1)*p);return (Math.atan2(y,x)/p+360)%360}
 
-function setCharacter(key,message,speakIt=false){
-  const c=characters[key]||characters.daim;
-  state.currentCharacter=key;
-  $('characterAvatar').src=c.img;$('characterAvatar').alt=`${c.name} 캐릭터`;
-  $('arCharacter').src=c.img;$('arCharacter').alt=`${c.name} 캐릭터`;
-  $('characterName').textContent=c.name;$('characterRole').textContent=c.role;$('characterMessage').textContent=message||c.msg;
-  $('arCharacterMsg').textContent=message||c.msg;
-  syncCharacterButtons();
-  if(speakIt)speak(message||c.msg);
+function refreshSpeechVoices(){
+  if(!('speechSynthesis' in window))return [];
+  const voices=window.speechSynthesis.getVoices?.()||[];
+  state.speechVoices=voices.filter(v=>/^ko([-_]|$)/i.test(v.lang||''));
+  return state.speechVoices;
 }
-function speak(text,{force=false}={}){
-  if(!state.sound||state.voiceVolume<=0||!('speechSynthesis' in window)||!text||(!force&&text===state.lastSpeech))return;
-  state.lastSpeech=text;window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='ko-KR';u.rate=1.02;u.volume=Math.max(0,Math.min(1,Number(state.voiceVolume)||0));window.speechSynthesis.speak(u);
+function voiceForCharacter(key){
+  const voices=state.speechVoices.length?state.speechVoices:refreshSpeechVoices();
+  if(!voices.length)return null;
+  const sorted=[...voices].sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+  const preferred=sorted.filter(v=>/google|microsoft|samsung|apple|korean|한국/i.test(v.name||''));
+  const pool=preferred.length?preferred:sorted;
+  const index=key==='daim'?0:key==='sunsik'?Math.min(1,pool.length-1):pool.length-1;
+  return pool[Math.max(0,index)]||pool[0]||null;
+}
+function setCharacter(key,message,speakIt=false){
+  const normalized=characters[key]?key:'daim',c=characters[normalized],changed=state.currentCharacter!==normalized;
+  state.currentCharacter=normalized;
+  if(changed){
+    $('characterAvatar').src=c.img;$('characterAvatar').alt=`${c.name} 캐릭터`;
+    $('arCharacter').src=c.img;$('arCharacter').alt=`${c.name} 캐릭터`;
+    $('characterName').textContent=c.name;$('characterRole').textContent=c.role;
+    syncCharacterButtons();updateVoiceProfileUI();
+  }
+  const copy=message||c.msg;
+  if($('characterMessage').textContent!==copy)$('characterMessage').textContent=copy;
+  if($('arCharacterMsg').textContent!==copy)$('arCharacterMsg').textContent=copy;
+  if(speakIt)speak(copy,{characterKey:normalized});
+}
+function speak(text,{force=false,characterKey=state.currentCharacter}={}){
+  if(!state.sound||state.voiceVolume<=0||!('speechSynthesis' in window)||!text)return;
+  const speechKey=`${characterKey}:${text}`;
+  if(!force&&speechKey===state.lastSpeech)return;
+  state.lastSpeech=speechKey;
+  window.speechSynthesis.cancel();
+  const profile=(characters[characterKey]||characters.daim).voice||characters.daim.voice;
+  const u=new SpeechSynthesisUtterance(text);u.lang='ko-KR';u.rate=profile.rate;u.pitch=profile.pitch;u.volume=clamp(Number(state.voiceVolume)||0,0,1);
+  const voice=voiceForCharacter(characterKey);if(voice)u.voice=voice;
+  window.speechSynthesis.speak(u);
+}
+function updateVoiceProfileUI(){
+  document.querySelectorAll('[data-voice-profile]').forEach(el=>el.classList.toggle('active',el.dataset.voiceProfile===state.currentCharacter));
+  const c=characters[state.currentCharacter]||characters.daim;
+  const status=$('voiceGuideStatus');if(status&&state.sound&&state.voiceVolume>0)status.textContent=`${c.name} · ${c.voice.label}`;
 }
 function updateVoiceControls(){
   const pct=Math.round((Number(state.voiceVolume)||0)*100);
   if($('voiceVolume')) $('voiceVolume').value=String(pct);
   if($('voiceVolumeValue')) $('voiceVolumeValue').textContent=`${pct}%`;
-  if($('voiceGuideStatus')) $('voiceGuideStatus').textContent=state.sound&&pct>0?'음성 안내 켜짐':'음성 안내 꺼짐';
+  if($('voiceGuideStatus')) $('voiceGuideStatus').textContent=state.sound&&pct>0?`${characters[state.currentCharacter]?.name||'다임'} · ${characters[state.currentCharacter]?.voice?.label||'음성 안내'}`:'음성 안내 꺼짐';
   const slot=$('voiceToggleBtn')?.querySelector('.svg-icon');if(slot)slot.innerHTML=iconSvg(state.sound&&pct>0?'sound-on':'sound-off');
-  $('voiceToggleBtn')?.classList.toggle('off',!state.sound||pct===0);
+  $('voiceToggleBtn')?.classList.toggle('off',!state.sound||pct===0);setSoundButtonIcon();updateVoiceProfileUI();
+}
+function previewCharacterVoice(key=state.currentCharacter){
+  const c=characters[key]||characters.daim;
+  state.lastSpeech='';
+  const scripts={daim:'다임입니다. 다음 교차로와 차선을 정확하게 안내할게요.',sunsik:'순식입니다. 길이 조금 막혀도 여유 있게 함께 가요.',hunmin:'훈민입니다. 경로 변경을 감지하면 빠르게 재탐색하겠습니다.'};
+  speak(scripts[key]||scripts.daim,{force:true,characterKey:key});
+}
+function scheduleLayerLayout(){
+  cancelAnimationFrame(state.layerLayoutRaf);state.layerLayoutRaf=requestAnimationFrame(layoutActiveLayers);
+}
+function layoutActiveLayers(){
+  if(!document.body.classList.contains('driving'))return;
+  const gap=8,g=$('guidanceCard'),lane=$('lanePanel'),ix=$('intersectionPanel'),hud=$('driveHud'),fast=$('fasterRouteBanner');
+  if(!g||g.classList.contains('hidden'))return;
+  const gRect=g.getBoundingClientRect();
+  if(lane&&!lane.classList.contains('hidden'))lane.style.top=`${Math.round(gRect.bottom+gap)}px`;
+  const laneRect=lane&&!lane.classList.contains('hidden')?lane.getBoundingClientRect():gRect;
+  if(ix&&!ix.classList.contains('hidden')){
+    const desired=laneRect.bottom+gap, hudTop=hud&&!hud.classList.contains('hidden')?hud.getBoundingClientRect().top:innerHeight-170;
+    const room=hudTop-desired-gap;
+    ix.classList.toggle('layer-no-room',room<Math.max(94,ix.offsetHeight));
+    if(room>=Math.max(94,ix.offsetHeight))ix.style.top=`${Math.round(desired)}px`;
+  }
+  if(fast&&!fast.classList.contains('hidden')&&hud&&!hud.classList.contains('hidden')){
+    const hudRect=hud.getBoundingClientRect();fast.style.bottom=`${Math.max(12,Math.round(innerHeight-hudRect.top+10))}px`;
+  }
 }
 
 
@@ -378,7 +435,7 @@ async function fetchAlternativeSnapshot(){
 async function checkAlternativeRoutes(){
   const candidates=await fetchAlternativeSnapshot();if(!candidates?.length||!state.route)return;
   const current=Math.max(1,state.route.liveRemainDuration||state.route.duration||1);const best=candidates.reduce((a,b)=>(b.duration||Infinity)<(a.duration||Infinity)?b:a,candidates[0]);const saving=current-(best.duration||current);
-  if(saving>=90&&saving/current>=.08){state.pendingAlternative=best;$('fasterRouteTitle').textContent=`${Math.max(2,Math.round(saving/60))}분 빠른 경로 발견`;$('fasterRouteDetail').textContent=`${km(best.distance)} · ${durationText(best.duration)} 예상`;$('fasterRouteBanner').classList.remove('hidden');setCharacter('hunmin',`더 빠른 경로를 찾았습니다. 약 ${Math.max(2,Math.round(saving/60))}분 줄일 수 있어요.`,true)}
+  if(saving>=90&&saving/current>=.08){state.pendingAlternative=best;$('fasterRouteTitle').textContent=`${Math.max(2,Math.round(saving/60))}분 빠른 경로 발견`;$('fasterRouteDetail').textContent=`${km(best.distance)} · ${durationText(best.duration)} 예상`;$('fasterRouteBanner').classList.remove('hidden');scheduleLayerLayout();setCharacter('hunmin',`더 빠른 경로를 찾았습니다. 약 ${Math.max(2,Math.round(saving/60))}분 줄일 수 있어요.`,true)}
 }
 function startAlternativeMonitor(){stopAlternativeMonitor();state.alternativeTimer=setInterval(()=>checkAlternativeRoutes(),120000);setTimeout(()=>{if(state.navigating)checkAlternativeRoutes()},30000)}
 function stopAlternativeMonitor(){if(state.alternativeTimer)clearInterval(state.alternativeTimer);state.alternativeTimer=null}
@@ -414,7 +471,7 @@ function startNavigation(){
   setUiStage('drive');document.body.classList.add('driving');$('searchPanel').classList.add('hidden');$('routeSummary').classList.add('hidden');$('navActions').classList.remove('hidden');$('guidanceCard').classList.remove('hidden');$('lanePanel').classList.remove('hidden');$('driveHud').classList.remove('hidden');
   if(state.watchId!==null)navigator.geolocation.clearWatch(state.watchId);
   if(!state.demoMode)state.watchId=navigator.geolocation.watchPosition(p=>{if(!state.sim.active)applyPosition(p,false)},e=>console.warn('watchPosition',e),{enableHighAccuracy:true,maximumAge:700,timeout:12000});
-  setCharacter('daim','안내를 시작합니다. 화면보다 도로를 먼저 확인해 주세요.',true);NativeBridge.requestLane();NativeBridge.requestSafety();NativeBridge.requestImageDirection();NativeBridge.requestRoadEvents();NativeBridge.requestAlternatives();NativeBridge.setNavigationState({active:true,destination:state.destination});startAlternativeMonitor();updateNavigation(state.user);logTelemetry('start');
+  setCharacter('daim','안내를 시작합니다. 화면보다 도로를 먼저 확인해 주세요.',true);NativeBridge.requestLane();NativeBridge.requestSafety();NativeBridge.requestImageDirection();NativeBridge.requestRoadEvents();NativeBridge.requestAlternatives();NativeBridge.setNavigationState({active:true,destination:state.destination});startAlternativeMonitor();updateNavigation(state.user);scheduleLayerLayout();logTelemetry('start');
 }
 
 async function stopNavigation({arrived=false}={}){
@@ -467,15 +524,9 @@ function renderGuidance(pos,guide,distance,remainDistance,remainDuration,road){
   $('etaText').textContent=eta(remainDuration);$('remainText').textContent=km(remainDistance);$('summaryEta').textContent=eta(remainDuration);$('summaryDuration').textContent=durationText(remainDuration);$('summaryDistance').textContent=km(remainDistance);
   const speedKmh=Number.isFinite(pos.speed)?Math.max(0,Math.round(pos.speed*3.6)):0;$('hudSpeed').textContent=speedKmh;$('hudRoad').textContent=roadName;$('hudTraffic').textContent=trafficText(road?.trafficState);$('hudEta').textContent=eta(remainDuration);$('hudRemain').textContent=`${km(remainDistance)} · ${durationText(remainDuration)}`;
   if($('arSpeedMirror'))$('arSpeedMirror').textContent=speedKmh;if($('arTripMirror'))$('arTripMirror').textContent=`${eta(remainDuration)} · ${km(remainDistance)} · ${durationText(remainDuration)}`;
-  renderLaneHint(type);
+  renderLaneHint(type);scheduleLayerLayout();
 }
 
-function maneuverIcon(type){
-  return directionName(type);
-}
-function laneTurnIcons(turnType){
-  return laneTurnNames(turnType).join(' · ');
-}
 function guideLineColor(code){return ({0:'분홍 유도선',1:'연녹색 유도선',2:'녹색 유도선',3:'하늘색 유도선'})[code]||'유도선 정보 없음'}
 function renderLaneHint(type){
   const box=$('lanes');box.innerHTML='';const packet=state.nativeLane;const nativeLanes=packet?.lanes;
@@ -493,16 +544,16 @@ function renderLaneHint(type){
     box.appendChild(el)
   }
   const label=LEFT_TYPES.has(type)?'좌측 차로를 미리 이용':RIGHT_TYPES.has(type)?'우측 차로를 미리 이용':type===3?'유턴 가능 차로 확인':ROUNDABOUT_TYPES.has(type)?'회전교차로 진출 방향 확인':'직진 차로 유지';
-  $('laneHint').textContent=`${label} · 웹 추정`;$('laneSourceBadge').textContent='WEB';$('laneSourceBadge').classList.remove('native');$('laneGuideLine').textContent='네이티브 SDK 연결 시 실제 유도선 표시';
+  $('laneHint').textContent=`${label} · 웹 추정`;$('laneSourceBadge').textContent='WEB';$('laneSourceBadge').classList.remove('native');$('laneGuideLine').textContent='네이티브 SDK 연결 시 실제 유도선 표시';scheduleLayerLayout();
 }
 
 
 function renderIntersectionGuide(guide,distance){
   const panel=$('intersectionPanel');if(!panel)return;const packet=state.imageDirection;const nativeImg=packet?.imageDataUrl||packet?.dataUrl||packet?.image;const complex=guide&&(ROUNDABOUT_TYPES.has(guide.type)||LEFT_TYPES.has(guide.type)||RIGHT_TYPES.has(guide.type)||[7,10,14,15,42,45].includes(guide.type));
   const packetDistance=Number(packet?.distance);const nearNative=packet&&(!Number.isFinite(packetDistance)||packetDistance<900);const showNative=nearNative&&typeof nativeImg==='string'&&nativeImg.startsWith('data:image/');const showFallback=complex&&distance<360;
-  if(!showNative&&!showFallback){panel.classList.add('hidden');return}panel.classList.remove('hidden');
+  if(!showNative&&!showFallback){panel.classList.add('hidden');scheduleLayerLayout();return}panel.classList.remove('hidden');
   if(showNative){$('intersectionImage').src=nativeImg;$('intersectionImage').classList.remove('hidden');$('intersectionFallback').classList.add('hidden');$('intersectionSource').textContent='KAKAO SDK';$('intersectionSource').classList.add('native')}
-  else{$('intersectionImage').classList.add('hidden');$('intersectionFallback').classList.remove('hidden');setDirectionIcon($('intersectionArrow'),guide?.type??0,'#69a7ff');$('intersectionText').textContent=`${distance<60?'곧':km(distance)+' 후'} ${guide?.guidance||'교차로 방향을 확인하세요.'}`;$('intersectionSource').textContent='WEB';$('intersectionSource').classList.remove('native')}
+  else{$('intersectionImage').classList.add('hidden');$('intersectionFallback').classList.remove('hidden');setDirectionIcon($('intersectionArrow'),guide?.type??0,'#69a7ff');$('intersectionText').textContent=`${distance<60?'곧':km(distance)+' 후'} ${guide?.guidance||'교차로 방향을 확인하세요.'}`;$('intersectionSource').textContent='WEB';$('intersectionSource').classList.remove('native')}scheduleLayerLayout();
 }
 function numericSafetyLimit(x){for(const v of [x?.speedLimit,x?.speed_limit,x?.limitSpeed,x?.limit_speed]){const n=Number(v);if(Number.isFinite(n)&&n>0)return n}return 0}
 function eventMessage(e){if(!e)return '';const code=Number(e.code);const type=Number(e.type);const kind=code===0?'사고':code===1?'공사':code===2?'행사':code===3?'통제':'도로 유고';return e.message||e.title||e.desc||`${kind}${type===1?' · 전면 통제':type===2?' · 부분 통제':''}`}
@@ -510,7 +561,7 @@ function renderSafetyState(pos,road){
   const native=state.safety||{};const routeSafety=(road?.safeties||[])[0]||{};const speedLimit=numericSafetyLimit(native)||numericSafetyLimit(routeSafety)||Number(road?.speedLimit)||0;const speed=Number.isFinite(pos?.speed)?Math.max(0,pos.speed*3.6):0;
   const lim=$('hudSpeedLimit');lim.textContent=speedLimit?`제한 ${Math.round(speedLimit)}`:'제한 --';lim.classList.toggle('hidden',!speedLimit);const over=speedLimit>0&&speed>speedLimit+4;$('hudSpeed').closest('.hud-speed')?.classList.toggle('overspeed',over);
   const nativeMsg=native.message||native.name||'';const events=(state.roadEvents?.length?state.roadEvents:(road?.roadEvents||state.route?.roadEvents||[]));const event=events.find(x=>!x.passed)||events[0];const msg=nativeMsg||eventMessage(event);const el=$('hudSafety');el.textContent=msg||'안전정보';el.classList.toggle('hidden',!msg);
-  if(over){const key=`over:${Math.round(speedLimit)}`;if(state.lastSafetySpeechKey!==key){state.lastSafetySpeechKey=key;speak(`제한속도 ${Math.round(speedLimit)}킬로미터 구간입니다. 속도를 줄여 주세요.`);if(navigator.vibrate)navigator.vibrate([120,60,120])}}
+  if(over){const key=`over:${Math.round(speedLimit)}`;if(state.lastSafetySpeechKey!==key){state.lastSafetySpeechKey=key;speak(`제한속도 ${Math.round(speedLimit)}킬로미터 구간입니다. 속도를 줄여 주세요.`,{characterKey:'hunmin'});if(navigator.vibrate)navigator.vibrate([120,60,120])}}
   else if(state.lastSafetySpeechKey?.startsWith('over:'))state.lastSafetySpeechKey='';if(msg&&(native.urgent||Number(event?.type)>0))setCharacter('hunmin',msg,false)
 }
 function maybeManageTunnel(pos,road){const name=road?.name||'';const routeTunnel=/터널|tunnel/i.test(name);const moving=Number(pos?.speed)>2.5||Number(state.lastRealGps?.speed)>2.5;if((state.nativeTunnel||(routeTunnel&&moving))&&!state.tunnel.active)startTunnelDR(state.nativeTunnel?'native':name||'route');if(state.tunnel.active&&!state.nativeTunnel&&!routeTunnel&&(Date.now()-state.lastGpsAt)<2200)stopTunnelDR('route-exit')}
@@ -533,7 +584,7 @@ function maybeSpeakGuide(guide,distance){
   if(!guide)return;const thresholds=distance<=80?80:distance<=280?280:distance<=700?700:null;if(!thresholds)return;
   const key=`${guide.id}:${thresholds}`;if(key===state.lastGuideSpeechKey)return;state.lastGuideSpeechKey=key;
   const prefix=thresholds===80?'곧':`${Math.round(distance/10)*10}미터 앞`;
-  if(state.haptic&&thresholds===80&&navigator.vibrate)navigator.vibrate([80,45,80]);if(guide.type===101)speak('잠시 후 목적지에 도착합니다.');else speak(`${prefix} ${guide.guidance||'안내 지점입니다'}.`);
+  if(state.haptic&&thresholds===80&&navigator.vibrate)navigator.vibrate([80,45,80]);if(guide.type===101)speak('잠시 후 목적지에 도착합니다.',{characterKey:'daim'});else speak(`${prefix} ${guide.guidance||'안내 지점입니다'}.`,{characterKey:'daim'});
 }
 
 async function quickSearch(q){$('destinationInput').value=q;await searchPlaces(q)}
@@ -723,8 +774,8 @@ function bindUI(){
   $('homeShortcutBtn').onclick=()=>useSavedPlace('home');$('workShortcutBtn').onclick=()=>useSavedPlace('work');$('favoritesShortcutBtn').onclick=()=>openAccount('favorites');
   $('editHomeBtn').onclick=e=>{e.stopPropagation();openPlaceRegistration('home')};$('editWorkBtn').onclick=e=>{e.stopPropagation();openPlaceRegistration('work')};
   $('closePlaceRegisterBtn').onclick=closePlaceRegistration;$('placeRegisterModal').addEventListener('click',e=>{if(e.target===$('placeRegisterModal'))closePlaceRegistration()});$('placeRegisterSearchBtn').onclick=renderPlaceRegistrationSearch;$('placeRegisterInput').addEventListener('keydown',e=>{if(e.key==='Enter')renderPlaceRegistrationSearch()});$('saveCurrentPlaceBtn').onclick=async()=>{const p=normalizePlaceData(state.destination);if(!p||!state.registerKind)return;await saveSavedPlace(state.registerKind,p);toast(`${placeLabel(state.registerKind)} 장소를 저장했습니다.`);closePlaceRegistration()};
-  document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>{state.autoCharacter=false;setCharacter(b.dataset.character);$('characterModeBtn').textContent='FIX';savePreferences();toast(`${characters[b.dataset.character]?.name||'가이드'} 고정 안내로 변경했습니다.`)});
-  document.querySelectorAll('[data-character-mode]').forEach(b=>b.onclick=()=>{const mode=b.dataset.characterMode;if(mode==='auto'){state.autoCharacter=true;$('characterModeBtn').textContent='AUTO';toast('상황별 캐릭터 자동 전환을 사용합니다.')}else{state.autoCharacter=false;setCharacter(mode);$('characterModeBtn').textContent='FIX';toast(`${characters[mode]?.name||'가이드'} 고정 안내로 변경했습니다.`)}syncCharacterButtons();savePreferences()});
+  document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>{state.autoCharacter=false;setCharacter(b.dataset.character);$('characterModeBtn').textContent='FIX';savePreferences();previewCharacterVoice(b.dataset.character);toast(`${characters[b.dataset.character]?.name||'가이드'} 음성·안내로 변경했습니다.`)});
+  document.querySelectorAll('[data-character-mode]').forEach(b=>b.onclick=()=>{const mode=b.dataset.characterMode;if(mode==='auto'){state.autoCharacter=true;$('characterModeBtn').textContent='AUTO';toast('상황별 캐릭터 자동 전환을 사용합니다.')}else{state.autoCharacter=false;setCharacter(mode);$('characterModeBtn').textContent='FIX';previewCharacterVoice(mode);toast(`${characters[mode]?.name||'가이드'} 음성·안내로 변경했습니다.`)}syncCharacterButtons();savePreferences()});
   document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.nav;if(nav==='my'){openAccount('favorites');return}if(nav==='home'){setUiStage('home');return}if(nav==='route'){if(state.route)setUiStage('route');else{setUiStage('home');$('destinationInput').focus();toast('목적지를 먼저 검색해 주세요.')}return}if(nav==='drive'){if(state.navigating){setUiStage('drive');return}if(state.route){toast('안내 시작을 눌러 실시간 주행을 시작해 주세요.');setUiStage('route')}else toast('먼저 목적지를 선택해 주세요.')}});
   $('menuBtn').onclick=openMenuDrawer;$('notifBtn').onclick=openNoticeModal;
   $('acceptFasterRouteBtn').onclick=acceptPendingAlternative;$('dismissFasterRouteBtn').onclick=()=>{$('fasterRouteBanner').classList.add('hidden');state.pendingAlternative=null;state.nativeMultiRoute=null};
@@ -734,7 +785,9 @@ function bindUI(){
   $('closeNoticeBtn').onclick=closeNoticeModal;$('noticeModal').addEventListener('click',e=>{if(e.target===$('noticeModal'))closeNoticeModal()});
   $('voiceVolume').addEventListener('input',e=>{state.voiceVolume=Math.max(0,Math.min(1,Number(e.target.value)/100));if(state.voiceVolume===0)state.sound=false;else if(!state.sound)state.sound=true;updateVoiceControls()});$('voiceVolume').addEventListener('change',()=>savePreferences());
   $('voiceToggleBtn').onclick=()=>{state.sound=!state.sound;if(state.sound&&state.voiceVolume===0)state.voiceVolume=.5;updateVoiceControls();savePreferences();toast(state.sound?'음성 안내 켜짐':'음성 안내 꺼짐')};
-  $('voicePreviewBtn').onclick=()=>{if(!state.sound||state.voiceVolume<=0){state.sound=true;if(state.voiceVolume<=0)state.voiceVolume=.5;updateVoiceControls();savePreferences()}state.lastSpeech='';speak('다임입니다. 음성 안내 볼륨을 확인해 주세요.',{force:true})};
+  $('voicePreviewBtn').onclick=()=>{if(!state.sound||state.voiceVolume<=0){state.sound=true;if(state.voiceVolume<=0)state.voiceVolume=.5;updateVoiceControls();savePreferences()}previewCharacterVoice(state.currentCharacter)};
+  document.querySelectorAll('[data-voice-profile]').forEach(el=>el.onclick=()=>{const key=el.dataset.voiceProfile;if(!characters[key])return;state.autoCharacter=false;setCharacter(key);$('characterModeBtn').textContent='FIX';syncCharacterButtons();savePreferences();previewCharacterVoice(key)});
+  window.addEventListener('resize',scheduleLayerLayout,{passive:true});if('speechSynthesis' in window){refreshSpeechVoices();window.speechSynthesis.onvoiceschanged=refreshSpeechVoices;}
   document.querySelectorAll('.account-tab').forEach(b=>b.onclick=()=>setAccountTab(b.dataset.tab||'favorites'));
   syncCharacterButtons();updateVoiceControls();updateSimButton();setUiStage('home');updateHomeWorkButtons();setAccountTab('favorites');updateFavoriteButton();
 }

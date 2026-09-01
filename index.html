@@ -242,7 +242,12 @@
             <input id="voiceVolume" class="voice-volume-slider" type="range" min="0" max="100" step="5" value="80" aria-label="음성 안내 볼륨" />
             <output id="voiceVolumeValue" for="voiceVolume">80%</output>
           </div>
-          <div class="voice-preview-row"><button id="voicePreviewBtn" type="button">안내 음성 미리듣기</button><small id="voiceGuideStatus">음성 안내 켜짐</small></div>
+          <div class="voice-preview-row"><button id="voicePreviewBtn" type="button">현재 캐릭터 음성 듣기</button><small id="voiceGuideStatus">음성 안내 켜짐</small></div>
+          <div class="voice-profile-strip" aria-label="캐릭터별 음성 프로필">
+            <span data-voice-profile="daim"><img src="/assets/daim.png" alt=""><b>다임</b><small>차분·정확</small></span>
+            <span data-voice-profile="sunsik"><img src="/assets/sunsik.png" alt=""><b>순식</b><small>친근·여유</small></span>
+            <span data-voice-profile="hunmin"><img src="/assets/hunmin.png" alt=""><b>훈민</b><small>짧고 신속</small></span>
+          </div>
         </div>
         <div class="settings-card">
           <div class="settings-title"><b>조팸스 가이드 모드</b><span>AUTO 또는 캐릭터 고정</span></div>
