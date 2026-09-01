@@ -1,42 +1,40 @@
-# 조팸스 스마트 드라이브 MVP 6
+# 조팸스 스마트 드라이브 MVP6.2
 
-MVP6는 길찾기/주행 화면을 실제 운전 중 필요한 핵심 정보 위주로 다시 작성한 버전입니다.
+MVP6.1 안정화본을 기준으로 다음 기능을 복원/추가한 버전입니다.
 
-## MVP6 핵심 변경
-- 기존 길찾기 내부 AR, 주차 추천, 가상주행, 교차로 확대, 다중 배너/팝업 제거
-- 주행 화면을 단순화: 다음 회전, 후속 회전, 현재 속도/제한속도, 경로선, 남은시간/거리, 재탐색, 주행 메뉴
-- 목적지 선택 후 경로 계산이 완료되면 3초 뒤 자동 안내 시작
-- 다임/순식/훈민 선택 상태 유지
-- 선택 캐릭터의 KOMSCO 자동차 이미지가 실제 GPS 위치 마커로 표시되어 목적지까지 경로를 따라 이동
-- 경로 이탈 감지 시 자동 재탐색
-- 캐릭터별 TTS rate/pitch 적용
-- Google 로그인/Firebase 설정 동기화 유지
-- Android API 36 WebView host 단순화: 카메라/AR/Native Bridge 제거, GPS 내비게이션 중심
+## 주요 변경
+- 메인 진입 시 하단 고정 메뉴 `홈 / 길찾기 / 실시간 / MY` 복원
+- 경로 선택 화면에서도 하단 메뉴 유지
+- 출발지 `내 위치` 고정 해제
+  - 출발지 행 터치 → 현재 위치 또는 장소 검색으로 변경
+  - 사용자 지정 출발지는 지도에 초록 시작 마커 표시
+  - 출발지 변경 즉시 추천/빠른길/무료도로 재탐색
+  - 각 경로 카드와 상단 요약에서 예상 도착시간 표시
+- 기존 3초 자동 안내 시작 유지
+- AR 안내 복원
+  - 후면 카메라
+  - 다음 회전 방향/거리
+  - 파란 원근 경로 리본
+  - 반복 진행 화살표
+  - 선택한 다임/순식/훈민 자동차 캐릭터 오버레이
+  - 현재 속도 / ETA / 남은 거리 표시
+- 주행 화면에서 AR 버튼과 주행 메뉴의 `AR 안내` 진입 제공
+- Android WebView에 CAMERA 권한과 video capture 권한 처리 복원
+- Android 버전 `6.2.0`, targetSdk/compileSdk 36 유지
+- Service Worker 캐시 버전 갱신
 
-## 웹 배포
-Cloudflare Pages 저장소 루트에 전체 파일을 배포합니다.
+## 출발지 변경 동작
+1. 목적지 검색
+2. 경로 선택 화면의 `출발 / 내 위치` 행 터치
+3. `내 위치` 또는 장소/주소 검색
+4. 선택 즉시 경로 3개 재계산
+5. `예상 도착 HH:MM` 표시
 
-필수 구성:
-- `KAKAO_REST_API_KEY` : Cloudflare Secret
-- `KAKAO_DIRECTIONS_TIER=standard`
-- D1 사용 시 `DB` binding을 `jofams-smartdrive-db`에 연결
+## AR 사용 조건
+- HTTPS 배포 필요
+- 브라우저/Android WebView 카메라 권한 필요
+- Android 앱은 `CAMERA` 권한을 포함함
 
-`wrangler.toml`의 D1 UUID는 현재 프로젝트에서 사용 중인 값을 유지했습니다. 다른 Cloudflare 계정에 배포하면 해당 UUID를 새 D1 database_id로 교체하세요.
-
-## Firebase
-`config.js`에는 Firebase Web config가 들어 있습니다. Google Authentication을 활성화하고 실제 Pages 도메인을 Firebase Authentication > Authorized domains에 추가하세요.
-
-## Android
-`android-app`을 Android Studio에서 열고 `gradle.properties`의 `SMARTDRIVE_URL`을 실제 Cloudflare Pages HTTPS 주소로 설정합니다.
-- compileSdk 36
-- targetSdk 36
-- versionCode 6
-- versionName 6.0.0
-- 위치 권한만 사용
-
-## 캐릭터 자동차 자산
-- `assets/daim_car.png` / `daim_car_marker.png`
-- `assets/sunsik_car.png` / `sunsik_car_marker.png`
-- `assets/hunmin_car.png` / `hunmin_car_marker.png`
-
-`*_marker.png`는 지도 위에서 사용하도록 외곽 배경을 투명화한 파일입니다.
+## 배포
+기존 Cloudflare Pages / Functions / D1 / Firebase 설정은 그대로 사용할 수 있습니다.
+`config.js`의 실제 설정값과 Cloudflare D1 binding을 유지한 뒤 전체 소스를 배포하세요.

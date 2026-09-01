@@ -63,9 +63,10 @@
       </header>
       <div class="route-sheet">
         <div class="route-addresses">
-          <div><span class="point start"></span><small>출발</small><b>내 위치</b></div>
+          <button id="routeOriginBtn" class="route-address-row" type="button"><span class="point start"></span><small>출발</small><b id="routeAddressOrigin">내 위치</b><i data-icon="chevron"></i></button>
           <div><span class="point end"></span><small>도착</small><b id="routeAddressDest">목적지</b></div>
         </div>
+        <div id="routePlanEta" class="route-plan-eta">출발지를 선택하면 예상 도착시간을 안내합니다.</div>
         <div id="routeCards" class="route-cards"></div>
         <button id="startBtn" class="primary-btn">안내 시작</button>
         <div id="autoStartHint" class="auto-start-hint">3초 후 자동으로 안내를 시작합니다.</div>
@@ -83,6 +84,7 @@
       </div>
 
       <button id="driveVoiceBtn" class="floating-voice" aria-label="음성안내"><span data-icon="mic"></span></button>
+      <button id="arOpenBtn" class="floating-ar" aria-label="AR 안내">AR</button>
 
       <div id="speedPanel" class="speed-panel hidden">
         <div class="speed-limit"><small>제한</small><b id="speedLimit">--</b></div>
@@ -113,6 +115,7 @@
           <button id="otherRouteBtn"><span data-icon="routes"></span><b>다른경로</b></button>
           <button id="driveSettingBtn"><span data-icon="settings"></span><b>주행설정</b></button>
           <button id="shareBtn"><span data-icon="share"></span><b>도착공유</b></button>
+          <button id="driveArBtn"><span class="ar-letter">AR</span><b>AR 안내</b></button>
         </div>
         <button id="endNavBtn" class="end-nav-btn">안내종료</button>
       </section>
@@ -134,10 +137,35 @@
         </div>
         <div class="setting-list">
           <button id="myFavoritesBtn"><span data-icon="star-outline"></span><span><b>즐겨찾기</b><small id="myFavoriteCount">0곳 저장</small></span><i data-icon="chevron"></i></button>
-          <button><span data-icon="volume"></span><span><b>음성 가이드</b><small id="voiceCharacterLabel">다임 보이스</small></span><i data-icon="chevron"></i></button>
-          <div class="volume-setting"><input id="myGuideVolume" type="range" min="0" max="100" value="80"><b id="myVolumeValue">80%</b></div>
-          <button><span data-icon="car"></span><span><b>가이드 캐릭터</b><small id="myCharacterLabel">다임</small></span><i data-icon="chevron"></i></button>
+          <button id="voiceGuideSettingBtn" aria-expanded="false"><span data-icon="volume"></span><span><b>음성 가이드</b><small id="voiceCharacterLabel">다임 보이스</small></span><i data-icon="chevron"></i></button>
+          <div id="voiceGuidePanel" class="setting-expand hidden">
+            <div class="voice-choice-grid" role="group" aria-label="음성 가이드 선택">
+              <button type="button" data-voice-character="daim"><img src="/assets/daim.png" alt="다임"><span><b>다임</b><small>차분하고 정확하게</small></span></button>
+              <button type="button" data-voice-character="sunsik"><img src="/assets/sunsik.png" alt="순식"><span><b>순식</b><small>친근하고 자연스럽게</small></span></button>
+              <button type="button" data-voice-character="hunmin"><img src="/assets/hunmin.png" alt="훈민"><span><b>훈민</b><small>빠르고 명확하게</small></span></button>
+            </div>
+            <div class="volume-setting"><input id="myGuideVolume" type="range" min="0" max="100" value="80" aria-label="길안내 볼륨"><b id="myVolumeValue">80%</b></div>
+            <button id="voicePreviewBtn" type="button" class="voice-preview-btn"><span data-icon="volume"></span><b>선택 음성 미리듣기</b></button>
+          </div>
+          <button id="characterSettingBtn" aria-expanded="false"><span data-icon="car"></span><span><b>가이드 캐릭터</b><small id="myCharacterLabel">다임</small></span><i data-icon="chevron"></i></button>
+          <div id="characterSettingPanel" class="setting-expand hidden">
+            <div class="character-choice-grid" role="group" aria-label="가이드 캐릭터 선택">
+              <button type="button" data-my-character="daim"><img src="/assets/daim_car.png" alt="다임 자동차"><span><b>다임</b><small>정확하고 차분하게</small></span></button>
+              <button type="button" data-my-character="sunsik"><img src="/assets/sunsik_car.png" alt="순식 자동차"><span><b>순식</b><small>교통 흐름을 빠르게</small></span></button>
+              <button type="button" data-my-character="hunmin"><img src="/assets/hunmin_car.png" alt="훈민 자동차"><span><b>훈민</b><small>재탐색을 명확하게</small></span></button>
+            </div>
+          </div>
         </div>
+      </section>
+    </div>
+
+    <!-- ORIGIN CHANGE -->
+    <div id="originModal" class="modal hidden">
+      <section class="simple-sheet origin-sheet">
+        <header><b>출발지 변경</b><button id="originModalClose" class="circle-btn"><span data-icon="close"></span></button></header>
+        <button id="useCurrentOriginBtn" class="current-origin-btn"><span class="point start"></span><span><b>내 위치</b><small>현재 GPS 위치를 출발지로 사용</small></span><i data-icon="chevron"></i></button>
+        <div class="search-box"><span data-icon="search"></span><input id="originSearchInput" placeholder="출발 장소 또는 주소 검색"><button id="originSearchBtn"><span data-icon="arrow-right"></span></button></div>
+        <div id="originSearchResults" class="search-results"></div>
       </section>
     </div>
 
@@ -149,6 +177,27 @@
         <div id="placeSearchResults" class="search-results"></div>
       </section>
     </div>
+
+    <!-- AR NAVIGATION -->
+    <section id="arView" class="ar-view hidden" aria-label="AR 내비게이션">
+      <video id="arVideo" autoplay playsinline muted></video>
+      <canvas id="arCanvas"></canvas>
+      <div class="ar-overlay-shade"></div>
+      <header class="ar-header">
+        <button id="arCloseBtn" class="ar-close-btn"><span data-icon="back"></span><b>지도 보기</b></button>
+        <div class="ar-guide-card"><div id="arTurnIcon" class="ar-turn-icon"></div><div><b id="arTurnDistance">--m</b><small id="arTurnRoad">다음 안내</small></div></div>
+      </header>
+      <div class="ar-center-distance" id="arCenterDistance">--m</div>
+      <div class="ar-character-car"><img id="arCharacterCar" src="/assets/daim_car_marker.png" alt="안내 캐릭터 자동차"><div id="arSpeech">안전하게 안내할게요.</div></div>
+      <div class="ar-bottom-info"><div><strong id="arSpeed">0</strong><span>km/h</span></div><div><small>도착</small><b id="arEta">--:--</b><span id="arRemain">--km</span></div></div>
+    </section>
+
+    <nav id="bottomNav" class="bottom-nav" aria-label="주요 메뉴">
+      <button type="button" data-bottom-nav="home" class="active"><span data-icon="home"></span><b>홈</b></button>
+      <button type="button" data-bottom-nav="route"><span data-icon="routes"></span><b>길찾기</b></button>
+      <button type="button" data-bottom-nav="realtime"><span data-icon="car"></span><b>실시간</b></button>
+      <button type="button" data-bottom-nav="my"><span data-icon="user"></span><b>MY</b></button>
+    </nav>
 
     <div id="toast" class="toast hidden"></div>
   </main>
