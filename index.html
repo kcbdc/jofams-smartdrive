@@ -85,7 +85,6 @@
 
       <button id="driveVoiceBtn" class="floating-voice" aria-label="음성안내"><span data-icon="mic"></span></button>
       <button id="arOpenBtn" class="floating-ar" aria-label="AR 안내">AR</button>
-      <div id="driveDestinationPill" class="drive-destination-pill"><span>목적지</span><b id="driveDestinationName">목적지</b></div>
 
       <div id="safetyAlert" class="safety-alert hidden" role="status" aria-live="polite">
         <div id="safetyAlertIcon" class="safety-alert-icon"></div>
@@ -127,9 +126,16 @@
       <div class="drive-bottom-card">
         <button id="driveRefreshBtn" class="drive-bottom-icon" aria-label="재탐색"><span data-icon="refresh"></span></button>
         <div class="drive-bottom-summary">
-          <small id="currentRoadLabel">일반도로</small>
-          <div><b id="remainingTime">--분</b><b id="remainingDistance">--km</b></div>
-          <span id="arrivalTime">도착 --:--</span>
+          <div id="driveBottomNormal" class="drive-bottom-normal">
+            <small id="currentRoadLabel">일반도로</small>
+            <div><b id="remainingTime">--분</b><b id="remainingDistance">--km</b></div>
+            <span id="arrivalTime">도착 --:--</span>
+          </div>
+          <div id="driveBottomDestination" class="drive-bottom-destination hidden" aria-live="polite">
+            <small>목적지</small>
+            <b id="driveDestinationName">목적지</b>
+            <span id="driveDestinationEta">예상 도착 --:--</span>
+          </div>
         </div>
         <button id="driveMenuBtn" class="drive-bottom-icon" aria-label="주행 메뉴"><span data-icon="menu"></span></button>
       </div>

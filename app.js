@@ -2,9 +2,9 @@ const $ = id => document.getElementById(id);
 const CONFIG = window.__APP_CONFIG__ || {};
 let maplibregl = null;
 const characterDefs = {
-  daim:{name:'다임',car:'/assets/daim_car.png',marker:'/assets/daim_car_marker.png',avatar:'/assets/daim.png',rate:.96,pitch:1.08,voiceLabel:'다임 보이스'},
-  sunsik:{name:'순식',car:'/assets/sunsik_car.png',marker:'/assets/sunsik_car_marker.png',avatar:'/assets/sunsik.png',rate:.80,pitch:.50,voiceLabel:'순식 · 저음 중년 남성 보이스'},
-  hunmin:{name:'훈민',car:'/assets/hunmin_car.png',marker:'/assets/hunmin_car_marker.png',avatar:'/assets/hunmin.png',rate:1.12,pitch:.88,voiceLabel:'훈민 · 밝은 청년 남성 보이스'}
+  daim:{name:'다임',car:'/assets/daim_car.png',marker:'/assets/daim_car_marker.png',rear:'/assets/daim_car_rear.png',avatar:'/assets/daim.png',rate:.96,pitch:1.08,voiceLabel:'다임 보이스'},
+  sunsik:{name:'순식',car:'/assets/sunsik_car.png',marker:'/assets/sunsik_car_marker.png',rear:'/assets/sunsik_car_rear.png',avatar:'/assets/sunsik.png',rate:.80,pitch:.50,voiceLabel:'순식 · 저음 중년 남성 보이스'},
+  hunmin:{name:'훈민',car:'/assets/hunmin_car.png',marker:'/assets/hunmin_car_marker.png',rear:'/assets/hunmin_car_rear.png',avatar:'/assets/hunmin.png',rate:1.12,pitch:.88,voiceLabel:'훈민 · 밝은 청년 남성 보이스'}
 };
 const state = {
   map:null,mapReady:false,pendingRouteDraw:null,mapFallbackTried:false,mapWatchdog:0,user:null, destination:null, routeOptions:[], route:null, selectedRoute:0,
@@ -12,7 +12,7 @@ const state = {
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
   savedPlaces:{home:null,work:null},favorites:[],placeKind:null,origin:null,originMode:'current',
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,
-  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',
+  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,supertonic:null,supertonicLoading:null,supertonicAudio:null,
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
 };
 
@@ -99,14 +99,15 @@ function useMapFallback(){
     state.map.once('styledata',()=>{state.mapReady=true;enforce2DMap();refreshMapLayout({fitRoute:Boolean(state.route)});if(state.route)drawRoute(state.route,{fit:true});setTimeout(()=>{if(!mapHasRenderedTiles())useMapFallback()},2600)});
   }catch(e){console.warn('map fallback failed',e)}
 }
+function setBuildingExtrusions(visible){
+  if(!state.map)return;
+  try{const layers=state.map.getStyle()?.layers||[];layers.filter(l=>l.type==='fill-extrusion').forEach(l=>{try{state.map.setLayoutProperty(l.id,'visibility',visible?'visible':'none')}catch{}})}catch{}
+}
 function enforce2DMap(){
   if(!state.map||state.map3D)return;
-  try{
-    state.map.setPitch(0);
-    const layers=state.map.getStyle()?.layers||[];
-    layers.filter(l=>l.type==='fill-extrusion').forEach(l=>{try{state.map.setLayoutProperty(l.id,'visibility','none')}catch{}});
-  }catch(e){console.warn('2D map enforcement failed',e)}
+  try{state.map.jumpTo({pitch:0});setBuildingExtrusions(false)}catch(e){console.warn('2D map enforcement failed',e)}
 }
+
 async function initMap(){
   try{
     await loadMapLibre();
@@ -276,8 +277,8 @@ function updateAROverlay(){
   const guides=(state.route.guides||[]).filter(x=>Number(x.routeIndex)>idx+1),g=guides[0];
   if(g){const d=distanceAlong(idx,g.routeIndex);$('arTurnIcon').innerHTML=turnSvg(g.type);$('arTurnDistance').textContent=km(d);$('arCenterDistance').textContent=km(d);$('arTurnRoad').textContent=g.name||g.guidance||'다음 안내'}
   else{$('arTurnIcon').innerHTML=turnSvg(0);$('arTurnDistance').textContent=km(remain);$('arCenterDistance').textContent=km(remain);$('arTurnRoad').textContent='목적지까지 직진'}
-  $('arSpeed').textContent=Math.max(0,Math.round((state.user.speed||0)*3.6));$('arEta').textContent=eta(remainSec);$('arRemain').textContent=km(remain);$('arCharacterCar').src=characterDefs[state.character].marker;
-  const marker=$('arCharacterMarker');if(marker){const turn=Number(g?.type)||0;const side=(turn===1||turn===5)?-1:(turn===2||turn===6)?1:0;const near=g?Math.max(0,Math.min(1,1-distanceAlong(idx,g.routeIndex)/650)):0;marker.style.setProperty('--ar-car-x',`${side*near*22}px`);marker.style.setProperty('--ar-car-y',`${-near*24}px`)}
+  $('arSpeed').textContent=Math.max(0,Math.round((state.user.speed||0)*3.6));$('arEta').textContent=eta(remainSec);$('arRemain').textContent=km(remain);$('arCharacterCar').src=characterDefs[state.character].rear||characterDefs[state.character].marker;
+  const marker=$('arCharacterMarker');if(marker){const near=g?Math.max(0,Math.min(1,1-distanceAlong(idx,g.routeIndex)/650)):0;marker.classList.add('rear-facing');marker.style.setProperty('--ar-car-x','0px');marker.style.setProperty('--ar-car-y',`${-near*26}px`)}
 }
 function drawARScene(){
   if(!state.arRunning)return;
@@ -309,11 +310,11 @@ function updateTripHistorySummary(){if($('tripHistorySummary'))$('tripHistorySum
 function openInfoModal(title,html){$('infoModalTitle').textContent=title;$('infoModalBody').innerHTML=html;$('infoModal').classList.remove('hidden');applyIcons($('infoModalBody'))}
 function closeInfoModal(){$('infoModal').classList.add('hidden')}
 function openTripHistory(){const items=state.tripHistory||[];const html=items.length?`<div class="history-list">${items.map(x=>`<article><b>${escapeHtml(x.destination||'목적지')}</b><small>${escapeHtml(x.date||'')} · ${km(Number(x.distance)||0)} · ${mins(Number(x.duration)||0)}</small><em>${escapeHtml(characterDefs[x.character]?.name||'')}</em></article>`).join('')}</div>`:'<div class="empty-info">저장된 주행 기록이 없습니다.</div>';openInfoModal('주행기록',html)}
-function openAppInfo(){openInfoModal('앱정보','<div class="info-card"><h3>조팸스 스마트 드라이브</h3><p><b>버전</b> MVP 7.1</p><p>2D 컬러 지도, 실시간 교통상태, AR 안내, 단속카메라·스쿨존·사고·공사 안내와 다임·순식·훈민 캐릭터 음성 안내를 제공합니다.</p></div>')}
+function openAppInfo(){openInfoModal('앱정보','<div class="info-card"><h3>조팸스 스마트 드라이브</h3><p><b>버전</b> MVP 7.2</p><p>2D 컬러 지도, 실시간 교통상태, AR 안내, 단속카메라·스쿨존·사고·공사 안내와 다임·순식·훈민 캐릭터 음성 안내를 제공합니다.</p></div>')}
 function openPrivacy(){openInfoModal('개인정보처리방침','<div class="info-card privacy-copy"><h3>개인정보 처리 안내</h3><p>길안내를 위해 사용자가 허용한 경우 현재 위치 정보를 이용합니다. AR 안내는 카메라 영상을 기기 화면에 표시하며, 본 앱 소스에서는 카메라 영상을 서버에 저장하지 않습니다.</p><p>Google 로그인 사용 시 계정의 기본 프로필 정보와 사용자가 저장한 설정·즐겨찾기를 Firebase에 동기화할 수 있습니다. 권한은 브라우저 또는 앱 설정에서 언제든 변경할 수 있습니다.</p><p>실제 상용 배포 전에는 운영주체, 처리 목적, 보유기간, 제3자 제공·처리위탁, 이용자 권리 및 문의처를 반영한 공식 개인정보처리방침으로 교체해야 합니다.</p></div>')}
 async function logTrip(event){try{await fetch('/api/trip',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({event,destination:state.destination?.name||null,distance:state.route?.distance||null,duration:state.tripStartedAt?Math.round((Date.now()-state.tripStartedAt)/1000):null,character:state.character,provider:state.route?.provider||null,guideType:null})})}catch{}}
 const NOTICE_ITEMS=[
-  {date:'2026.09.01',title:'MVP 7.1 주행화면 업데이트',body:'가로 전체화면, 야간지도, 실시간 경로 재탐색, 차로·전광판 안내와 지도 3D/확대/축소 기능이 추가되었습니다.'},
+  {date:'2026.09.01',title:'MVP 7.2 주행화면 업데이트',body:'가로 전체화면, 야간지도, 실시간 경로 재탐색, 차로·전광판 안내와 지도 3D/확대/축소 기능이 추가되었습니다.'},
   {date:'2026.09.01',title:'안전운전 정보 안내',body:'단속카메라, 스쿨존, 사고·공사 및 교통정보는 실제 도로 표지와 교통법규를 우선하여 이용해 주세요.'}
 ];
 function openNotices(){openInfoModal('공지사항',`<div class="notice-list">${NOTICE_ITEMS.map(x=>`<article><time>${escapeHtml(x.date)}</time><b>${escapeHtml(x.title)}</b><p>${escapeHtml(x.body)}</p></article>`).join('')}</div>`)}
@@ -325,9 +326,12 @@ async function tryLandscapeFullscreen(){
   try{if(!document.fullscreenElement&&document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen({navigationUI:'hide'})}catch{}
   setTimeout(()=>state.map?.resize(),120);
 }
-function applyDriveMapMode(){if(!state.map)return;const pitch=state.map3D?48:0;try{state.map.easeTo({pitch,duration:260});$('map3dBtn')?.classList.toggle('active',state.map3D)}catch{}}
+function applyDriveMapMode(){
+  if(!state.map)return;const pitch=state.map3D?55:0;
+  try{setBuildingExtrusions(state.map3D);state.map.jumpTo({pitch});const btn=$('map3dBtn');if(btn){btn.classList.toggle('active',state.map3D);btn.textContent=state.map3D?'2D':'3D';btn.setAttribute('aria-label',state.map3D?'2D 지도 보기':'3D 지도 보기')}state.map.resize()}catch(e){console.warn('map mode change failed',e)}
+}
 function toggleMapControls(force){const el=$('driveMapControls');if(!el)return;state.mapControlsVisible=typeof force==='boolean'?force:!state.mapControlsVisible;el.classList.toggle('hidden',!state.mapControlsVisible);if(state.mapControlsVisible){clearTimeout(toggleMapControls.t);toggleMapControls.t=setTimeout(()=>toggleMapControls(false),5000)}}
-function updateLaneGuide(){ /* MVP 7.1: 차로 안내 레이어 제거 */ }
+function updateLaneGuide(){ /* MVP 7.2: 차로 안내 레이어 제거 */ }
 function extractVms(idx){
   const events=(state.route?.roadEvents||[]).map(x=>({...x,routeIndex:Number(x.routeIndex)||0})).filter(x=>x.routeIndex>=idx&&x.routeIndex<=idx+900);
   for(const e of events){const raw=JSON.stringify(e),txt=String(e.message||e.text||e.description||e.name||e.guidance||'').trim();if(/vms|전광|variable.?message|교통정보판/i.test(raw)&&txt)return {key:`${e.routeIndex}:${txt}`,text:txt}}
@@ -350,17 +354,21 @@ function setView(view){
   applyNightMode();if(view==='drive')setTimeout(tryLandscapeFullscreen,80)
   refreshMapLayout({fitRoute:view==='route'&&Boolean(state.route)});
 }
-function startNavigation(){if(!state.route||!state.destination)return;cancelAutoStart();state.tripStartedAt=Date.now();logTrip('start');setView('drive');startWatch();ensureUserMarker();updateCarMarkerImage();state.routeCumulative=buildCumulative(state.route);drawRoute(state.route,{fit:false});updateDriving(true);startLiveRouteRefresh();applyNightMode();setTimeout(tryLandscapeFullscreen,100);speak(`${characterDefs[state.character].name}이 안내를 시작합니다.`)}
-function stopNavigation(){if(state.tripStartedAt){logTrip('finish');addTripHistory({destination:state.destination?.name||'목적지',date:new Date().toLocaleString('ko-KR'),distance:state.route?.distance||0,duration:Math.round((Date.now()-state.tripStartedAt)/1000),character:state.character})}state.tripStartedAt=0;stopLiveRouteRefresh();stopAR();stopWatch();cancelAutoStart();$('driveMenu').classList.add('hidden');clearRouteLayer();clearSafetyMarkers();hideSafetyAlert();state.safetyEvents=[];state.route=null;state.routeOptions=[];if(state.destMarker){state.destMarker.remove();state.destMarker=null}if(state.originMarker){state.originMarker.remove();state.originMarker=null}state.destination=null;state.origin=null;state.originMode='current';updateOverspeed(0,0);setView('home');toast('안내를 종료했습니다.')}
+function startNavigation(){if(!state.route||!state.destination)return;cancelAutoStart();state.tripStartedAt=Date.now();startDestinationCycle();logTrip('start');setView('drive');startWatch();ensureUserMarker();updateCarMarkerImage();state.routeCumulative=buildCumulative(state.route);drawRoute(state.route,{fit:false});updateDriving(true);startLiveRouteRefresh();applyNightMode();setTimeout(tryLandscapeFullscreen,100);speak(`${characterDefs[state.character].name}이 안내를 시작합니다.`)}
+function stopNavigation(){if(state.tripStartedAt){logTrip('finish');addTripHistory({destination:state.destination?.name||'목적지',date:new Date().toLocaleString('ko-KR'),distance:state.route?.distance||0,duration:Math.round((Date.now()-state.tripStartedAt)/1000),character:state.character})}state.tripStartedAt=0;stopDestinationCycle();stopLiveRouteRefresh();stopAR();stopWatch();cancelAutoStart();$('driveMenu').classList.add('hidden');clearRouteLayer();clearSafetyMarkers();hideSafetyAlert();state.safetyEvents=[];state.route=null;state.routeOptions=[];if(state.destMarker){state.destMarker.remove();state.destMarker=null}if(state.originMarker){state.originMarker.remove();state.originMarker=null}state.destination=null;state.origin=null;state.originMode='current';updateOverspeed(0,0);setView('home');toast('안내를 종료했습니다.')}
 function updateDriving(force=false){
   if(!state.user||!state.route?.geometry?.length)return;const g=state.route.geometry,idx=nearestIndex(state.user.lng,state.user.lat,g);state.currentRouteIndex=idx;ensureUserMarker();
   const nextPoint=g[Math.min(g.length-1,idx+3)],heading=Number.isFinite(state.user.heading)?state.user.heading:(nextPoint?bearing(state.user.lat,state.user.lng,nextPoint[1],nextPoint[0]):0);
-  state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?48:0,bearing:heading,duration:force?0:650,padding:{top:120,bottom:170,left:0,right:0}});
+  state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?55:0,bearing:heading,duration:force?0:650,padding:{top:120,bottom:170,left:0,right:0}});
   updateProgressUI(idx);if(state.arRunning)updateAROverlay();checkOffRoute(idx);
 }
+function hideDestinationBottom(){clearTimeout(state.destinationHideTimer);$('driveBottomDestination')?.classList.add('hidden');$('driveBottomNormal')?.classList.remove('hidden')}
+function showDestinationBottom(duration=10000){if(!state.tripStartedAt||!state.destination)return;clearTimeout(state.destinationHideTimer);$('driveBottomNormal')?.classList.add('hidden');$('driveBottomDestination')?.classList.remove('hidden');state.lastDestinationShownAt=Date.now();state.destinationHideTimer=setTimeout(hideDestinationBottom,duration)}
+function startDestinationCycle(){clearInterval(state.destinationCycleTimer);clearTimeout(state.destinationHideTimer);hideDestinationBottom();state.destinationCycleTimer=setInterval(()=>showDestinationBottom(10000),180000)}
+function stopDestinationCycle(){clearInterval(state.destinationCycleTimer);clearTimeout(state.destinationHideTimer);state.destinationCycleTimer=0;state.destinationHideTimer=0;hideDestinationBottom()}
 function updateProgressUI(idx){
   const total=state.routeCumulative.at(-1)||state.route.distance||1,done=state.routeCumulative[idx]||0,remain=Math.max(0,total-done),ratio=Math.max(0,Math.min(1,remain/total)),remainSec=(state.route.duration||0)*ratio;
-  $('remainingDistance').textContent=km(remain);$('remainingTime').textContent=mins(remainSec);$('arrivalTime').textContent=`도착 ${eta(remainSec)}`;if($('driveDestinationName'))$('driveDestinationName').textContent=state.destination?.name||'목적지';
+  $('remainingDistance').textContent=km(remain);$('remainingTime').textContent=mins(remainSec);$('arrivalTime').textContent=`도착 ${eta(remainSec)}`;if($('driveDestinationName'))$('driveDestinationName').textContent=state.destination?.name||'목적지';if($('driveDestinationEta'))$('driveDestinationEta').textContent=`예상 도착 ${eta(remainSec)}`;
   const seg=(state.route.roadSegments||[]).find(s=>idx>=s.startIndex&&idx<=s.endIndex);$('currentRoadLabel').textContent=seg?.name||'일반도로';
   const limit=Number(seg?.speedLimit)||0,speed=Math.max(0,Math.round((state.user.speed||0)*3.6));$('currentSpeed').textContent=speed;if(limit){$('speedPanel').classList.remove('hidden');$('speedLimit').textContent=limit}else $('speedPanel').classList.add('hidden');
   updateOverspeed(speed,limit);updateTrafficStatus(seg);renderTrafficRouteRail(idx);
@@ -535,12 +543,20 @@ function pickCharacterVoice(character){
   }
   return [...voices].sort((a,b)=>voiceScore(b,['female','woman','여성','여자','sunhi','sun-hi','yuna','yoona','sora','seoyeon'],male)-voiceScore(a,['female','woman','여성','여자','sunhi','sun-hi','yuna','yoona','sora','seoyeon'],male))[0]||voices[0];
 }
-function speak(text){
-  if(!state.sound||!('speechSynthesis'in window)||!text)return;
-  const c=characterDefs[state.character],u=new SpeechSynthesisUtterance(text);u.lang='ko-KR';u.rate=c.rate;u.pitch=c.pitch;u.volume=state.voiceVolume;
-  const chosen=pickCharacterVoice(state.character);if(chosen)u.voice=chosen;
-  speechSynthesis.cancel();speechSynthesis.speak(u)
+async function initSupertonicTTS(){
+  if(state.supertonic)return state.supertonic;if(state.supertonicLoading)return state.supertonicLoading;
+  state.supertonicLoading=(async()=>{const {pipeline}=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers');state.supertonic=await pipeline('text-to-speech','onnx-community/Supertonic-TTS-2-ONNX');return state.supertonic})();
+  try{return await state.supertonicLoading}finally{state.supertonicLoading=null}
 }
+async function speakSupertonic(text,character){
+  const pipe=await initSupertonicTTS();const speed=character==='sunsik'?.92:1.08;
+  const audio=await pipe(text,{speaker_embeddings:'https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/main/voices/M1.bin',num_inference_steps:8,speed});
+  const blob=await audio.toBlob();if(state.supertonicAudio){try{state.supertonicAudio.pause();URL.revokeObjectURL(state.supertonicAudio.src)}catch{}}
+  const player=new Audio(URL.createObjectURL(blob));player.volume=state.voiceVolume;state.supertonicAudio=player;await player.play()
+}
+function speakSystem(text){if(!('speechSynthesis'in window))return;const c=characterDefs[state.character],u=new SpeechSynthesisUtterance(text);u.lang='ko-KR';u.rate=c.rate;u.pitch=c.pitch;u.volume=state.voiceVolume;const chosen=pickCharacterVoice(state.character);if(chosen)u.voice=chosen;speechSynthesis.cancel();speechSynthesis.speak(u)}
+function speak(text){if(!state.sound||!text)return;if(state.character==='sunsik'||state.character==='hunmin'){speakSupertonic(text,state.character).catch(e=>{console.warn('Supertonic TTS fallback',e);speakSystem(text)});return}speakSystem(text)}
+
 function loadLocal(){try{const p=JSON.parse(localStorage.getItem(SETTINGS)||'{}');if(p.character&&characterDefs[p.character])state.character=p.character;if(Number.isFinite(Number(p.voiceVolume)))state.voiceVolume=Number(p.voiceVolume);state.savedPlaces.home=p.home||null;state.savedPlaces.work=p.work||null;state.favorites=JSON.parse(localStorage.getItem(FAVS)||'[]');state.tripHistory=JSON.parse(localStorage.getItem(TRIP_HISTORY)||'[]')}catch{}syncCharacterUI();updateSavedLabels();updateVolumeUI()}
 function saveLocalSettings(){localStorage.setItem(SETTINGS,JSON.stringify({character:state.character,voiceVolume:state.voiceVolume,home:state.savedPlaces.home,work:state.savedPlaces.work}))}
 function favoriteId(p){return `${Number(p.lat).toFixed(5)}_${Number(p.lng).toFixed(5)}`}

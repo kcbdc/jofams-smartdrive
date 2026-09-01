@@ -197,3 +197,59 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   body.landscape-drive .character-car-marker{width:82px!important;height:66px!important}
   body.landscape-drive .ar-header{left:8px!important;right:8px!important;top:calc(var(--safeT) + 5px)!important}.ar-guide-card{min-width:250px!important;padding:7px 10px!important;grid-template-columns:48px 1fr!important}.ar-turn-icon{width:46px!important;height:46px!important}.ar-guide-card b{font-size:25px!important}.ar-guide-card small{font-size:8px!important}.ar-close-btn{height:36px!important}.ar-center-distance{font-size:26px!important}.ar-character-car{bottom:calc(var(--safeB) + 62px)!important;width:88px!important;height:66px!important}.ar-character-car img{width:84px!important;height:64px!important}.ar-bottom-info{bottom:calc(var(--safeB) + 7px)!important}.ar-bottom-info>div{min-height:52px!important;padding:6px 10px!important}.ar-bottom-info strong{font-size:25px!important}.ar-bottom-info b{font-size:12px!important}
 }
+
+/* === MVP 7.2: destination cycle, compact portrait menu, instant map mode, rear-facing AR === */
+.drive-bottom-summary{position:relative;min-height:72px;display:grid;place-items:center}
+.drive-bottom-normal,.drive-bottom-destination{width:100%;text-align:center;min-width:0}
+.drive-bottom-normal>small{display:block;font-size:11px;color:#b8c0cb}
+.drive-bottom-normal>div{display:flex;justify-content:center;gap:17px;align-items:baseline;margin-top:4px}
+.drive-bottom-normal>div b{font-size:26px;letter-spacing:-.04em}.drive-bottom-normal>span{display:block;margin-top:3px;font-size:10px;color:#b8c0cb}
+.drive-bottom-destination{animation:destinationIn .2s ease}.drive-bottom-destination small{display:block;color:#98a6b9;font-size:10px}.drive-bottom-destination b{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:21px;color:#fff;margin:3px 0}.drive-bottom-destination span{font-size:11px;color:#c5d8ff}
+@keyframes destinationIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.drive-destination-pill{display:none!important}
+.drive-map-controls button.active{background:#276df1!important;color:#fff!important;border-color:#276df1!important}
+
+/* AR rear-driving visual: keep the car on the route center and present it as a rear-facing road sprite. */
+.ar-character-car.rear-facing{perspective:500px}
+.ar-character-car.rear-facing img{transform:rotateX(7deg) scale(.96);transform-origin:50% 85%;filter:drop-shadow(0 9px 10px rgba(0,0,0,.38)) saturate(.95)}
+.ar-character-car.rear-facing::after{content:"";position:absolute;left:50%;bottom:2px;width:68%;height:13%;transform:translateX(-50%);border-radius:50%;background:rgba(0,0,0,.25);filter:blur(5px);z-index:-1}
+
+@media(orientation:portrait){
+  #driveMenu.bottom-modal{pointer-events:none;background:transparent}
+  #driveMenu .bottom-modal-backdrop{pointer-events:auto;background:linear-gradient(90deg,rgba(4,10,18,.14) 0 52%,rgba(4,10,18,0) 52% 100%)}
+  #driveMenu .bottom-modal-sheet{pointer-events:auto;left:0!important;right:auto!important;top:auto!important;bottom:calc(var(--safeB) + 8px)!important;width:min(54vw,330px)!important;max-height:calc(100dvh - var(--safeT) - var(--safeB) - 24px)!important;overflow:auto!important;padding:8px 10px 12px!important;border-radius:0 20px 20px 0!important;box-shadow:12px 0 28px rgba(4,12,25,.22)!important}
+  #driveMenu .modal-handle{width:30px;height:4px;margin:0 auto 7px}
+  #driveMenu .guide-volume-row{padding:4px 2px 8px}#driveMenu .guide-volume-row>div{margin-bottom:5px}#driveMenu .guide-volume-row b{font-size:12px}#driveMenu .guide-volume-row small{font-size:9px}
+  #driveMenu .traffic-legend{padding:7px 0!important;gap:4px!important}#driveMenu .traffic-legend>b{font-size:11px!important}#driveMenu .traffic-legend>div{min-height:24px!important;padding:3px 4px!important}#driveMenu .traffic-legend strong{font-size:9px!important}#driveMenu .traffic-legend small{font-size:7px!important}
+  #driveMenu .drive-menu-actions{grid-template-columns:repeat(2,1fr)!important;gap:3px!important;padding:7px 0!important}#driveMenu .drive-menu-actions button{padding:6px 2px!important;gap:3px!important}#driveMenu .drive-menu-actions span{width:21px!important;height:21px!important}#driveMenu .drive-menu-actions b{font-size:9px!important}
+  #driveMenu .end-nav-btn{height:38px!important;font-size:12px!important;border-radius:9px!important}
+}
+@media(orientation:landscape){
+  .drive-bottom-summary{min-height:48px}.drive-bottom-normal{display:grid;grid-template-columns:auto auto auto;align-items:center;gap:12px}.drive-bottom-normal>small{font-size:9px}.drive-bottom-normal>div{margin:0;gap:12px}.drive-bottom-normal>div b{font-size:21px}.drive-bottom-normal>span{margin:0;font-size:9px}.drive-bottom-destination b{font-size:17px}.drive-bottom-destination small,.drive-bottom-destination span{font-size:8px}
+}
+
+/* === MVP 7.2: destination cycle, compact portrait menu, instant map mode, rear-facing AR === */
+.drive-bottom-summary{position:relative;min-height:72px;display:grid;place-items:center}
+.drive-bottom-normal,.drive-bottom-destination{width:100%;text-align:center;min-width:0}
+.drive-bottom-normal>small{display:block;font-size:11px;color:#b8c0cb}
+.drive-bottom-normal>div{display:flex;justify-content:center;gap:17px;align-items:baseline;margin-top:4px}
+.drive-bottom-normal>div b{font-size:26px;letter-spacing:-.04em}.drive-bottom-normal>span{display:block;margin-top:3px;font-size:10px;color:#b8c0cb}
+.drive-bottom-destination{animation:destinationIn .2s ease}.drive-bottom-destination small{display:block;color:#98a6b9;font-size:10px}.drive-bottom-destination b{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:21px;color:#fff;margin:3px 0}.drive-bottom-destination span{font-size:11px;color:#c5d8ff}
+@keyframes destinationIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.drive-destination-pill{display:none!important}
+.drive-map-controls button.active{background:#276df1!important;color:#fff!important;border-color:#276df1!important}
+.ar-character-car.rear-facing img{transform:none!important;object-fit:contain!important;filter:drop-shadow(0 10px 10px rgba(0,0,0,.36))!important}
+
+@media(orientation:portrait){
+  #driveMenu.bottom-modal{pointer-events:none;background:transparent}
+  #driveMenu .bottom-modal-backdrop{pointer-events:auto;background:linear-gradient(90deg,rgba(4,10,18,.14) 0 54%,rgba(4,10,18,0) 54% 100%)}
+  #driveMenu .bottom-modal-sheet{pointer-events:auto;left:0!important;right:auto!important;top:auto!important;bottom:calc(var(--safeB) + 8px)!important;width:min(54vw,330px)!important;max-height:calc(100dvh - var(--safeT) - var(--safeB) - 24px)!important;overflow:auto!important;padding:8px 10px 12px!important;border-radius:0 20px 20px 0!important;box-shadow:12px 0 28px rgba(4,12,25,.22)!important}
+  #driveMenu .modal-handle{width:30px;height:4px;margin:0 auto 7px}
+  #driveMenu .guide-volume-row{padding:4px 2px 8px}#driveMenu .guide-volume-row>div{margin-bottom:5px}#driveMenu .guide-volume-row b{font-size:12px}#driveMenu .guide-volume-row small{font-size:9px}
+  #driveMenu .traffic-legend{padding:7px 0!important;gap:4px!important}#driveMenu .traffic-legend>b{font-size:11px!important}#driveMenu .traffic-legend>div{min-height:24px!important;padding:3px 4px!important}#driveMenu .traffic-legend strong{font-size:9px!important}#driveMenu .traffic-legend small{font-size:7px!important}
+  #driveMenu .drive-menu-actions{grid-template-columns:repeat(2,1fr)!important;gap:3px!important;padding:7px 0!important}#driveMenu .drive-menu-actions button{padding:6px 2px!important;gap:3px!important}#driveMenu .drive-menu-actions span{width:21px!important;height:21px!important}#driveMenu .drive-menu-actions b{font-size:9px!important}
+  #driveMenu .end-nav-btn{height:38px!important;font-size:12px!important;border-radius:9px!important}
+}
+@media(orientation:landscape){
+  .drive-bottom-summary{min-height:48px}.drive-bottom-normal{display:grid;grid-template-columns:auto auto auto;align-items:center;gap:12px}.drive-bottom-normal>small{font-size:9px}.drive-bottom-normal>div{margin:0;gap:12px}.drive-bottom-normal>div b{font-size:21px}.drive-bottom-normal>span{margin:0;font-size:9px}.drive-bottom-destination b{font-size:17px}.drive-bottom-destination small,.drive-bottom-destination span{font-size:8px}
+}
