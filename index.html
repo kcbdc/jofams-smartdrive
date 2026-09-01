@@ -144,6 +144,14 @@
         <button id="arBtn" class="accent"><span>AR</span><span>AR 안내</span></button>
         <button id="stopNavBtn" class="danger"><span class="svg-icon" data-icon="stop"></span><span>안내종료</span></button>
       </div>
+      <div id="simSpeedControl" class="sim-speed-control hidden" aria-label="가상주행 배속">
+        <span>가상주행 속도</span>
+        <div>
+          <button type="button" data-sim-speed="2" class="active">×2</button>
+          <button type="button" data-sim-speed="4">×4</button>
+          <button type="button" data-sim-speed="6">×6</button>
+        </div>
+      </div>
     </section>
 
     <aside id="characterDock" class="character-dock app-surface">
@@ -219,7 +227,7 @@
       <div class="modal-card app-surface">
         <div class="modal-head">
           <div><span class="eyebrow">MY DRIVE</span><b id="accountTitle">마이페이지</b><small id="accountStatus">게스트 모드</small></div>
-          <button id="closeAccountBtn" class="round-close"><span class="btn-icon" data-icon="close"></span></button>
+          <button id="closeAccountBtn" class="round-close account-close" aria-label="마이페이지 닫기"><span class="btn-icon" data-icon="close"></span></button>
         </div>
         <div class="profile-hero">
           <div class="profile-orb"><img id="userPhoto" src="/assets/daim.png" alt="프로필" /></div>
@@ -240,17 +248,6 @@
         </div>
         <div id="favoritesList" class="account-list"></div>
         <div id="historyList" class="account-list hidden"></div>
-
-        <div class="settings-card integration-check-card">
-          <div class="settings-title"><b>서비스 연동 상태</b><span>Cloudflare · D1 · Firebase 연결을 현재 환경에서 점검합니다.</span></div>
-          <div id="integrationStatusList" class="integration-status-list">
-            <span><i class="status-dot idle"></i><b>Cloudflare API</b><small>점검 전</small></span>
-            <span><i class="status-dot idle"></i><b>D1</b><small>점검 전</small></span>
-            <span><i class="status-dot idle"></i><b>Firebase Auth</b><small>점검 전</small></span>
-            <span><i class="status-dot idle"></i><b>Firestore</b><small>점검 전</small></span>
-          </div>
-          <button id="integrationCheckBtn" class="integration-check-btn" type="button">연동 상태 점검</button>
-        </div>
 
         <div class="settings-card voice-settings-card">
           <div class="settings-title"><b>음성 가이드</b><span>안내 음량을 0~100%로 조절할 수 있습니다.</span></div>
@@ -304,7 +301,7 @@
       <div id="menuBackdrop" class="drawer-backdrop"></div>
       <aside class="drawer-panel app-surface" aria-label="메뉴 서랍">
         <div class="drawer-head">
-          <div class="drawer-brand"><span class="brand-mark"><span class="svg-icon" data-icon="brand-home"></span></span><div><b>조팸스 스마트 드라이브</b><small>상용화 가능한 프리 MVP 5</small></div></div>
+          <div class="drawer-brand"><span class="brand-mark"><span class="svg-icon" data-icon="brand-home"></span></span><div><b>조팸스 스마트 드라이브</b></div></div>
           <button id="closeMenuBtn" class="round-close" aria-label="메뉴 닫기"><span class="btn-icon" data-icon="close"></span></button>
         </div>
         <div class="drawer-menu-grid">

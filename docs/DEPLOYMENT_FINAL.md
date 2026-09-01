@@ -28,4 +28,3 @@ Cloudflare Dashboard > Workers & Pages > jofams-smartdrive > Settings > Bindings
 - `/api/health` 접속
 - `integrations.kakao=true`
 - `integrations.d1=true`
-- 앱 > MY > 서비스 연동 상태 > `연동 상태 점검`
