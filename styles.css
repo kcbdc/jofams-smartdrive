@@ -253,3 +253,77 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 @media(orientation:landscape){
   .drive-bottom-summary{min-height:48px}.drive-bottom-normal{display:grid;grid-template-columns:auto auto auto;align-items:center;gap:12px}.drive-bottom-normal>small{font-size:9px}.drive-bottom-normal>div{margin:0;gap:12px}.drive-bottom-normal>div b{font-size:21px}.drive-bottom-normal>span{margin:0;font-size:9px}.drive-bottom-destination b{font-size:17px}.drive-bottom-destination small,.drive-bottom-destination span{font-size:8px}
 }
+
+/* === MVP 7.2.1: compact landscape drive menu + one-line portrait summary === */
+@media(orientation:landscape){
+  #driveMenu.bottom-modal{pointer-events:none;background:transparent}
+  #driveMenu .bottom-modal-backdrop{pointer-events:auto;background:linear-gradient(90deg,rgba(4,10,18,.16) 0 50%,rgba(4,10,18,0) 50% 100%)}
+  #driveMenu .bottom-modal-sheet{
+    pointer-events:auto;
+    left:0!important;
+    right:auto!important;
+    top:calc(var(--safeT) + 8px)!important;
+    bottom:calc(var(--safeB) + 8px)!important;
+    width:min(50vw,420px)!important;
+    max-height:none!important;
+    overflow:auto!important;
+    padding:8px 12px 10px!important;
+    border-radius:0 18px 18px 0!important;
+    box-shadow:14px 0 30px rgba(4,12,25,.24)!important;
+  }
+  #driveMenu .modal-handle{width:28px;height:4px;margin:0 auto 6px}
+  #driveMenu .guide-volume-row{padding:3px 2px 7px}
+  #driveMenu .guide-volume-row>div{margin-bottom:4px}
+  #driveMenu .guide-volume-row b{font-size:11px}
+  #driveMenu .guide-volume-row small{font-size:8px}
+  #driveMenu .traffic-legend{padding:5px 0!important;gap:3px!important}
+  #driveMenu .traffic-legend>b{font-size:10px!important}
+  #driveMenu .traffic-legend>div{min-height:22px!important;padding:2px 4px!important}
+  #driveMenu .traffic-legend strong{font-size:8px!important}
+  #driveMenu .traffic-legend small{font-size:7px!important}
+  #driveMenu .drive-menu-actions{grid-template-columns:repeat(2,1fr)!important;gap:3px!important;padding:6px 0!important}
+  #driveMenu .drive-menu-actions button{padding:5px 2px!important;gap:3px!important}
+  #driveMenu .drive-menu-actions span{width:20px!important;height:20px!important}
+  #driveMenu .drive-menu-actions b{font-size:8px!important}
+  #driveMenu .end-nav-btn{height:34px!important;font-size:11px!important;border-radius:8px!important}
+}
+
+@media(orientation:portrait){
+  .drive-bottom-card{min-height:68px!important}
+  .drive-bottom-summary{min-height:54px!important}
+  .drive-bottom-normal{
+    display:grid!important;
+    grid-template-columns:auto 1fr auto!important;
+    grid-template-rows:1fr!important;
+    align-items:center!important;
+    column-gap:8px!important;
+  }
+  .drive-bottom-normal>small{
+    display:block!important;
+    font-size:9px!important;
+    line-height:1!important;
+    white-space:nowrap!important;
+    margin:0!important;
+  }
+  .drive-bottom-normal>div{
+    display:flex!important;
+    justify-content:center!important;
+    align-items:baseline!important;
+    gap:10px!important;
+    margin:0!important;
+    white-space:nowrap!important;
+  }
+  .drive-bottom-normal>div b{
+    font-size:19px!important;
+    line-height:1!important;
+    letter-spacing:-.045em!important;
+    white-space:nowrap!important;
+  }
+  .drive-bottom-normal>span{
+    display:block!important;
+    margin:0!important;
+    font-size:8px!important;
+    line-height:1!important;
+    white-space:nowrap!important;
+  }
+}
