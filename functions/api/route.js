@@ -66,7 +66,7 @@ function parseKakaoRoute(route,transId,priority,routeNo,affiliate){
     });
     (section.guides||[]).forEach((g,guideIndex)=>{
       const seg=Number(g.road_index)>=0 ? (sectionRoadSegments[g.road_index] || sectionRoadSegments[Math.max(0,g.road_index-1)] || null) : (sectionRoadSegments.at(-1) || null);
-      rawGuides.push({id:`k_${routeNo}_${sectionIndex}_${guideIndex}`,sectionIndex,guideIndex,name:g.name||'',x:Number(g.x),y:Number(g.y),distance:Number(g.distance)||0,duration:Number(g.duration)||0,type:Number(g.type),guidance:g.guidance||guideTypeLabel(Number(g.type)),roadIndex:Number(g.road_index),roadName:seg?.name||''});
+      rawGuides.push({id:`k_${routeNo}_${sectionIndex}_${guideIndex}`,sectionIndex,guideIndex,name:g.name||'',x:Number(g.x),y:Number(g.y),distance:Number(g.distance)||0,duration:Number(g.duration)||0,type:Number(g.type),guidance:g.guidance||guideTypeLabel(Number(g.type)),roadIndex:Number(g.road_index),roadName:seg?.name||'',lanes:g.lanes??g.lane_info??g.laneInfo??g.lane??null});
     });
   });
   const guides=rawGuides.map(g=>({...g,routeIndex:nearestGeometryIndex(g.x,g.y,geometry)}));

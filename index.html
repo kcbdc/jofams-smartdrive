@@ -86,10 +86,44 @@
       <button id="driveVoiceBtn" class="floating-voice" aria-label="음성안내"><span data-icon="mic"></span></button>
       <button id="arOpenBtn" class="floating-ar" aria-label="AR 안내">AR</button>
 
+      <div id="safetyAlert" class="safety-alert hidden" role="status" aria-live="polite">
+        <div id="safetyAlertIcon" class="safety-alert-icon"></div>
+        <div class="safety-alert-copy"><b id="safetyAlertTitle">안전운전</b><span id="safetyAlertText">전방 안전시설을 확인하세요.</span></div>
+        <strong id="safetyAlertDistance">--m</strong>
+      </div>
+
+      <div id="vmsBanner" class="vms-banner hidden" role="status" aria-live="polite"><span>전광판</span><b id="vmsText">전방 교통정보를 확인하세요.</b></div>
+
+      <div id="laneGuideOverlay" class="lane-guide-overlay hidden" aria-label="차로 안내"><small>차로 안내</small><div id="laneGuideArrows"></div></div>
+
+      <div id="trafficStatus" class="traffic-status traffic-unknown" role="status" aria-live="polite">
+        <span class="traffic-dot"></span>
+        <div><b id="trafficStatusLabel">교통정보 확인 중</b><small id="trafficStatusDetail">현재 도로 소통정보를 불러오고 있습니다.</small></div>
+      </div>
+
       <div id="speedPanel" class="speed-panel hidden">
         <div class="speed-limit"><small>제한</small><b id="speedLimit">--</b></div>
         <strong id="currentSpeed">0</strong><span>km/h</span>
       </div>
+
+      <aside id="trafficRouteRail" class="traffic-route-rail" aria-label="전방 도로 교통정보">
+        <small>교통</small>
+        <div id="trafficRouteSegments" class="traffic-route-segments"><i class="unknown"></i></div>
+        <span class="traffic-route-current" aria-hidden="true"></span>
+      </aside>
+
+      <div class="drive-side-actions" aria-label="주행 중 빠른 기능">
+        <button id="routeInfoBtn" type="button" aria-label="경로정보"><span data-icon="routes"></span><b>경로</b></button>
+        <button id="driveSearchBtn" type="button" aria-label="목적지 검색"><span data-icon="search"></span><b>검색</b></button>
+      </div>
+
+      <div id="driveMapControls" class="drive-map-controls hidden" aria-label="지도 설정">
+        <button id="map3dBtn" type="button">3D</button>
+        <button id="mapZoomInBtn" type="button" aria-label="지도 확대">+</button>
+        <button id="mapZoomOutBtn" type="button" aria-label="지도 축소">−</button>
+      </div>
+
+      <div id="overspeedFlash" class="overspeed-flash" aria-live="assertive" aria-hidden="true"><div><b>과속 주의</b><span id="overspeedMessage">제한속도를 확인하세요</span></div></div>
 
       <div class="drive-bottom-card">
         <button id="driveRefreshBtn" class="drive-bottom-icon" aria-label="재탐색"><span data-icon="refresh"></span></button>
@@ -110,6 +144,13 @@
         <div class="guide-volume-row">
           <div><b>길안내 볼륨</b><small id="volumeValue">80%</small></div>
           <input id="guideVolume" type="range" min="0" max="100" value="80" />
+        </div>
+        <div class="traffic-legend" aria-label="교통정보 기준">
+          <b>교통정보</b>
+          <div><span class="smooth"></span><strong>원활</strong><small>40km/h 이상</small></div>
+          <div><span class="slow"></span><strong>서행</strong><small>20~40km/h 미만</small></div>
+          <div><span class="delayed"></span><strong>지체·혼잡</strong><small>교통량 증가·가다 서기</small></div>
+          <div><span class="severe"></span><strong>정체</strong><small>20km/h 미만</small></div>
         </div>
         <div class="drive-menu-actions">
           <button id="otherRouteBtn"><span data-icon="routes"></span><b>다른경로</b></button>
@@ -156,6 +197,7 @@
               <button type="button" data-my-character="hunmin"><img src="/assets/hunmin_car.png" alt="훈민 자동차"><span><b>훈민</b><small>재탐색을 명확하게</small></span></button>
             </div>
           </div>
+          <button id="noticeBtn"><span data-icon="volume"></span><span><b>공지사항</b><small>서비스 업데이트 및 안내</small></span><i data-icon="chevron"></i></button>
           <button id="appInfoBtn"><span data-icon="settings"></span><span><b>앱정보</b><small>버전 및 서비스 정보</small></span><i data-icon="chevron"></i></button>
           <button id="privacyBtn"><span data-icon="user"></span><span><b>개인정보처리방침</b><small>위치·카메라·계정 정보 안내</small></span><i data-icon="chevron"></i></button>
         </div>
@@ -186,6 +228,25 @@
         <header><b id="placeModalTitle">장소 등록</b><button id="placeModalClose" class="circle-btn"><span data-icon="close"></span></button></header>
         <div class="search-box"><span data-icon="search"></span><input id="placeSearchInput" placeholder="장소 또는 주소 검색"><button id="placeSearchBtn"><span data-icon="arrow-right"></span></button></div>
         <div id="placeSearchResults" class="search-results"></div>
+      </section>
+    </div>
+
+    <!-- ROUTE INFORMATION -->
+    <div id="routeInfoModal" class="modal hidden">
+      <section class="simple-sheet route-info-sheet">
+        <header><b>경로정보</b><button id="routeInfoClose" class="circle-btn"><span data-icon="close"></span></button></header>
+        <div class="route-info-summary"><span id="routeInfoDestination">목적지</span><b id="routeInfoEta">도착 --:--</b><small id="routeInfoRemain">--km · --분</small></div>
+        <div id="routeWaypointList" class="route-waypoint-list"></div>
+      </section>
+    </div>
+
+    <!-- DESTINATION SEARCH WHILE DRIVING -->
+    <div id="driveSearchModal" class="modal hidden">
+      <section class="simple-sheet drive-search-sheet">
+        <header><b>목적지 변경</b><button id="driveSearchClose" class="circle-btn"><span data-icon="close"></span></button></header>
+        <p class="drive-search-notice">현재 길안내를 종료하지 않고 새 목적지로 즉시 재탐색합니다.</p>
+        <div class="search-box"><span data-icon="search"></span><input id="driveSearchInput" placeholder="장소 또는 주소 검색"><button id="driveSearchSubmit"><span data-icon="arrow-right"></span></button></div>
+        <div id="driveSearchResults" class="search-results"></div>
       </section>
     </div>
 

@@ -7,6 +7,9 @@ export async function onRequestGet({ request, env }) {
   const forceKomsco = nq.includes('과학로8067') || nq.includes('대전광역시과학로8067') || nq.includes('대전유성구과학로8067');
   const komscoSearch = nq.includes('한국조폐공사');
   const stationQuery = /역$/.test(nq) && nq.length >= 2;
+  const lng=Number(url.searchParams.get('lng')), lat=Number(url.searchParams.get('lat'));
+  const hasGps=Number.isFinite(lng)&&Number.isFinite(lat);
+  const nearbyCategory=isNearbyCategoryQuery(q);
   const searchQ = forceKomsco ? '한국조폐공사 본사' : q;
 
   if (env.KAKAO_REST_API_KEY) {
@@ -16,17 +19,18 @@ export async function onRequestGet({ request, env }) {
       const api = new URL('https://dapi.kakao.com/v2/local/search/keyword.json');
       api.searchParams.set('query', query);
       api.searchParams.set('size', '15');
-      // 텍스트 검색에서는 현재 위치 거리순을 강제하지 않는다. 정확도순이 우선이다.
+      // 일반 고유명사 검색은 정확도 우선. 주유소/마트/편의점/주차장 등 생활편의시설은 현재 GPS 거리 우선.
+      if(nearbyCategory&&hasGps){api.searchParams.set('x',String(lng));api.searchParams.set('y',String(lat));api.searchParams.set('radius','20000');api.searchParams.set('sort','distance')}
       const r = await fetch(api, { headers: { Authorization: `KakaoAK ${env.KAKAO_REST_API_KEY}` } });
       if (!r.ok) continue;
       const d = await r.json();
       for (const x of d.documents || []) {
-        const item = { id:x.id, name:x.place_name, address:x.road_address_name || x.address_name, category:x.category_name, lng:Number(x.x), lat:Number(x.y), url:x.place_url };
+        const item = { id:x.id, name:x.place_name, address:x.road_address_name || x.address_name, category:x.category_name, lng:Number(x.x), lat:Number(x.y), url:x.place_url, distance:Number(x.distance)||null };
         if (!merged.some(v => String(v.id) === String(item.id))) merged.push(item);
       }
       if (merged.length >= 15) break;
     }
-    let items = rankResults(merged, q, stationQuery);
+    let items = nearbyCategory&&hasGps ? rankNearbyResults(merged,lng,lat) : rankResults(merged, q, stationQuery);
     items = applyKomscoRules(items, forceKomsco, komscoSearch);
     return json({ provider:'kakao', items:items.slice(0,10) });
   }
@@ -38,11 +42,11 @@ export async function onRequestGet({ request, env }) {
   n.searchParams.set('q', stationQuery ? `${searchQ}, 대한민국` : searchQ);
   n.searchParams.set('accept-language', 'ko');
   n.searchParams.set('countrycodes', 'kr');
-  const r = await fetch(n, { headers: { 'User-Agent': 'JofamsSmartDrive/6.6 (prototype)' } });
+  const r = await fetch(n, { headers: { 'User-Agent': 'JofamsSmartDrive/6.8 (prototype)' } });
   if (!r.ok) return json({ items: [] }, 502);
   const d = await r.json();
   let items = d.map((x,i)=>({id:String(x.place_id||i),name:(x.name||x.display_name.split(',')[0]),address:x.display_name,category:x.type,lng:Number(x.lon),lat:Number(x.lat)}));
-  items = rankResults(items, q, stationQuery);
+  items = nearbyCategory&&hasGps ? rankNearbyResults(items,lng,lat) : rankResults(items, q, stationQuery);
   items = applyKomscoRules(items, forceKomsco, komscoSearch);
   return json({ provider:'nominatim', items:items.slice(0,10) });
 }
@@ -64,6 +68,14 @@ function rankResults(items, query, stationQuery){
     if(!nn.includes(nq) && !na.includes(nq)) score-=180;
     return {...x,_score:score,_idx:idx};
   }).sort((a,b)=>b._score-a._score || a._idx-b._idx).map(({_score,_idx,...x})=>x);
+}
+function isNearbyCategoryQuery(q=''){
+  const n=normalize(q).replace(/내주변|주변|근처|가까운/g,'');
+  return /^(주유소|충전소|전기차충전소|마트|대형마트|슈퍼|슈퍼마켓|편의점|주차장|공영주차장)$/.test(n);
+}
+function distanceMeters(lat1,lon1,lat2,lon2){const R=6371000,p=Math.PI/180,a=Math.sin((lat2-lat1)*p/2)**2+Math.cos(lat1*p)*Math.cos(lat2*p)*Math.sin((lon2-lon1)*p/2)**2;return 2*R*Math.asin(Math.sqrt(a))}
+function rankNearbyResults(items,lng,lat){
+  return items.map((x,idx)=>{const d=Number(x.distance)||distanceMeters(lat,lng,Number(x.lat),Number(x.lng));return {...x,distance:Math.round(d),_idx:idx}}).sort((a,b)=>a.distance-b.distance||a._idx-b._idx).map(({_idx,...x})=>x);
 }
 function applyKomscoRules(items, forceKomsco, komscoSearch){
   const hqIndex = items.findIndex(x => (/본사/.test(x.name||'') && /한국조폐공사/.test(x.name||'')) || /과학로\s*80-67/.test(x.address||''));
