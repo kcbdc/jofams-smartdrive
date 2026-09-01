@@ -7,7 +7,7 @@
   <meta name="description" content="다임·순식·훈민과 함께하는 조팸스 스마트 드라이브" />
   <title>조팸스 스마트 드라이브</title>
   <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -141,7 +141,7 @@
           <div id="voiceGuidePanel" class="setting-expand hidden">
             <div class="voice-choice-grid" role="group" aria-label="음성 가이드 선택">
               <button type="button" data-voice-character="daim"><img src="/assets/daim.png" alt="다임"><span><b>다임</b><small>차분하고 정확하게</small></span></button>
-              <button type="button" data-voice-character="sunsik"><img src="/assets/sunsik.png" alt="순식"><span><b>순식</b><small>친근하고 자연스럽게</small></span></button>
+              <button type="button" data-voice-character="sunsik"><img src="/assets/sunsik.png" alt="순식"><span><b>순식</b><small>낮고 또렷한 남성 음성</small></span></button>
               <button type="button" data-voice-character="hunmin"><img src="/assets/hunmin.png" alt="훈민"><span><b>훈민</b><small>빠르고 명확하게</small></span></button>
             </div>
             <div class="volume-setting"><input id="myGuideVolume" type="range" min="0" max="100" value="80" aria-label="길안내 볼륨"><b id="myVolumeValue">80%</b></div>
@@ -199,10 +199,26 @@
       <button type="button" data-bottom-nav="my"><span data-icon="user"></span><b>MY</b></button>
     </nav>
 
+
+    <!-- FIRST-RUN PERMISSIONS -->
+    <div id="permissionGate" class="permission-gate hidden" role="dialog" aria-modal="true" aria-labelledby="permissionTitle">
+      <section class="permission-card">
+        <div class="permission-logo"><span data-icon="car"></span></div>
+        <h2 id="permissionTitle">스마트 드라이브 권한 설정</h2>
+        <p>정확한 길안내와 AR 안내를 위해 위치와 카메라 권한이 필요합니다.</p>
+        <div class="permission-actions">
+          <button id="allowLocationBtn" type="button"><span data-icon="location"></span><span><b>위치 허용</b><small id="locationPermissionState">현재 위치를 길찾기에 사용합니다.</small></span></button>
+          <button id="allowCameraBtn" type="button"><span data-icon="camera"></span><span><b>카메라 허용</b><small id="cameraPermissionState">AR 길안내에 사용합니다.</small></span></button>
+        </div>
+        <button id="permissionContinueBtn" type="button" class="permission-continue">계속하기</button>
+      </section>
+    </div>
+
     <div id="toast" class="toast hidden"></div>
   </main>
 
   <script src="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.js"></script>
+  <script>if(!window.maplibregl){document.write('<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.js"><\/script>')}</script>
   <script src="/config.js"></script>
   <script type="module" src="/app.js"></script>
 </body>

@@ -1,40 +1,33 @@
-# 조팸스 스마트 드라이브 MVP6.2
+# 조팸스 스마트 드라이브 MVP 6.3 안정화
 
-MVP6.1 안정화본을 기준으로 다음 기능을 복원/추가한 버전입니다.
+## 이번 수정
+- 길찾기 지도 표시 안정화
+  - MapLibre CDN 이중 fallback: unpkg → jsDelivr
+  - CARTO raster tile 실패 시 OSM tile 자동 fallback
+  - route 화면 전환 즉시 `resize()` 및 route 재렌더링
+  - style/tile 로딩 실패 watchdog 추가
+- 최초 진입 권한 설정 UI
+  - 위치 허용 버튼
+  - 카메라 허용 버튼
+  - `_headers`의 `camera=()` 오류를 `camera=(self)`로 수정
+  - 권한 버튼 클릭 시 실제 브라우저 위치/카메라 permission 요청
+- 목적지 선택 반응 속도 개선
+  - 목적지 클릭 즉시 route 화면 전환
+  - GPS 확인과 경로 계산은 화면 전환 후 비동기 처리
+- 순식 보이스 남성화
+  - 한국어 음성 중 `InJoon`, `Minho`, `Male`, `남성` 등 남성 보이스 이름 우선 탐색
+  - 기기에 남성 전용 한국어 TTS가 없을 경우 낮은 pitch(0.72)로 보정
+- Android WebView 버전 6.3.0 / API 36 유지
+- 서비스워커 캐시 갱신
 
-## 주요 변경
-- 메인 진입 시 하단 고정 메뉴 `홈 / 길찾기 / 실시간 / MY` 복원
-- 경로 선택 화면에서도 하단 메뉴 유지
-- 출발지 `내 위치` 고정 해제
-  - 출발지 행 터치 → 현재 위치 또는 장소 검색으로 변경
-  - 사용자 지정 출발지는 지도에 초록 시작 마커 표시
-  - 출발지 변경 즉시 추천/빠른길/무료도로 재탐색
-  - 각 경로 카드와 상단 요약에서 예상 도착시간 표시
-- 기존 3초 자동 안내 시작 유지
-- AR 안내 복원
-  - 후면 카메라
-  - 다음 회전 방향/거리
-  - 파란 원근 경로 리본
-  - 반복 진행 화살표
-  - 선택한 다임/순식/훈민 자동차 캐릭터 오버레이
-  - 현재 속도 / ETA / 남은 거리 표시
-- 주행 화면에서 AR 버튼과 주행 메뉴의 `AR 안내` 진입 제공
-- Android WebView에 CAMERA 권한과 video capture 권한 처리 복원
-- Android 버전 `6.2.0`, targetSdk/compileSdk 36 유지
-- Service Worker 캐시 버전 갱신
+## Cloudflare 배포 시 확인
+`_headers` 파일이 같이 배포되어야 합니다.
 
-## 출발지 변경 동작
-1. 목적지 검색
-2. 경로 선택 화면의 `출발 / 내 위치` 행 터치
-3. `내 위치` 또는 장소/주소 검색
-4. 선택 즉시 경로 3개 재계산
-5. `예상 도착 HH:MM` 표시
+```text
+Permissions-Policy: geolocation=(self), camera=(self), microphone=(self)
+```
 
-## AR 사용 조건
-- HTTPS 배포 필요
-- 브라우저/Android WebView 카메라 권한 필요
-- Android 앱은 `CAMERA` 권한을 포함함
+Cloudflare Pages 배포 후 강력 새로고침 또는 기존 서비스워커 캐시 삭제 후 확인하세요.
 
-## 배포
-기존 Cloudflare Pages / Functions / D1 / Firebase 설정은 그대로 사용할 수 있습니다.
-`config.js`의 실제 설정값과 Cloudflare D1 binding을 유지한 뒤 전체 소스를 배포하세요.
+## 지도 데이터
+MVP 단계에서는 외부 raster tile을 사용합니다. 상용화 시에는 별도 지도 사업자 라이선스/API로 교체하는 것을 권장합니다.
