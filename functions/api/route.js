@@ -24,8 +24,7 @@ async function routeWithKakao(origin,destination,body,env){
     const heading = Number(origin.heading);
     const originValue = Number.isFinite(heading) ? `${origin.lng},${origin.lat},angle=${Math.round((heading+360)%360)}` : `${origin.lng},${origin.lat}`;
     u.searchParams.set('origin', originValue);
-    const correction = affiliate && ['parking','building_entrance'].includes(body.destinationCorrection) ? `,correction_point=${body.destinationCorrection}` : '';
-    u.searchParams.set('destination', `${destination.lng},${destination.lat}${correction}`);
+    u.searchParams.set('destination', `${destination.lng},${destination.lat}`);
     const priority = ['RECOMMEND','TIME','DISTANCE','MAIN_ROAD','NO_TRAFFIC_INFO'].includes(body.priority) ? body.priority : 'RECOMMEND';
     u.searchParams.set('priority', priority);
     if (body.avoid) {
@@ -75,7 +74,7 @@ function parseKakaoRoute(route,transId,priority,routeNo,affiliate){
     provider:'kakao',routeNo,distance:Number(route.summary?.distance)||0,duration:Number(route.summary?.duration)||0,fare:route.summary?.fare||null,
     priority:route.summary?.priority||priority,geometry,guides,roadSegments,roadEvents,safeties,
     correctionResult:route.summary?.destination?.correction_result||route.summary?.correction_result||null,
-    meta:{transId:transId||null,guideSource:'Kakao Mobility Directions guides',laneData:'native-bridge-or-heuristic',roadDetailTier:affiliate?'affiliate-extra':'standard'}
+    meta:{transId:transId||null,guideSource:'Kakao Mobility Directions guides',roadDetailTier:affiliate?'affiliate-extra':'standard'}
   };
 }
 
@@ -94,7 +93,7 @@ function stripNestedAlternatives(r){const x={...r};delete x.alternatives;return 
 async function routeWithOsrm(origin,destination,body){
   try{
     const url = `https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson&steps=true&alternatives=3`;
-    const r = await fetch(url,{headers:{'User-Agent':'JofamsSmartDrive/4.0 (prototype)'}});
+    const r = await fetch(url,{headers:{'User-Agent':'JofamsSmartDrive/6.0'}});
     if(!r.ok)return {ok:false,error:`OSRM HTTP ${r.status}`};
     const d=await r.json();const parsed=(d.routes||[]).map((route,i)=>parseOsrmRoute(route,i));if(!parsed.length)return {ok:false,error:'route not found'};
     parsed[0].alternatives=parsed.slice(1).map(stripNestedAlternatives);return {ok:true,data:parsed[0]};
@@ -108,7 +107,7 @@ function parseOsrmRoute(route,routeNo){
     const geom=step.geometry?.coordinates||[];if(geom.length){const startIndex=nearestGeometryIndex(geom[0][0],geom[0][1],geometry),endIndex=nearestGeometryIndex(geom.at(-1)[0],geom.at(-1)[1],geometry);roadSegments.push({sectionIndex:0,roadIndex:stepNo,name:step.name||'',distance:Number(step.distance)||0,duration:Number(step.duration)||0,trafficSpeed:0,trafficState:0,speedLimit:0,safeties:[],roadEvents:[],startIndex:Math.min(startIndex,endIndex),endIndex:Math.max(startIndex,endIndex)})}stepNo++;
   }
   if(guides.length){guides[0]={...guides[0],type:100,guidance:'출발지'};guides[guides.length-1]={...guides.at(-1),type:101,guidance:'목적지'}}
-  return {provider:'osrm-demo',routeNo,distance:Number(route.distance)||0,duration:Number(route.duration)||0,geometry,guides,roadSegments,roadEvents:[],safeties:[],meta:{guideSource:'OSRM steps fallback',laneData:'native-bridge-or-heuristic'}};
+  return {provider:'osrm-demo',routeNo,distance:Number(route.distance)||0,duration:Number(route.duration)||0,geometry,guides,roadSegments,roadEvents:[],safeties:[],meta:{guideSource:'OSRM steps fallback'}};
 }
 
 function normalizeOsrmManeuver(type,modifier){

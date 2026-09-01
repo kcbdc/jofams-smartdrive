@@ -1,11 +1,11 @@
 {
-  "name":"조팸스 스마트 드라이브",
-  "short_name":"조팸스 Drive",
-  "start_url":"/",
-  "display":"standalone",
-  "orientation":"portrait-primary",
-  "background_color":"#f5f7fb",
-  "theme_color":"#f5f7fb",
-  "lang":"ko-KR",
-  "description":"다임·순식·훈민 캐릭터와 함께하는 스마트 드라이브 내비게이션"
+  "name": "조팸스 스마트 드라이브 MVP6",
+  "short_name": "조팸스 Drive",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f6f8fb",
+  "theme_color": "#ffffff",
+  "lang": "ko-KR",
+  "description": "다임·순식·훈민 캐릭터와 함께하는 스마트 드라이브 내비게이션"
 }
