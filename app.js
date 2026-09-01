@@ -288,7 +288,8 @@ function drawARScene(){
   const ctx=canvas.getContext('2d');ctx.clearRect(0,0,w,h);ctx.save();ctx.scale(dpr,dpr);
   const W=rect.width,H=rect.height,horizon=H*.27,bottom=H*.90;
 
-  // MVP 7.3: ribbon/corridor removed. Only sharp, luminous blue direction chevrons remain.
+  // MVP 7.4: thicker, screen-filling chevrons with a strong blue glow halo.
+  // No separate inner specular highlight layer — just one clean glowing gradient fill per arrow.
   // Non-linear spacing keeps distant arrows separated while making the guide feel long and deep.
   const positions=[.91,.80,.70,.61,.53,.46,.40,.35,.30,.26,.225,.195,.168,.145,.124,.105];
   ctx.lineCap='butt';ctx.lineJoin='miter';ctx.miterLimit=3;
@@ -309,36 +310,31 @@ function drawARScene(){
 
   for(let i=positions.length-1;i>=0;i--){
     const t=positions[i], y=horizon+(bottom-horizon)*t;
-    const perspective=.18+.94*Math.pow(t,.86);
-    const half=44*perspective;
-    const height=36*perspective;
-    const thickness=Math.max(5,17*perspective);
+    const perspective=.18+.98*Math.pow(t,.82);
+    const half=Math.min(W*.42,58*perspective);
+    const height=46*perspective;
+    const thickness=Math.max(8,25*perspective);
     const path=chevronPath(W/2,y,half,height,thickness);
 
-    // Wide soft cyan aura.
+    // Wide, strong blue glow halo around the arrow (double pass = bolder, more luminous).
     ctx.save();
-    ctx.shadowColor='rgba(25,210,255,.92)';
-    ctx.shadowBlur=20*perspective+7;
-    ctx.fillStyle=`rgba(0,166,255,${.11+.18*t})`;
+    ctx.shadowColor='rgba(20,150,255,.95)';
+    ctx.shadowBlur=36*perspective+16;
+    ctx.fillStyle=`rgba(10,140,255,${.24+.32*t})`;
+    ctx.fill(path);
     ctx.fill(path);
     ctx.restore();
 
-    // Saturated blue body: translucent enough to keep the camera road visible.
+    // Solid glowing body: one clean gradient fill, no extra inner sparkle/highlight layer.
+    ctx.save();
+    ctx.shadowColor='rgba(70,200,255,.9)';
+    ctx.shadowBlur=12*perspective+5;
     const grad=ctx.createLinearGradient(W/2,y-height*.65,W/2,y+height*.65);
-    grad.addColorStop(0,`rgba(91,238,255,${.34+.23*t})`);
-    grad.addColorStop(.43,`rgba(18,184,255,${.46+.27*t})`);
-    grad.addColorStop(1,`rgba(0,107,255,${.31+.28*t})`);
+    grad.addColorStop(0,`rgba(130,232,255,${.58+.3*t})`);
+    grad.addColorStop(.5,`rgba(32,172,255,${.64+.3*t})`);
+    grad.addColorStop(1,`rgba(0,112,255,${.52+.36*t})`);
     ctx.fillStyle=grad;
     ctx.fill(path);
-
-    // Narrow specular highlight for the sparkling sample-image feel; no outer border.
-    ctx.save();
-    ctx.globalCompositeOperation='screen';
-    ctx.shadowColor='rgba(174,247,255,.95)';
-    ctx.shadowBlur=7*perspective+2;
-    ctx.fillStyle=`rgba(173,246,255,${.08+.18*t})`;
-    const hi=chevronPath(W/2,y-height*.07,half*.73,height*.58,Math.max(3,thickness*.54));
-    ctx.fill(hi);
     ctx.restore();
   }
 
