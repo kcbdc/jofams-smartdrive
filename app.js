@@ -36,6 +36,8 @@ function iconSvg(name){
     case 'account-outline': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.7"/><path d="M5 19c1.9-3 4.4-4.5 7-4.5s5.1 1.5 7 4.5"/></svg>`;
     case 'locate': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v3"/><path d="M12 19v3"/><path d="M2 12h3"/><path d="M19 12h3"/><circle cx="12" cy="12" r="4.2"/></svg>`;
     case 'search': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="5.8"/><path d="m15.2 15.2 4.3 4.3"/></svg>`;
+    case 'mic': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0"/><path d="M12 17v4M9 21h6"/></svg>`;
+    case 'refresh': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 14-5.2M20 12a8 8 0 0 1-14 5.2"/><path d="M18 3v4.4h-4.4M6 21v-4.4h4.4"/></svg>`;
     case 'home': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10.4 12 3.9l8.5 6.5"/><path d="M6.3 9.8V20h11.4V9.8"/><path d="M10.3 20v-5.7h3.4V20"/></svg>`;
     case 'office': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V5.8L12 4l7 1.8V20"/><path d="M9 9h.01M15 9h.01M9 13h.01M15 13h.01"/><path d="M10.4 20v-3.8h3.2V20"/></svg>`;
     case 'star': return `<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 3.2 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.5 6.8 19.2l1-5.8-4.2-4.1 5.8-.8z"/></svg>`;
@@ -210,6 +212,15 @@ async function syncAuthState(user){
 
 function openMenuDrawer(){$('menuDrawer')?.classList.remove('hidden')}
 function closeMenuDrawer(){$('menuDrawer')?.classList.add('hidden')}
+function openDriveMenuDrawer(){$('driveMenuDrawer')?.classList.remove('hidden')}
+function closeDriveMenuDrawer(){$('driveMenuDrawer')?.classList.add('hidden')}
+async function shareArrival(){
+  const name=state.destination?.name||'목적지';const etaTxt=$('driveTopEta')?.textContent||$('etaText')?.textContent||'--:--';
+  const text=`${name}에 ${etaTxt} 도착 예정입니다. 조팸스 스마트 드라이브로 안내받는 중이에요.`;
+  if(navigator.share){try{await navigator.share({title:'도착 시간 공유',text});return}catch{return}}
+  if(navigator.clipboard?.writeText){try{await navigator.clipboard.writeText(text);toast('도착 정보를 클립보드에 복사했어요.');return}catch{}}
+  toast(text,3600);
+}
 function openNoticeModal(){$('noticeModal')?.classList.remove('hidden')}
 function closeNoticeModal(){$('noticeModal')?.classList.add('hidden')}
 function menuRoutePreview(){if(state.route){setUiStage('route');return}const q='스타필드 코엑스몰';$('destinationInput').value=q;searchPlaces(q)}
@@ -237,11 +248,22 @@ function rasterStyle(){
   return {version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors'}},layers:[{id:'osm',type:'raster',source:'osm'}]};
 }
 
+function createCarMarker(){
+  const el=document.createElement('div');el.className='car-marker';
+  el.innerHTML=`<div class="car-marker-nose"></div><div class="car-marker-shadow"></div><div class="car-marker-body"><img class="car-marker-avatar" src="${characters[state.currentCharacter]?.img||'/assets/daim.png'}" alt="${characters[state.currentCharacter]?.name||'가이드'}"/></div>`;
+  state.carMarkerAvatarEl=el.querySelector('.car-marker-avatar');
+  return new maplibregl.Marker({element:el,anchor:'center',rotationAlignment:'map'});
+}
 function initMap(){
   state.map = new maplibregl.Map({container:'map',style:rasterStyle(),center:[127.0587,37.5094],zoom:14.2,attributionControl:true});
   state.map.dragRotate.disable();
   state.map.touchZoomRotate.disableRotation();
   state.map.on('load',()=>{if(!initDemoMode())locate(false)});
+  state.map.on('click',showZoomControls);state.map.on('drag',showZoomControls);state.map.on('zoomstart',showZoomControls);
+}
+function showZoomControls(){
+  const zc=$('zoomControls');if(!zc)return;zc.classList.add('visible');
+  clearTimeout(showZoomControls.t);showZoomControls.t=setTimeout(()=>zc.classList.remove('visible'),3500);
 }
 
 function demoRoute(offset=0,duration=1860,distance=18600,label='추천'){
@@ -312,6 +334,7 @@ function setCharacter(key,message,speakIt=false){
     $('characterAvatar').src=c.img;$('characterAvatar').alt=`${c.name} 캐릭터`;
     $('arCharacter').src=c.img;$('arCharacter').alt=`${c.name} 캐릭터`;
     $('characterName').textContent=c.name;$('characterRole').textContent=c.role;
+    if(state.carMarkerAvatarEl){state.carMarkerAvatarEl.src=c.img;state.carMarkerAvatarEl.alt=`${c.name} 캐릭터`}
     syncCharacterButtons();updateVoiceProfileUI();
   }
   const copy=message||c.msg;
@@ -379,22 +402,31 @@ function applyPosition(p,fly=false,source='gps'){
   const pos={lng:Number(p.coords.longitude),lat:Number(p.coords.latitude),accuracy:Number(p.coords.accuracy),speed:p.coords.speed==null?null:Number(p.coords.speed),heading:p.coords.heading==null?null:Number(p.coords.heading),timestamp:p.timestamp||Date.now()};
   if(!Number.isFinite(pos.lng)||!Number.isFinite(pos.lat))return;state.user=pos;state.positionSource=source;
   if(source==='gps'&&!state.sim.active){state.lastGpsAt=Date.now();state.lastRealGps={...pos};if(state.tunnel.active&&(pos.accuracy||999)<45&&!state.nativeTunnel)stopTunnelDR('GPS 복구');}
-  if(!state.userMarker){const el=document.createElement('div');el.className='user-marker';state.userMarker=new maplibregl.Marker({element:el}).setLngLat([pos.lng,pos.lat]).addTo(state.map)}else state.userMarker.setLngLat([pos.lng,pos.lat]);
+  if(!state.userMarker){state.userMarker=createCarMarker().setLngLat([pos.lng,pos.lat]).addTo(state.map)}else state.userMarker.setLngLat([pos.lng,pos.lat]);
   if(fly)state.map.easeTo({center:[pos.lng,pos.lat],zoom:16,duration:700});
   if(state.navigating)updateNavigation(pos);
 }
 
-async function searchPlaces(query){
+async function searchPlaces(query,targetId='searchResults'){
   if(!query.trim())return;
-  const box=$('searchResults');box.hidden=false;box.innerHTML='<button class="result-item">검색 중...</button>';
+  const box=$(targetId);if(!box)return;box.hidden=false;box.innerHTML='<button class="result-item">검색 중...</button>';
   try{
     const u=new URL('/api/search',location.origin);u.searchParams.set('q',query.trim());
     if(state.user){u.searchParams.set('lng',state.user.lng);u.searchParams.set('lat',state.user.lat)}
     const r=await fetch(u);if(!r.ok)throw new Error('검색 실패');const data=await r.json();box.innerHTML='';
     const items=normalizeSearchResults(query,data.items||[]);
     if(!items.length){box.innerHTML='<button class="result-item">검색 결과가 없습니다.</button>';return}
-    items.slice(0,8).forEach(item=>{const b=document.createElement('button');b.className='result-item';b.innerHTML=`<b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.address||item.category||'')}</small>`;b.onclick=()=>selectDestination(item);box.appendChild(b)});
+    items.slice(0,8).forEach(item=>{const b=document.createElement('button');b.className='result-item';b.innerHTML=`<b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.address||item.category||'')}</small>`;b.onclick=()=>{selectDestination(item);box.hidden=true};box.appendChild(b)});
   }catch(e){box.innerHTML='<button class="result-item">검색 서버에 연결하지 못했습니다.</button>';toast(e.message)}
+}
+function startVoiceSearch(inputId,targetId){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){toast('이 기기·브라우저는 음성 검색을 지원하지 않아요.');return}
+  const rec=new SR();rec.lang='ko-KR';rec.interimResults=false;rec.maxAlternatives=1;
+  toast('말씀해 주세요. 목적지를 검색합니다.');
+  rec.onresult=e=>{const text=e.results?.[0]?.[0]?.transcript||'';if(!text){toast('음성을 인식하지 못했어요.');return}const input=$(inputId);if(input)input.value=text;searchPlaces(text,targetId)};
+  rec.onerror=()=>toast('음성 인식에 실패했어요. 다시 시도해 주세요.');
+  try{rec.start()}catch{toast('음성 인식을 시작할 수 없어요.')}
 }
 
 async function selectDestination(item){
@@ -580,7 +612,12 @@ function updateNavigation(pos){
   if(destDist<32){$('maneuverDistance').textContent='도착';$('maneuverText').textContent=state.destination.name;setDirectionIcon($('maneuverIcon'),101,'#ffffff');stopNavigation({arrived:true});return}
   const road=currentRoad(near.i);maybeManageTunnel(pos,road);const ng=nextGuideInfo(near.i);state.nextGuide=ng.guide;state.nextGuideDistance=ng.distance;renderGuidance(pos,ng.guide,ng.distance,remainDistance,remainDuration,road);
   renderIntersectionGuide(ng.guide,ng.distance);renderSafetyState(pos,road);autoCharacter(pos,ng.guide,ng.distance,road);maybeSpeakGuide(ng.guide,ng.distance);
-  const heading=Number.isFinite(pos.heading)?pos.heading:(state.deviceHeading??state.map.getBearing());state.map.easeTo({center:[pos.lng,pos.lat],zoom:17.2,bearing:heading||0,pitch:42,duration:550});updateAROverlay();
+  const heading=Number.isFinite(pos.heading)?pos.heading:(state.deviceHeading??state.map.getBearing());state.map.easeTo({center:[pos.lng,pos.lat],zoom:17.2,bearing:heading||0,pitch:42,duration:550});if(state.userMarker)state.userMarker.setRotation(heading||0);updateAROverlay();
+  updateDriveTopBar(remainDistance,remainDuration);
+}
+function updateDriveTopBar(remainDistance,remainDuration){
+  if($('driveTopEta'))$('driveTopEta').textContent=eta(remainDuration);
+  if($('driveTopRemain'))$('driveTopRemain').textContent=km(remainDistance);
 }
 
 function renderGuidance(pos,guide,distance,remainDistance,remainDuration,road){
@@ -841,7 +878,7 @@ function closeAccount(){$('accountModal').classList.add('hidden');setUiStage(sta
 
 function bindUI(){
   applyStaticIcons();
-  $('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});$('locateBtn').onclick=()=>locate(true);$('recenterBtn').onclick=()=>locate(true);$('zoomInBtn').onclick=()=>state.map.zoomIn();$('zoomOutBtn').onclick=()=>state.map.zoomOut();
+  $('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});$('locateBtn').onclick=()=>locate(true);$('recenterBtn').onclick=()=>locate(true);$('zoomInBtn').onclick=()=>{state.map.zoomIn();showZoomControls()};$('zoomOutBtn').onclick=()=>{state.map.zoomOut();showZoomControls()};
   $('startNavBtn').onclick=()=>startNavigation({auto:false});$('hunminFreeRouteCard').onclick=chooseHunminFreeRoute;$('stopNavBtn').onclick=()=>stopNavigation();$('cancelRouteBtn').onclick=clearRoute;$('overviewBtn').onclick=()=>state.route&&drawRoutes({fit:true});$('altBtn').onclick=()=>{renderAlternativeRoutes();$('fasterRouteBanner').classList.add('hidden');if(state.navigating)checkAlternativeRoutes();toast(state.routeOptions.length>1?'대안 경로를 확인하고 최신 경로도 조회합니다.':'최신 대안 경로를 조회합니다.')};$('simBtn').onclick=toggleSimulation;$('arBtn').onclick=startAR;$('closeArBtn').onclick=stopAR;$('arCalibrateBtn').onclick=calibrateAR;$('favoriteBtn').onclick=toggleFavorite;
   document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.priority=b.dataset.priority||'RECOMMEND';state.avoid=b.dataset.avoid||null;if(state.destination)requestRoute()});
   document.querySelectorAll('[data-quick]').forEach(b=>b.onclick=()=>quickSearch(b.dataset.quick));
@@ -853,6 +890,19 @@ function bindUI(){
   document.querySelectorAll('[data-character-mode]').forEach(b=>b.onclick=()=>{const mode=b.dataset.characterMode;if(mode==='auto'){state.autoCharacter=true;$('characterModeBtn').textContent='AUTO';toast('상황별 캐릭터 자동 전환을 사용합니다.')}else{state.autoCharacter=false;setCharacter(mode);$('characterModeBtn').textContent='FIX';previewCharacterVoice(mode);toast(`${characters[mode]?.name||'가이드'} 음성·안내로 변경했습니다.`)}syncCharacterButtons();savePreferences()});
   document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.nav;if(nav==='my'){openAccount('favorites');return}if(nav==='home'){setUiStage('home');return}if(nav==='route'){if(state.route)setUiStage('route');else{setUiStage('home');$('destinationInput').focus();toast('목적지를 먼저 검색해 주세요.')}return}if(nav==='drive'){if(state.navigating){setUiStage('drive');return}if(state.route){toast('안내 시작을 눌러 실시간 주행을 시작해 주세요.');setUiStage('route')}else toast('먼저 목적지를 선택해 주세요.')}});
   $('menuBtn').onclick=openMenuDrawer;$('notifBtn').onclick=openNoticeModal;
+  $('driveMenuBtn').onclick=openDriveMenuDrawer;$('closeDriveMenuBtn').onclick=closeDriveMenuDrawer;$('driveMenuBackdrop').onclick=closeDriveMenuDrawer;
+  $('driveVoiceBtn').onclick=()=>startVoiceSearch('driveDestinationInput','driveSearchResults');
+  $('driveDestinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value,'driveSearchResults')});
+  $('driveRefreshBtn').onclick=()=>{if(!state.route){toast('진행 중인 경로가 없습니다.');return}toast('경로를 새로고침합니다.');requestRoute({reroute:true})};
+  $('driveOverviewBtn').onclick=()=>state.route&&drawRoutes({fit:true});
+  document.querySelectorAll('[data-drive-menu]').forEach(b=>b.onclick=()=>{
+    const action=b.dataset.driveMenu;closeDriveMenuDrawer();
+    if(action==='voice')openAccount('favorites');
+    else if(action==='alt'){renderAlternativeRoutes();if(state.navigating)checkAlternativeRoutes();toast('대안 경로를 비교합니다.')}
+    else if(action==='settings')toast('가상주행 · AR 안내는 하단 컨트롤에서 바로 켤 수 있어요.');
+    else if(action==='share')shareArrival();
+    else if(action==='stop')stopNavigation();
+  });
   $('acceptFasterRouteBtn').onclick=acceptPendingAlternative;$('dismissFasterRouteBtn').onclick=()=>{$('fasterRouteBanner').classList.add('hidden');state.pendingAlternative=null;state.nativeMultiRoute=null};
   $('characterModeBtn').onclick=()=>{state.autoCharacter=!state.autoCharacter;$('characterModeBtn').textContent=state.autoCharacter?'AUTO':'FIX';syncCharacterButtons();savePreferences();toast(state.autoCharacter?'상황별 캐릭터 자동 전환':'현재 캐릭터 고정')};
   $('closeAccountBtn').onclick=closeAccount;$('accountModal').addEventListener('click',e=>{if(e.target===$('accountModal'))closeAccount()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;
