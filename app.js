@@ -286,20 +286,62 @@ function drawARScene(){
   const w=Math.max(1,Math.round(rect.width*dpr)),h=Math.max(1,Math.round(rect.height*dpr));
   if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}
   const ctx=canvas.getContext('2d');ctx.clearRect(0,0,w,h);ctx.save();ctx.scale(dpr,dpr);
-  const W=rect.width,H=rect.height,horizon=H*.40,bottom=H*.94;
-  const grad=ctx.createLinearGradient(0,horizon,0,bottom);grad.addColorStop(0,'rgba(36,136,255,.08)');grad.addColorStop(.5,'rgba(31,134,255,.28)');grad.addColorStop(1,'rgba(19,112,255,.56)');
-  ctx.fillStyle=grad;ctx.beginPath();ctx.moveTo(W*.47,horizon);ctx.lineTo(W*.53,horizon);ctx.lineTo(W*.80,bottom);ctx.lineTo(W*.20,bottom);ctx.closePath();ctx.fill();
-  ctx.strokeStyle='rgba(76,178,255,.68)';ctx.lineWidth=4;ctx.stroke();
-  // TMAP-like forward chevrons: larger near the vehicle, progressively smaller toward horizon.
-  // Spacing is non-linear so upper arrows never overlap each other.
-  const positions=[.86,.70,.56,.44,.34,.26,.19];
-  ctx.lineCap='round';ctx.lineJoin='round';
-  for(let i=0;i<positions.length;i++){
-    const t=positions[i],y=horizon+(bottom-horizon)*t;
-    const scale=.28+.92*t,half=46*scale,depth=31*scale;
-    ctx.strokeStyle=`rgba(255,255,255,${.36+.34*t})`;ctx.lineWidth=5+8*t;
-    ctx.beginPath();ctx.moveTo(W/2-half,y+depth*.55);ctx.lineTo(W/2,y-depth);ctx.lineTo(W/2+half,y+depth*.55);ctx.stroke();
+  const W=rect.width,H=rect.height,horizon=H*.27,bottom=H*.90;
+
+  // MVP 7.3: ribbon/corridor removed. Only sharp, luminous blue direction chevrons remain.
+  // Non-linear spacing keeps distant arrows separated while making the guide feel long and deep.
+  const positions=[.91,.80,.70,.61,.53,.46,.40,.35,.30,.26,.225,.195,.168,.145,.124,.105];
+  ctx.lineCap='butt';ctx.lineJoin='miter';ctx.miterLimit=3;
+
+  function chevronPath(cx,cy,halfWidth,height,thickness){
+    const p=new Path2D();
+    const yTop=cy-height*.56, yMid=cy-height*.05, yBottom=cy+height*.52;
+    const innerHalf=Math.max(2,halfWidth-thickness);
+    p.moveTo(cx-halfWidth,yMid);
+    p.lineTo(cx,yTop);
+    p.lineTo(cx+halfWidth,yMid);
+    p.lineTo(cx+innerHalf,yBottom);
+    p.lineTo(cx,yTop+thickness*.78);
+    p.lineTo(cx-innerHalf,yBottom);
+    p.closePath();
+    return p;
   }
+
+  for(let i=positions.length-1;i>=0;i--){
+    const t=positions[i], y=horizon+(bottom-horizon)*t;
+    const perspective=.18+.94*Math.pow(t,.86);
+    const half=44*perspective;
+    const height=36*perspective;
+    const thickness=Math.max(5,17*perspective);
+    const path=chevronPath(W/2,y,half,height,thickness);
+
+    // Wide soft cyan aura.
+    ctx.save();
+    ctx.shadowColor='rgba(25,210,255,.92)';
+    ctx.shadowBlur=20*perspective+7;
+    ctx.fillStyle=`rgba(0,166,255,${.11+.18*t})`;
+    ctx.fill(path);
+    ctx.restore();
+
+    // Saturated blue body: translucent enough to keep the camera road visible.
+    const grad=ctx.createLinearGradient(W/2,y-height*.65,W/2,y+height*.65);
+    grad.addColorStop(0,`rgba(91,238,255,${.34+.23*t})`);
+    grad.addColorStop(.43,`rgba(18,184,255,${.46+.27*t})`);
+    grad.addColorStop(1,`rgba(0,107,255,${.31+.28*t})`);
+    ctx.fillStyle=grad;
+    ctx.fill(path);
+
+    // Narrow specular highlight for the sparkling sample-image feel; no outer border.
+    ctx.save();
+    ctx.globalCompositeOperation='screen';
+    ctx.shadowColor='rgba(174,247,255,.95)';
+    ctx.shadowBlur=7*perspective+2;
+    ctx.fillStyle=`rgba(173,246,255,${.08+.18*t})`;
+    const hi=chevronPath(W/2,y-height*.07,half*.73,height*.58,Math.max(3,thickness*.54));
+    ctx.fill(hi);
+    ctx.restore();
+  }
+
   ctx.restore();state.arFrame=requestAnimationFrame(drawARScene)
 }
 
@@ -310,11 +352,11 @@ function updateTripHistorySummary(){if($('tripHistorySummary'))$('tripHistorySum
 function openInfoModal(title,html){$('infoModalTitle').textContent=title;$('infoModalBody').innerHTML=html;$('infoModal').classList.remove('hidden');applyIcons($('infoModalBody'))}
 function closeInfoModal(){$('infoModal').classList.add('hidden')}
 function openTripHistory(){const items=state.tripHistory||[];const html=items.length?`<div class="history-list">${items.map(x=>`<article><b>${escapeHtml(x.destination||'목적지')}</b><small>${escapeHtml(x.date||'')} · ${km(Number(x.distance)||0)} · ${mins(Number(x.duration)||0)}</small><em>${escapeHtml(characterDefs[x.character]?.name||'')}</em></article>`).join('')}</div>`:'<div class="empty-info">저장된 주행 기록이 없습니다.</div>';openInfoModal('주행기록',html)}
-function openAppInfo(){openInfoModal('앱정보','<div class="info-card"><h3>조팸스 스마트 드라이브</h3><p><b>버전</b> MVP 7.2</p><p>2D 컬러 지도, 실시간 교통상태, AR 안내, 단속카메라·스쿨존·사고·공사 안내와 다임·순식·훈민 캐릭터 음성 안내를 제공합니다.</p></div>')}
+function openAppInfo(){openInfoModal('앱정보','<div class="info-card"><h3>조팸스 스마트 드라이브</h3><p><b>버전</b> MVP 7.3</p><p>2D 컬러 지도, 실시간 교통상태, AR 안내, 단속카메라·스쿨존·사고·공사 안내와 다임·순식·훈민 캐릭터 음성 안내를 제공합니다.</p></div>')}
 function openPrivacy(){openInfoModal('개인정보처리방침','<div class="info-card privacy-copy"><h3>개인정보 처리 안내</h3><p>길안내를 위해 사용자가 허용한 경우 현재 위치 정보를 이용합니다. AR 안내는 카메라 영상을 기기 화면에 표시하며, 본 앱 소스에서는 카메라 영상을 서버에 저장하지 않습니다.</p><p>Google 로그인 사용 시 계정의 기본 프로필 정보와 사용자가 저장한 설정·즐겨찾기를 Firebase에 동기화할 수 있습니다. 권한은 브라우저 또는 앱 설정에서 언제든 변경할 수 있습니다.</p><p>실제 상용 배포 전에는 운영주체, 처리 목적, 보유기간, 제3자 제공·처리위탁, 이용자 권리 및 문의처를 반영한 공식 개인정보처리방침으로 교체해야 합니다.</p></div>')}
 async function logTrip(event){try{await fetch('/api/trip',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({event,destination:state.destination?.name||null,distance:state.route?.distance||null,duration:state.tripStartedAt?Math.round((Date.now()-state.tripStartedAt)/1000):null,character:state.character,provider:state.route?.provider||null,guideType:null})})}catch{}}
 const NOTICE_ITEMS=[
-  {date:'2026.09.01',title:'MVP 7.2 주행화면 업데이트',body:'가로 전체화면, 야간지도, 실시간 경로 재탐색, 차로·전광판 안내와 지도 3D/확대/축소 기능이 추가되었습니다.'},
+  {date:'2026.09.01',title:'MVP 7.3 AR 유도선 업데이트',body:'가로 전체화면, 야간지도, 실시간 경로 재탐색, 차로·전광판 안내와 지도 3D/확대/축소 기능이 추가되었습니다.'},
   {date:'2026.09.01',title:'안전운전 정보 안내',body:'단속카메라, 스쿨존, 사고·공사 및 교통정보는 실제 도로 표지와 교통법규를 우선하여 이용해 주세요.'}
 ];
 function openNotices(){openInfoModal('공지사항',`<div class="notice-list">${NOTICE_ITEMS.map(x=>`<article><time>${escapeHtml(x.date)}</time><b>${escapeHtml(x.title)}</b><p>${escapeHtml(x.body)}</p></article>`).join('')}</div>`)}
