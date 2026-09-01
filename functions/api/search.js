@@ -4,6 +4,7 @@ export async function onRequestGet({ request, env }) {
   if (!q) return json({ items: [] });
   const normalized = q.toLowerCase().replace(/\s+/g, '').replace(/[()\-.,]/g, '');
   const forceKomsco = normalized.includes('과학로8067') || normalized.includes('대전광역시과학로8067') || normalized.includes('대전유성구과학로8067');
+  const komscoSearch = normalized.includes('한국조폐공사');
   const searchQ = forceKomsco ? '한국조폐공사 본사' : q;
   const lng = url.searchParams.get('lng');
   const lat = url.searchParams.get('lat');
@@ -17,9 +18,15 @@ export async function onRequestGet({ request, env }) {
     if (r.ok) {
       const d = await r.json();
       let items = d.documents.map(x => ({ id:x.id, name:x.place_name, address:x.road_address_name || x.address_name, category:x.category_name, lng:Number(x.x), lat:Number(x.y), url:x.place_url }));
+      const hqIndex = items.findIndex(x => /본사/.test(x.name || '') && /한국조폐공사/.test(x.name || '') || /과학로\s*80-67/.test(x.address || ''));
       if (forceKomsco) {
-        const picked = items.find(x => /한국조폐공사/.test(x.name) || /과학로 80-67/.test(x.address)) || items[0] || { id:'komsco_hq', name:'한국조폐공사 본사', address:'대전광역시 유성구 과학로 80-67', lng:127.3847, lat:36.3784 };
-        items = [{ ...picked, name:'한국조폐공사 본사', address:'대전광역시 유성구 과학로 80-67' }];
+        const picked = hqIndex >= 0 ? items[hqIndex] : (items.find(x => /한국조폐공사/.test(x.name || '')) || items[0]);
+        if (picked) items = [{ ...picked, name:'한국조폐공사 본사', address:'대전광역시 유성구 과학로 80-67' }];
+      } else if (komscoSearch && hqIndex > 0) {
+        const [hq] = items.splice(hqIndex,1);
+        items.unshift({ ...hq, name:'한국조폐공사 본사', address:hq.address || '대전광역시 유성구 과학로 80-67' });
+      } else if (komscoSearch && hqIndex === 0) {
+        items[0] = { ...items[0], name:'한국조폐공사 본사', address:items[0].address || '대전광역시 유성구 과학로 80-67' };
       }
       return json({ provider: 'kakao', items });
     }
@@ -32,9 +39,14 @@ export async function onRequestGet({ request, env }) {
   if (!r.ok) return json({ items: [] }, 502);
   const d = await r.json();
   let items = d.map((x,i)=>({id:String(x.place_id||i),name:(x.name||x.display_name.split(',')[0]),address:x.display_name,category:x.type,lng:Number(x.lon),lat:Number(x.lat)}));
+  const hqIndex = items.findIndex(x => /본사/.test(x.name || '') && /한국조폐공사/.test(x.name || '') || /과학로\s*80-67/.test(x.address || ''));
   if (forceKomsco) {
-    const picked = items.find(x => /한국조폐공사/.test(x.name) || /과학로 80-67/.test(x.address)) || items[0] || { id:'komsco_hq', name:'한국조폐공사 본사', address:'대전광역시 유성구 과학로 80-67', lng:127.3847, lat:36.3784 };
-    items = [{ ...picked, name:'한국조폐공사 본사', address:'대전광역시 유성구 과학로 80-67' }];
+    const picked = hqIndex >= 0 ? items[hqIndex] : (items.find(x => /한국조폐공사/.test(x.name || '')) || items[0]);
+    if (picked) items = [{ ...picked, name:'한국조폐공사 본사', address:'대전광역시 유성구 과학로 80-67' }];
+  } else if (komscoSearch && hqIndex > 0) {
+    const [hq] = items.splice(hqIndex,1); items.unshift({ ...hq, name:'한국조폐공사 본사', address:hq.address || '대전광역시 유성구 과학로 80-67' });
+  } else if (komscoSearch && hqIndex === 0) {
+    items[0] = { ...items[0], name:'한국조폐공사 본사', address:items[0].address || '대전광역시 유성구 과학로 80-67' };
   }
   return json({ provider:'nominatim', items });
 }

@@ -17,7 +17,7 @@ const state = {
   lastGpsAt:0,lastRealGps:null,positionSource:'gps',nativeTunnel:false,tunnel:{active:false,timer:null,distanceOnRoute:0,lastTick:0,lastSpeed:0},
   parking:[],parkingProvider:'',parkingLoadedFor:'',destinationCorrection:null,lastSafetySpeechKey:'',sim:{active:false,timer:null,index:0,speedKmh:45},haptic:true,
   firebase:{configured:false,ready:false,auth:null,db:null,user:null,mods:null},
-  favorites:[],history:[],activeAccountTab:'favorites',demoMode:null,savedPlaces:{home:null,work:null}
+  favorites:[],history:[],activeAccountTab:'favorites',demoMode:null,savedPlaces:{home:null,work:null},registerKind:null
 };
 
 const characters = {
@@ -29,6 +29,7 @@ const characters = {
 function iconSvg(name){
   switch(name){
     case 'brand-home': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10.6 12 3.8l8.5 6.8"/><path d="M6.5 9.7V20h11V9.7"/><path d="M10.2 20v-5.6h3.6V20"/></svg>`;
+    case 'menu': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round"><path d="M4 7.5h16"/><path d="M4 12h16"/><path d="M4 16.5h16"/></svg>`;
     case 'sound-on': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h4l5 4V6L8 10H4z"/><path d="M17 9.2c1.7 1.5 1.7 4.1 0 5.6"/><path d="M19.8 6.7c3 3.2 3 7.5 0 10.6"/></svg>`;
     case 'sound-off': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h4l5 4V6L8 10H4z"/><path d="M17 9l4 6"/><path d="M21 9l-4 6"/></svg>`;
     case 'account-outline': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.7"/><path d="M5 19c1.9-3 4.4-4.5 7-4.5s5.1 1.5 7 4.5"/></svg>`;
@@ -45,6 +46,7 @@ function iconSvg(name){
     case 'fuel': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20V5.5A1.5 1.5 0 0 1 7.5 4h6A1.5 1.5 0 0 1 15 5.5V20"/><path d="M6 9.5h9"/><path d="m15.5 7 2.5 2.5V17a1.5 1.5 0 1 0 3 0v-4.5l-2.3-2.2"/></svg>`;
     case 'cafe': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9h10v4.5A3.5 3.5 0 0 1 11.5 17h-3A3.5 3.5 0 0 1 5 13.5Z"/><path d="M15 10h1.8a2.2 2.2 0 1 1 0 4.4H15"/><path d="M7 20h9"/><path d="M8.5 5.2c-.8.8-.8 2 0 2.8M12 4.2c-1 1-1 2.7 0 3.8"/></svg>`;
     case 'charge': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13.5 3-5 8h4l-2 10 7-10h-4z"/></svg>`;
+    case 'store': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9v11h14V9"/><path d="M4 9h16l-1.5-5h-13z"/><path d="M8 20v-6h4v6"/><path d="M15 13h2"/><path d="M6 9c0 1 .8 1.8 1.8 1.8S9.6 10 9.6 9c0 1 .8 1.8 1.8 1.8S13.2 10 13.2 9c0 1 .8 1.8 1.8 1.8S16.8 10 16.8 9c0 1 .8 1.8 1.8 1.8S20.4 10 20.4 9"/></svg>`;
     case 'route-overview': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19c2-8 10-2 12-10"/><path d="M17 7h2v2"/><circle cx="6" cy="19" r="2" fill="currentColor" stroke="none"/></svg>`;
     case 'swap': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h12"/><path d="m15 3 4 4-4 4"/><path d="M17 17H5"/><path d="m9 21-4-4 4-4"/></svg>`;
     case 'play': return `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l10-6.5z"/></svg>`;
@@ -106,13 +108,16 @@ function normalizePlaceData(place){
   return {id:place.id||null,lng,lat,name:place.name||'저장한 장소',address:place.address||''};
 }
 function normalizeSearchResults(query, items=[]){
-  const q=normalizeQueryText(query);
-  const isKomsco=q.includes('과학로8067')||q.includes('대전광역시과학로8067')||q.includes('대전유성구과학로8067');
-  if(isKomsco){
-    const base=items.find(x=>/한국조폐공사/.test(x.name||'')||/과학로 80-67/.test(x.address||''))||items[0]||{id:'komsco_hq',name:'한국조폐공사 본사',address:'대전광역시 유성구 과학로 80-67',lng:127.3847,lat:36.3784};
-    return [{...base,name:'한국조폐공사 본사',address:'대전광역시 유성구 과학로 80-67'}];
+  const q=normalizeQueryText(query),list=[...items];
+  const exactAddress=q.includes('과학로8067')||q.includes('대전광역시과학로8067')||q.includes('대전유성구과학로8067');
+  const komscoSearch=q.includes('한국조폐공사');
+  const hqIndex=list.findIndex(x=>(/한국조폐공사/.test(x.name||'')&&/본사/.test(x.name||''))||/과학로\s*80-67/.test(x.address||''));
+  if(exactAddress){
+    const base=hqIndex>=0?list[hqIndex]:(list.find(x=>/한국조폐공사/.test(x.name||''))||list[0]);
+    return base?[{...base,name:'한국조폐공사 본사',address:'대전광역시 유성구 과학로 80-67'}]:[];
   }
-  return items;
+  if(komscoSearch&&hqIndex>=0){const [hq]=list.splice(hqIndex,1);list.unshift({...hq,name:'한국조폐공사 본사',address:hq.address||'대전광역시 유성구 과학로 80-67'})}
+  return list;
 }
 function updateHomeWorkButtons(){
   const home=state.savedPlaces.home, work=state.savedPlaces.work;
@@ -125,8 +130,8 @@ function updateHomeWorkButtons(){
   const count = state.favorites.length;
   if($('favoritesShortcutMeta')) $('favoritesShortcutMeta').textContent=count?`저장 ${count}곳 관리`:'자유롭게 관리';
 }
-function setSoundButtonIcon(){ const slot=$('soundBtn')?.querySelector('.btn-icon'); if(slot) slot.innerHTML=iconSvg(state.sound?'sound-on':'sound-off'); }
-function setAccountButtonIcon(){ const slot=$('accountBtn')?.querySelector('.btn-icon'); if(slot) slot.innerHTML=iconSvg('account-outline'); }
+function setSoundButtonIcon(){ document.querySelectorAll('[data-menu-action="sound"] .svg-icon').forEach(slot=>{slot.innerHTML=iconSvg(state.sound?'sound-on':'sound-off')}) }
+function setAccountButtonIcon(){}
 async function searchFirstPlace(query){
   const u=new URL('/api/search',location.origin);u.searchParams.set('q',query.trim());
   if(state.user){u.searchParams.set('lng',state.user.lng);u.searchParams.set('lat',state.user.lat)}
@@ -134,18 +139,31 @@ async function searchFirstPlace(query){
   return normalizeSearchResults(query,data.items||[])[0]||null;
 }
 async function saveSavedPlace(kind, place){ state.savedPlaces[kind]=normalizePlaceData(place); await savePreferences(); updateHomeWorkButtons(); renderAccount(); }
-async function promptSavePlace(kind){
-  const label = placeLabel(kind);
-  let place = state.destination ? normalizePlaceData(state.destination) : null;
-  if(!place){
-    const query = prompt(`${label}로 등록할 장소명 또는 주소를 입력해 주세요.`, state.savedPlaces[kind]?.name||'');
-    if(!query||!query.trim()) return;
-    try{ place = await searchFirstPlace(query.trim()); }catch{ place = null; }
-    if(!place){ toast(`${label}로 등록할 장소를 찾지 못했습니다.`,2800); return; }
-  }
-  await saveSavedPlace(kind, place); toast(`${label} 장소를 저장했습니다.`);
+function openPlaceRegistration(kind){
+  state.registerKind=kind;
+  const label=placeLabel(kind);
+  $('placeRegisterTitle').textContent=`${label} 장소 등록`;
+  $('placeRegisterInput').value=state.savedPlaces[kind]?.name||'';
+  $('placeRegisterResults').innerHTML='<div class="register-empty">검색 결과에서 원하는 장소를 선택하면 바로 등록됩니다.</div>';
+  const current=normalizePlaceData(state.destination);
+  $('placeRegisterCurrent').classList.toggle('hidden',!current);
+  if(current)$('placeRegisterCurrentText').textContent=`${current.name}${current.address?` · ${current.address}`:''}`;
+  $('placeRegisterModal').classList.remove('hidden');
+  setTimeout(()=>$('placeRegisterInput').focus(),60);
 }
-async function useSavedPlace(kind){ const place=state.savedPlaces[kind]; if(place) return selectDestination(place); await promptSavePlace(kind) }
+function closePlaceRegistration(){state.registerKind=null;$('placeRegisterModal').classList.add('hidden')}
+async function renderPlaceRegistrationSearch(){
+  const query=$('placeRegisterInput').value.trim();if(!query)return;
+  const box=$('placeRegisterResults');box.innerHTML='<div class="register-empty">검색 중...</div>';
+  try{
+    const u=new URL('/api/search',location.origin);u.searchParams.set('q',query);
+    if(state.user){u.searchParams.set('lng',state.user.lng);u.searchParams.set('lat',state.user.lat)}
+    const r=await fetch(u);if(!r.ok)throw new Error('검색 실패');const data=await r.json();const items=normalizeSearchResults(query,data.items||[]);box.innerHTML='';
+    if(!items.length){box.innerHTML='<div class="register-empty">검색 결과가 없습니다.</div>';return}
+    items.slice(0,8).forEach(item=>{const row=document.createElement('button');row.className='register-result';row.innerHTML=`<span class="register-result-icon">${iconSvg('route-tab')}</span><span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.address||item.category||'')}</small></span>`;row.onclick=async()=>{if(!state.registerKind)return;await saveSavedPlace(state.registerKind,item);toast(`${placeLabel(state.registerKind)} 장소를 저장했습니다.`);closePlaceRegistration()};box.appendChild(row)});
+  }catch(e){box.innerHTML='<div class="register-empty">검색 서버에 연결하지 못했습니다.</div>';toast(e.message)}
+}
+async function useSavedPlace(kind){const place=state.savedPlaces[kind];if(place)return selectDestination(place);openPlaceRegistration(kind)}
 async function deleteFavoriteById(id){
   if(state.firebase.user){ const {fsMod}=state.firebase.mods; await fsMod.deleteDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'favorites',id)); await loadCloudData(); }
   else { state.favorites=state.favorites.filter(x=>x.id!==id); localStorage.setItem(GUEST_FAVORITES_KEY,JSON.stringify(state.favorites)); renderAccountLists(); }
@@ -165,6 +183,13 @@ async function syncAuthState(user){
   updateFavoriteButton();
   updateHomeWorkButtons();
 }
+
+function openMenuDrawer(){$('menuDrawer')?.classList.remove('hidden')}
+function closeMenuDrawer(){$('menuDrawer')?.classList.add('hidden')}
+function openNoticeModal(){$('noticeModal')?.classList.remove('hidden')}
+function closeNoticeModal(){$('noticeModal')?.classList.add('hidden')}
+function menuRoutePreview(){if(state.route){setUiStage('route');return}const q='스타필드 코엑스몰';$('destinationInput').value=q;searchPlaces(q)}
+function menuParkingPreview(){if(state.parking.length&&state.route){setUiStage('route');const panel=$('parkingPanel');panel?.scrollIntoView({behavior:'smooth',block:'nearest'});return}if(state.route){loadParkingNearDestination();setUiStage('route');return}const q='스타필드 코엑스몰';$('destinationInput').value=q;searchPlaces(q)}
 
 
 function setUiStage(stage){
@@ -325,7 +350,16 @@ function renderAlternativeRoutes(){
   const panel=$('alternativePanel'),list=$('alternativeList');if(!panel||!list)return;list.innerHTML='';
   if(state.routeOptions.length<2){panel.classList.add('hidden');return}panel.classList.remove('hidden');
   const base=state.routeOptions[0]?.duration||0;
-  state.routeOptions.forEach((r,i)=>{const b=document.createElement('button');b.className='alternative-card'+(i===state.selectedRouteIndex?' active':'');const diff=Math.round(((r.duration||0)-base)/60);const diffText=i===0?'추천 경로':diff===0?'비슷한 시간':diff>0?`${diff}분 더 소요`:`${Math.abs(diff)}분 단축`;b.innerHTML=`<b>${i===0?'추천':`대안 ${i}`}</b><small>${durationText(r.duration)} · ${km(r.distance)}</small><em>${escapeHtml(diffText)}</em>`;b.onclick=()=>selectRouteOption(i,{fit:true});list.appendChild(b)});
+  const guideKeys=['daim','sunsik','hunmin'];
+  state.routeOptions.forEach((r,i)=>{
+    const b=document.createElement('button');b.className='alternative-card'+(i===state.selectedRouteIndex?' active':'');
+    const diff=Math.round(((r.duration||0)-base)/60);
+    const diffText=i===0?'가장 균형 잡힌 경로':diff===0?'추천 경로와 비슷한 시간':diff>0?`${diff}분 더 소요`:`${Math.abs(diff)}분 단축`;
+    const guideKey=guideKeys[i]||guideKeys[i%guideKeys.length],guide=characters[guideKey];
+    const title=i===0?'추천':i===1?'빠른길':'무료도로';
+    b.innerHTML=`<div class="alt-main"><div class="alt-badge">${title}</div><div class="alt-metrics"><b>${durationText(r.duration)}</b><small>${km(r.distance)} · ${escapeHtml(diffText)}</small></div></div><div class="alt-guide"><img src="${guide.img}" alt="${guide.name}"><span><b>${guide.name}</b><small>${escapeHtml(guide.role)}</small></span></div>`;
+    b.onclick=()=>selectRouteOption(i,{fit:true});list.appendChild(b)
+  });
 }
 function candidateRoutesFromPayload(data){const raw=[data,...(data?.alternatives||[])].filter(Boolean);return raw.map(x=>{const y={...x};delete y.alternatives;return prepareRoute(y)})}
 async function fetchAlternativeSnapshot(){
@@ -350,7 +384,20 @@ async function loadParkingNearDestination(){
   if(!state.destination)return;const key=`${state.destination.lat.toFixed(5)},${state.destination.lng.toFixed(5)}`;if(state.parkingLoadedFor===key&&state.parking.length){renderParking();return}state.parkingLoadedFor=key;
   try{const u=new URL('/api/parking',location.origin);u.searchParams.set('lng',state.destination.lng);u.searchParams.set('lat',state.destination.lat);u.searchParams.set('radius','1800');const r=await fetch(u);if(!r.ok)throw new Error();const d=await r.json();state.parking=(d.items||[]).slice(0,6);state.parkingProvider=d.provider||'';renderParking()}catch{state.parking=[];renderParking()}
 }
-function renderParking(){const panel=$('parkingPanel'),list=$('parkingList');if(!panel||!list)return;list.innerHTML='';if(!state.parking.length){panel.classList.add('hidden');return}panel.classList.remove('hidden');$('parkingProvider').textContent=state.parkingProvider==='kakao'?'Kakao Local · 거리순':'검색 결과';state.parking.slice(0,4).forEach(p=>{const b=document.createElement('button');b.className='parking-card';b.innerHTML=`<b>${escapeHtml(p.name||'주차장')}</b><small>${escapeHtml(p.address||'')}</small><span>${km(Number(p.distance)||haversine(state.destination.lat,state.destination.lng,p.lat,p.lng))} · <i class="park-go">여기로 안내</i></span>`;b.onclick=()=>selectParkingDestination(p);list.appendChild(b)})}
+function renderParking(){
+  const panel=$('parkingPanel'),list=$('parkingList');if(!panel||!list)return;list.innerHTML='';
+  if(!state.parking.length){panel.classList.add('hidden');return}
+  panel.classList.remove('hidden');$('parkingProvider').textContent=state.parkingProvider==='kakao'?'Kakao Local · 거리순':'검색 결과';
+  const badges=[['여유','green'],['보통','yellow'],['혼잡','red'],['혼잡','red']];
+  state.parking.slice(0,4).forEach((p,i)=>{
+    const b=document.createElement('button');b.className='parking-card';
+    const dist=km(Number(p.distance)||haversine(state.destination.lat,state.destination.lng,p.lat,p.lng));
+    const fee=['1,200원/30분','1,000원/30분','1,500원/30분','900원/30분'][i]||'요금 확인';
+    const [badge,badgeClass]=badges[i]||['안내','blue'];
+    b.innerHTML=`<div class="parking-card-head"><div><b>${escapeHtml(p.name||'주차장')}</b><small>${escapeHtml(p.address||'')}</small></div><span class="parking-badge ${badgeClass}">${badge}</span></div><div class="parking-card-foot"><span>${dist} · ${fee}</span><i class="park-go">여기로 안내</i></div>`;
+    b.onclick=()=>selectParkingDestination(p);list.appendChild(b)
+  })
+}
 async function selectParkingDestination(p){const original=state.destination?.name||'목적지';state.destination={id:p.id||null,lng:Number(p.lng),lat:Number(p.lat),name:p.name||`${original} 주차장`,address:p.address||''};state.destinationCorrection='parking';$('destinationInput').value=state.destination.name;if(state.destMarker)state.destMarker.setLngLat([state.destination.lng,state.destination.lat]);toast('주차장 진입점 기준으로 경로를 다시 계산합니다.');await requestRoute()}
 
 function startNavigation(){
@@ -523,10 +570,31 @@ function clearARCanvas(){const c=$('arCanvas');if(c)c.getContext('2d').clearRect
 function arHeading(){const raw=Number.isFinite(state.smoothedHeading)?state.smoothedHeading:(Number.isFinite(state.user?.heading)?state.user.heading:0);return (raw+state.arHeadingOffset+360)%360}
 function arConfidence(){let v=25;if(state.arMode==='native')v=95;else if(state.arMode==='webxr')v=86;else{if(Number.isFinite(state.smoothedHeading))v+=25;if((state.user?.accuracy||999)<20)v+=25;if((state.user?.accuracy||999)<8)v+=15}return clamp(Math.round(v),0,99)}
 function drawRouteCorridor(){
-  const c=$('arCanvas');if(!c||!state.user||!state.route?.geometry?.length||state.arMode==='native')return;const ctx=c.getContext('2d'),w=innerWidth,h=innerHeight;ctx.clearRect(0,0,w,h);const heading=arHeading();const pts=[];let lastDist=0;
-  for(let i=state.currentRouteIndex+1;i<Math.min(state.route.geometry.length,state.currentRouteIndex+220);i+=3){const p=state.route.geometry[i],d=haversine(state.user.lat,state.user.lng,p[1],p[0]);if(d<5||d>320||d<lastDist-12)continue;lastDist=d;const diff=normalizeAngle(bearingTo(state.user.lat,state.user.lng,p[1],p[0])-heading);if(Math.abs(diff)>75)continue;const x=w/2+(diff/75)*(w*.48);const depth=clamp(d/320,0,1);const horizon=h*(.48+clamp(((state.devicePitch??75)-75)/120,-.08,.08));const y=horizon+(1-depth)*h*.39;pts.push([x,y,d]);if(pts.length>18)break}
-  if(pts.length<2)return;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.strokeStyle='rgba(0,0,0,.45)';ctx.lineWidth=34;ctx.stroke();ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.strokeStyle='rgba(105,240,197,.88)';ctx.lineWidth=16;ctx.stroke();
-  for(let i=2;i<pts.length;i+=4){const [x,y]=pts[i];ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.fillStyle='white';ctx.fill()}
+  const c=$('arCanvas');if(!c||!state.user||!state.route?.geometry?.length||state.arMode==='native')return;
+  const ctx=c.getContext('2d'),w=innerWidth,h=innerHeight;ctx.clearRect(0,0,w,h);const heading=arHeading();const pts=[];let lastDist=0;
+  for(let i=state.currentRouteIndex+1;i<Math.min(state.route.geometry.length,state.currentRouteIndex+260);i+=3){
+    const p=state.route.geometry[i],d=haversine(state.user.lat,state.user.lng,p[1],p[0]);if(d<4||d>300||d<lastDist-10)continue;lastDist=d;
+    const diff=normalizeAngle(bearingTo(state.user.lat,state.user.lng,p[1],p[0])-heading);if(Math.abs(diff)>70)continue;
+    const x=w/2+(diff/70)*(w*.45),depth=clamp(d/300,0,1),horizon=h*(.46+clamp(((state.devicePitch??75)-75)/125,-.07,.08)),y=horizon+(1-depth)*h*.42;
+    pts.push({x,y,d,near:1-depth});if(pts.length>24)break
+  }
+  if(pts.length<2)return;
+  ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.globalCompositeOperation='source-over';
+  // Perspective blue route ribbon: draw far-to-near so the lower part naturally widens.
+  for(let i=pts.length-2;i>=0;i--){
+    const a=pts[i],b=pts[i+1],near=(a.near+b.near)/2,width=18+near*74;
+    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle=`rgba(0,116,255,${.38+near*.34})`;ctx.lineWidth=width+14;ctx.shadowColor='rgba(0,166,255,.85)';ctx.shadowBlur=18+near*20;ctx.stroke();
+    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle=`rgba(16,126,244,${.54+near*.28})`;ctx.lineWidth=width;ctx.shadowBlur=0;ctx.stroke();
+    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle=`rgba(84,195,255,${.65+near*.28})`;ctx.lineWidth=Math.max(2,width*.08);ctx.stroke();
+  }
+  // Repeated white chevrons like a commercial AR navigation lane.
+  const step=Math.max(2,Math.floor(pts.length/7));
+  for(let i=1;i<pts.length-1;i+=step){
+    const p=pts[i],next=pts[Math.min(pts.length-1,i+1)],dx=next.x-p.x,dy=next.y-p.y,len=Math.hypot(dx,dy)||1,fx=dx/len,fy=dy/len,nx=-fy,ny=fx,size=10+p.near*25,half=8+p.near*19;
+    const tipX=p.x+fx*size*.7,tipY=p.y+fy*size*.7,backX=p.x-fx*size*.55,backY=p.y-fy*size*.55;
+    ctx.beginPath();ctx.moveTo(backX+nx*half,backY+ny*half);ctx.lineTo(tipX,tipY);ctx.lineTo(backX-nx*half,backY-ny*half);ctx.strokeStyle=`rgba(255,255,255,${.78+p.near*.2})`;ctx.lineWidth=3+p.near*6;ctx.shadowColor='rgba(0,92,190,.55)';ctx.shadowBlur=8;ctx.stroke();
+  }
+  ctx.restore();
 }
 function calibrateAR(){const gps=state.user?.heading;if(Number.isFinite(gps)&&Number.isFinite(state.smoothedHeading)){state.arHeadingOffset=normalizeAngle(gps-state.smoothedHeading);savePreferences();toast('현재 주행 방향을 기준으로 AR을 보정했습니다.')}else{state.arHeadingOffset=0;toast('GPS 진행방향이 확보되면 더 정확하게 보정할 수 있습니다.')}}
 function updateAROverlay(){
@@ -547,11 +615,12 @@ window.addEventListener('jofams:location',e=>applyNativeLocation(e.detail));
 window.addEventListener('jofams:arstatus',e=>{if(e.detail?.mode)$('arModeBadge').textContent=String(e.detail.mode).toUpperCase()});
 
 /* Route simulator - useful for desktop/QA without driving */
+function updateSimButton(){const b=$('simBtn');if(!b)return;b.innerHTML=`<span class="svg-icon">${iconSvg(state.sim.active?'stop':'play')}</span><span>${state.sim.active?'가상주행 중':'가상주행'}</span>`}
 function startSimulation(){
-  if(!state.route?.geometry?.length||!state.navigating)return;stopSimulation();state.sim.active=true;state.sim.index=Math.max(0,state.currentRouteIndex);$('simBtn').textContent='가상주행 중';toast('가상주행을 시작합니다. 실제 GPS 대신 경로를 따라 이동합니다.');
+  if(!state.route?.geometry?.length||!state.navigating)return;stopSimulation();state.sim.active=true;state.sim.index=Math.max(0,state.currentRouteIndex);updateSimButton();toast('가상주행을 시작합니다. 실제 GPS 대신 경로를 따라 이동합니다.');
   state.sim.timer=setInterval(()=>{if(!state.sim.active||!state.navigating)return;const coords=state.route.geometry;if(state.sim.index>=coords.length-2){stopSimulation();return}const step=Math.max(1,Math.round(coords.length/420));const prev=coords[state.sim.index];state.sim.index=Math.min(coords.length-1,state.sim.index+step);const cur=coords[state.sim.index];const heading=bearingTo(prev[1],prev[0],cur[1],cur[0]);applyPosition({coords:{longitude:cur[0],latitude:cur[1],accuracy:4,speed:state.sim.speedKmh/3.6,heading},timestamp:Date.now()},false,'sim')},650)
 }
-function stopSimulation(){if(state.sim.timer)clearInterval(state.sim.timer);state.sim.timer=null;state.sim.active=false;if($('simBtn'))$('simBtn').textContent='가상주행'}
+function stopSimulation(){if(state.sim.timer)clearInterval(state.sim.timer);state.sim.timer=null;state.sim.active=false;updateSimButton()}
 function toggleSimulation(){state.sim.active?stopSimulation():startSimulation()}
 
 /* Favorites + Firebase */
@@ -613,7 +682,7 @@ async function toggleFavorite(){
   else{if(exists)state.favorites=state.favorites.filter(x=>x.id!==id);else state.favorites.unshift({id,name:state.destination.name,address:state.destination.address,lng:state.destination.lng,lat:state.destination.lat,createdAt:Date.now()});localStorage.setItem(GUEST_FAVORITES_KEY,JSON.stringify(state.favorites));renderAccountLists()}
   updateFavoriteButton();toast(exists?'즐겨찾기에서 삭제했습니다.':'즐겨찾기에 저장했습니다.');
 }
-function updateFavoriteButton(){if(!state.destination){$('favoriteBtn').classList.remove('active');$('favoriteBtn').innerHTML=`${iconSvg('star')}<span class="btn-label">즐겨찾기</span>`;return}const exists=state.favorites.some(x=>x.id===favoriteId(state.destination));$('favoriteBtn').classList.toggle('active',exists);$('favoriteBtn').innerHTML=`${iconSvg('star')}<span class="btn-label">${exists?'저장됨':'즐겨찾기'}</span>`}
+function updateFavoriteButton(){if(!state.destination){$('favoriteBtn').classList.remove('active');$('favoriteBtn').innerHTML=`<span class="svg-icon">${iconSvg('star')}</span><span class="btn-label">즐겨찾기</span>`;return}const exists=state.favorites.some(x=>x.id===favoriteId(state.destination));$('favoriteBtn').classList.toggle('active',exists);$('favoriteBtn').innerHTML=`<span class="svg-icon">${iconSvg('star')}</span><span class="btn-label">${exists?'저장됨':'즐겨찾기'}</span>`}
 async function saveTripRecord({arrived,finishedAt}){
   if(!state.tripStartedAt||!state.destination||!state.route)return;const record={destination:state.destination.name,address:state.destination.address||'',lng:state.destination.lng,lat:state.destination.lat,distance:Math.round(state.route.distance||0),duration:Math.round((finishedAt-state.tripStartedAt)/1000),plannedDuration:Math.round(state.route.duration||0),provider:state.route.provider||'',arrived:Boolean(arrived)};
   if(state.firebase.user){const {fsMod}=state.firebase.mods;await fsMod.addDoc(fsMod.collection(state.firebase.db,'users',state.firebase.user.uid,'trips'),{...record,createdAt:fsMod.serverTimestamp()}).catch(console.warn);await loadCloudData()}
@@ -621,8 +690,8 @@ async function saveTripRecord({arrived,finishedAt}){
   state.tripStartedAt=null;
 }
 function renderAccount(){
-  const u=state.firebase.user;$('signedOutBox').classList.toggle('hidden',Boolean(u));$('signedInBox').classList.toggle('hidden',!u);$('accountBtn').classList.toggle('signed',Boolean(u));setAccountButtonIcon();
-  if(u){$('accountStatus').textContent='Google 로그인 완료';$('userName').textContent=u.displayName||'사용자';$('userEmail').textContent=u.email||'';$('userPhoto').src=u.photoURL||'/assets/daim.png'}else{$('accountStatus').textContent=state.firebase.configured?'로그인 전 · 게스트 저장':'게스트 모드 · 로컬 저장';$('userName').textContent='조팸스 드라이버';$('userEmail').textContent='로그인하면 주행기록이 동기화됩니다.';$('userPhoto').src='/assets/daim.png'}renderAccountLists();
+  const u=state.firebase.user;$('signedOutBox').classList.toggle('hidden',Boolean(u));$('signedInBox').classList.toggle('hidden',!u);document.querySelector('.notice-btn')?.classList.toggle('signed',Boolean(u));
+  const orb=$('userPhoto').closest('.profile-orb');if(u){$('accountStatus').textContent='Google 로그인 완료';$('userName').textContent=u.displayName||'사용자';$('userEmail').textContent=u.email||'';$('userPhoto').src=u.photoURL||'/assets/daim.png';orb?.classList.toggle('has-google-photo',Boolean(u.photoURL))}else{$('accountStatus').textContent=state.firebase.configured?'로그인 전 · 게스트 저장':'게스트 모드 · 로컬 저장';$('userName').textContent='조팸스 드라이버';$('userEmail').textContent='로그인하면 주행기록이 동기화됩니다.';$('userPhoto').src='/assets/daim.png';orb?.classList.remove('has-google-photo')}renderAccountLists();
 }
 function itemDate(v){if(!v)return '';if(typeof v.toDate==='function')return v.toDate().toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});const d=new Date(typeof v==='number'?v:v.seconds? v.seconds*1000:Date.now());return d.toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}
 function renderAccountLists(){
@@ -641,18 +710,21 @@ function bindUI(){
   $('startNavBtn').onclick=startNavigation;$('stopNavBtn').onclick=()=>stopNavigation();$('cancelRouteBtn').onclick=clearRoute;$('overviewBtn').onclick=()=>state.route&&drawRoutes({fit:true});$('altBtn').onclick=()=>{renderAlternativeRoutes();$('fasterRouteBanner').classList.add('hidden');if(state.navigating)checkAlternativeRoutes();toast(state.routeOptions.length>1?'대안 경로를 확인하고 최신 경로도 조회합니다.':'최신 대안 경로를 조회합니다.')};$('simBtn').onclick=toggleSimulation;$('arBtn').onclick=startAR;$('closeArBtn').onclick=stopAR;$('arCalibrateBtn').onclick=calibrateAR;$('favoriteBtn').onclick=toggleFavorite;
   document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.priority=b.dataset.priority||'RECOMMEND';state.avoid=b.dataset.avoid||null;if(state.destination)requestRoute()});
   document.querySelectorAll('[data-quick]').forEach(b=>b.onclick=()=>quickSearch(b.dataset.quick));
-  document.querySelectorAll('[data-suggest]').forEach(b=>b.onclick=()=>{const q=b.dataset.suggest||'';$('destinationInput').value=q;searchPlaces(q)});
+  document.querySelectorAll('[data-suggest]').forEach(b=>b.onclick=()=>{const q=b.dataset.suggest||'';$('destinationInput').value=q;searchPlaces(q)});$('recentMoreBtn').onclick=()=>toast('최근 목적지 전체보기는 다음 단계에서 확장됩니다.');
   $('homeShortcutBtn').onclick=()=>useSavedPlace('home');$('workShortcutBtn').onclick=()=>useSavedPlace('work');$('favoritesShortcutBtn').onclick=()=>openAccount('favorites');
-  $('editHomeBtn').onclick=e=>{e.stopPropagation();promptSavePlace('home')};$('editWorkBtn').onclick=e=>{e.stopPropagation();promptSavePlace('work')};
+  $('editHomeBtn').onclick=e=>{e.stopPropagation();openPlaceRegistration('home')};$('editWorkBtn').onclick=e=>{e.stopPropagation();openPlaceRegistration('work')};
+  $('closePlaceRegisterBtn').onclick=closePlaceRegistration;$('placeRegisterModal').addEventListener('click',e=>{if(e.target===$('placeRegisterModal'))closePlaceRegistration()});$('placeRegisterSearchBtn').onclick=renderPlaceRegistrationSearch;$('placeRegisterInput').addEventListener('keydown',e=>{if(e.key==='Enter')renderPlaceRegistrationSearch()});$('saveCurrentPlaceBtn').onclick=async()=>{const p=normalizePlaceData(state.destination);if(!p||!state.registerKind)return;await saveSavedPlace(state.registerKind,p);toast(`${placeLabel(state.registerKind)} 장소를 저장했습니다.`);closePlaceRegistration()};
   document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>{state.autoCharacter=false;setCharacter(b.dataset.character);$('characterModeBtn').textContent='FIX';savePreferences();toast(`${characters[b.dataset.character]?.name||'가이드'} 고정 안내로 변경했습니다.`)});
   document.querySelectorAll('[data-character-mode]').forEach(b=>b.onclick=()=>{const mode=b.dataset.characterMode;if(mode==='auto'){state.autoCharacter=true;$('characterModeBtn').textContent='AUTO';toast('상황별 캐릭터 자동 전환을 사용합니다.')}else{state.autoCharacter=false;setCharacter(mode);$('characterModeBtn').textContent='FIX';toast(`${characters[mode]?.name||'가이드'} 고정 안내로 변경했습니다.`)}syncCharacterButtons();savePreferences()});
   document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.nav;if(nav==='my'){openAccount('favorites');return}if(nav==='home'){setUiStage('home');return}if(nav==='route'){if(state.route)setUiStage('route');else{setUiStage('home');$('destinationInput').focus();toast('목적지를 먼저 검색해 주세요.')}return}if(nav==='drive'){if(state.navigating){setUiStage('drive');return}if(state.route){toast('안내 시작을 눌러 실시간 주행을 시작해 주세요.');setUiStage('route')}else toast('먼저 목적지를 선택해 주세요.')}});
-  $('soundBtn').onclick=()=>{state.sound=!state.sound;setSoundButtonIcon();savePreferences();toast(state.sound?'음성 안내 켜짐':'음성 안내 꺼짐')};
+  $('menuBtn').onclick=openMenuDrawer;$('notifBtn').onclick=openNoticeModal;
   $('acceptFasterRouteBtn').onclick=acceptPendingAlternative;$('dismissFasterRouteBtn').onclick=()=>{$('fasterRouteBanner').classList.add('hidden');state.pendingAlternative=null;state.nativeMultiRoute=null};
   $('characterModeBtn').onclick=()=>{state.autoCharacter=!state.autoCharacter;$('characterModeBtn').textContent=state.autoCharacter?'AUTO':'FIX';syncCharacterButtons();savePreferences();toast(state.autoCharacter?'상황별 캐릭터 자동 전환':'현재 캐릭터 고정')};
-  $('accountBtn').onclick=()=>openAccount(state.activeAccountTab||'favorites');$('closeAccountBtn').onclick=closeAccount;$('accountModal').addEventListener('click',e=>{if(e.target===$('accountModal'))closeAccount()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;
+  $('closeAccountBtn').onclick=closeAccount;$('accountModal').addEventListener('click',e=>{if(e.target===$('accountModal'))closeAccount()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;
+  $('closeMenuBtn').onclick=closeMenuDrawer;$('menuBackdrop').onclick=closeMenuDrawer;document.querySelectorAll('[data-menu-action]').forEach(b=>b.onclick=()=>{const action=b.dataset.menuAction;closeMenuDrawer();if(action==='home')setUiStage('home');else if(action==='route')menuRoutePreview();else if(action==='drive')toggleDemoMode('drive');else if(action==='parking')menuParkingPreview();else if(action==='my')openAccount('favorites');else if(action==='sound'){state.sound=!state.sound;savePreferences();toast(state.sound?'음성 안내 켜짐':'음성 안내 꺼짐')}});
+  $('closeNoticeBtn').onclick=closeNoticeModal;$('noticeModal').addEventListener('click',e=>{if(e.target===$('noticeModal'))closeNoticeModal()});
   document.querySelectorAll('.account-tab').forEach(b=>b.onclick=()=>setAccountTab(b.dataset.tab||'favorites'));
-  syncCharacterButtons();setSoundButtonIcon();setAccountButtonIcon();setUiStage('home');updateHomeWorkButtons();setAccountTab('favorites');updateFavoriteButton();
+  syncCharacterButtons();updateSimButton();setUiStage('home');updateHomeWorkButtons();setAccountTab('favorites');updateFavoriteButton();
 }
 
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
