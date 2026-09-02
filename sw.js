@@ -1,9 +1,10 @@
-const CACHE='jofams-smartdrive-mvp7-3-20260901';
+const CACHE='jofams-smartdrive-mvp7-4-20260902';
 const STATIC=[
   '/','/index.html','/styles.css','/app.js','/manifest.webmanifest',
   '/assets/daim.png','/assets/sunsik.png','/assets/hunmin.png',
   '/assets/daim_car.png','/assets/sunsik_car.png','/assets/hunmin_car.png',
-  '/assets/daim_car_marker.png','/assets/sunsik_car_marker.png','/assets/hunmin_car_marker.png'
+  '/assets/daim_car_marker.png','/assets/sunsik_car_marker.png','/assets/hunmin_car_marker.png',
+  '/assets/daim_car_rear.png','/assets/sunsik_car_rear.png','/assets/hunmin_car_rear.png'
 ];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(STATIC)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(Promise.all([caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))),self.clients.claim()])));
