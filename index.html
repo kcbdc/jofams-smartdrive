@@ -42,9 +42,8 @@
         </div>
 
         <section class="home-block">
-          <div class="block-title"><b>최근 목적지</b><span>자주 가는 곳을 빠르게</span></div>
-          <button class="recent-item" data-query="한국조폐공사 본사"><span class="recent-dot"></span><span><b>한국조폐공사 본사</b><small>대전광역시 유성구 과학로 80-67</small></span><i data-icon="chevron"></i></button>
-          <button class="recent-item" data-query="대전역"><span class="recent-dot blue"></span><span><b>대전역</b><small>대전광역시 동구 중앙로 215</small></span><i data-icon="chevron"></i></button>
+          <div class="block-title"><b>최근 목적지</b><span>내 계정에 저장된 최근 방문 장소</span></div>
+          <div id="recentDestinationList" class="recent-destination-list"><div class="recent-empty">최근 목적지가 없습니다.</div></div>
         </section>
 
         <section class="home-block guide-block">
@@ -352,6 +351,18 @@
     </div>
 
     <div id="placeConfirmPopup" class="place-confirm-popup hidden" role="status" aria-live="assertive"><div><span class="place-confirm-check">✓</span><b id="placeConfirmMessage">등록되었습니다.</b></div></div>
+
+    <div id="postDriveFavoriteModal" class="modal hidden">
+      <section class="simple-sheet post-drive-favorite-sheet">
+        <div class="post-drive-favorite-icon"><span data-icon="star"></span></div>
+        <h3>이 장소를 즐겨찾기에 등록할까요?</h3>
+        <p><b id="postDriveFavoriteName">목적지</b>를 다음에 더 빠르게 찾을 수 있습니다.</p>
+        <div class="post-drive-favorite-actions">
+          <button id="postDriveFavoriteSkipBtn" type="button">나중에</button>
+          <button id="postDriveFavoriteAddBtn" type="button" class="primary">즐겨찾기 등록</button>
+        </div>
+      </section>
+    </div>
 
     <div id="toast" class="toast hidden"></div>
   </main>

@@ -354,3 +354,11 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 
 /* MVP 7.5 favorites DB/list */
 .favorite-list{display:grid;gap:10px;padding:4px 0 12px}.favorite-list-item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:14px;border:1px solid #e7ebf2;border-radius:16px;background:#fff;box-shadow:0 5px 14px rgba(20,38,68,.06)}.favorite-list-item>div:first-child{min-width:0}.favorite-list-item b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.favorite-list-item small{display:block;margin-top:5px;color:#768195;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.favorite-item-actions{display:flex;gap:6px}.favorite-item-actions button{border:0;border-radius:10px;padding:8px 10px;background:#eaf2ff;color:#1763c7;font-size:11px;font-weight:800}.favorite-item-actions button.danger{background:#fff0f0;color:#c82f36}@media(max-width:420px){.favorite-list-item{grid-template-columns:1fr}.favorite-item-actions{justify-content:flex-end}}
+
+/* MVP 7.5.2 persistence / recent / post-drive favorite */
+.recent-destination-list .recent-empty{padding:18px 14px;color:#7a8494;font-size:12px;text-align:center}
+.post-drive-favorite-sheet{position:absolute;left:50%;top:50%;bottom:auto!important;transform:translate(-50%,-50%);width:min(88vw,390px);padding:24px 20px calc(22px + var(--safeB));border-radius:24px;background:#fff;text-align:center;box-shadow:0 22px 55px rgba(7,20,43,.28)}
+.post-drive-favorite-icon{width:58px;height:58px;margin:0 auto 10px;border-radius:18px;background:#eef5ff;color:#2c78e8;display:grid;place-items:center}.post-drive-favorite-icon svg{width:32px;height:32px}
+.post-drive-favorite-sheet h3{margin:4px 0 8px;font-size:19px}.post-drive-favorite-sheet p{margin:0;color:#657082;font-size:12px;line-height:1.55}.post-drive-favorite-sheet p b{color:#172033}
+.post-drive-favorite-actions{display:grid;grid-template-columns:1fr 1.25fr;gap:8px;margin-top:18px}.post-drive-favorite-actions button{height:46px;border:0;border-radius:12px;font-weight:900;background:#edf1f6;color:#394557}.post-drive-favorite-actions button.primary{background:#2f78ed;color:#fff}
+#routeFavoriteBtn.active{color:#f6b800;background:#fff8df}

@@ -2,6 +2,7 @@ const $ = id => document.getElementById(id);
 const CONFIG = window.__APP_CONFIG__ || {};
 const SETTINGS='jofams-navi.settings.v75';
 const FAVS='jofams-navi.favorites.v75';
+const RECENTS='jofams-navi.recents.v75';
 const TRIP_HISTORY='jofams-navi.trip-history.v75';
 const INSTALLATION_ID='jofams-navi.installation-id.v1';
 let maplibregl = null;
@@ -14,7 +15,7 @@ const state = {
   map:null,mapReady:false,pendingRouteDraw:null,mapFallbackTried:false,mapWatchdog:0,user:null, destination:null, routeOptions:[], route:null, selectedRoute:0,
   userMarker:null,destMarker:null,originMarker:null,watchId:null,character:'daim',voiceVolume:.8,sound:true,
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
-  savedPlaces:{home:null,work:null},favorites:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,
+  savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,
   tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,
@@ -323,10 +324,12 @@ async function searchPlaces(q,target='searchResults'){
 }
 async function chooseDestination(item){
   state.destination=normalizedPlace(item);
+  if(pointValid(state.destination))saveRecentDestination(state.destination).catch(e=>console.warn('recent destination save failed',e));
   setDestinationMarker();
   $('searchResults').classList.add('hidden');
   $('routeDestinationName').textContent=state.destination.name;
   $('routeAddressDest').textContent=state.destination.name;
+  updateFavoriteButtonState();
   setView('route');
   refreshMapLayout();
   $('routeCards').innerHTML='<div class="auto-start-hint">출발 위치 확인 중...</div>';
@@ -405,10 +408,10 @@ async function deletePlaceFromDb(kind){
 }
 async function loadDbSavedPlaces(){
   try{
-    const d=await dbPlaceRequest('GET');const items=d.items||{};state.placeDbReady=true;
-    for(const kind of ['home','work'])if(items[kind]&&pointValid(items[kind]))state.savedPlaces[kind]=items[kind];
-    saveLocalSettings();updateSavedLabels();if(state.placeKind)renderPlaceManageState();return true
-  }catch(e){console.warn('saved places DB load failed',e);state.placeDbReady=false;return false}
+    const d=await dbPlaceRequest('GET');const items=d.items||{};state.placeDbReady=true;let count=0;
+    for(const kind of ['home','work']){if(items[kind]&&pointValid(items[kind])){state.savedPlaces[kind]=items[kind];count++}}
+    saveLocalSettings();updateSavedLabels();if(state.placeKind)renderPlaceManageState();return {ok:true,count}
+  }catch(e){console.warn('saved places DB load failed',e);state.placeDbReady=false;return {ok:false,count:0}}
 }
 function showPlaceConfirmPopup(message){
   const pop=$('placeConfirmPopup');if(!pop){toast(message,2800);return}
@@ -705,7 +708,12 @@ function setView(view){
   refreshMapLayout({fitRoute:view==='route'&&Boolean(state.route)});
 }
 function startNavigation(){if(!state.route||!state.destination)return;cancelAutoStart();state.tripStartedAt=Date.now();startDestinationCycle();logTrip('start');setView('drive');startWatch();ensureUserMarker();updateCarMarkerImage();state.routeCumulative=buildCumulative(state.route);drawRoute(state.route,{fit:false});updateDriving(true);startLiveRouteRefresh();applyNightMode();setTimeout(tryLandscapeFullscreen,100);speak(`${characterDefs[state.character].name}이 안내를 시작합니다.`)}
-function stopNavigation(){if(state.tripStartedAt){logTrip('finish');addTripHistory({destination:state.destination?.name||'목적지',date:new Date().toLocaleString('ko-KR'),distance:state.route?.distance||0,duration:Math.round((Date.now()-state.tripStartedAt)/1000),character:state.character})}state.tripStartedAt=0;stopDestinationCycle();stopLiveRouteRefresh();stopAR();stopWatch();cancelAutoStart();$('driveMenu').classList.add('hidden');clearRouteLayer();clearSafetyMarkers();hideSafetyAlert();state.safetyEvents=[];state.route=null;state.routeOptions=[];if(state.destMarker){state.destMarker.remove();state.destMarker=null}if(state.originMarker){state.originMarker.remove();state.originMarker=null}state.destination=null;state.origin=null;state.originMode='current';updateOverspeed(0,0);setView('home');toast('안내를 종료했습니다.')}
+function stopNavigation(){
+  const finishedDestination=state.destination?{...state.destination}:null;
+  if(state.tripStartedAt){logTrip('finish');addTripHistory({destination:state.destination?.name||'목적지',date:new Date().toLocaleString('ko-KR'),distance:state.route?.distance||0,duration:Math.round((Date.now()-state.tripStartedAt)/1000),character:state.character})}
+  state.tripStartedAt=0;stopDestinationCycle();stopLiveRouteRefresh();stopAR();stopWatch();cancelAutoStart();$('driveMenu').classList.add('hidden');clearRouteLayer();clearSafetyMarkers();hideSafetyAlert();state.safetyEvents=[];state.route=null;state.routeOptions=[];if(state.destMarker){state.destMarker.remove();state.destMarker=null}if(state.originMarker){state.originMarker.remove();state.originMarker=null}state.destination=null;state.origin=null;state.originMode='current';updateOverspeed(0,0);setView('home');toast('안내를 종료했습니다.');
+  if(finishedDestination&&!isFavoritePlace(finishedDestination))setTimeout(()=>openPostDriveFavoritePrompt(finishedDestination),350)
+}
 function updateDriving(force=false){
   if(!state.user||!state.route?.geometry?.length)return;const g=state.route.geometry,idx=nearestIndex(state.user.lng,state.user.lat,g);state.currentRouteIndex=idx;ensureUserMarker();
   const nextPoint=g[Math.min(g.length-1,idx+3)],heading=Number.isFinite(state.user.heading)?state.user.heading:(nextPoint?bearing(state.user.lat,state.user.lng,nextPoint[1],nextPoint[0]):0);
@@ -975,9 +983,25 @@ function speak(text){
   speechSynthesis.speak(u);
 }
 
-function loadLocal(){try{const p=JSON.parse(localStorage.getItem(SETTINGS)||'{}');if(p.character&&characterDefs[p.character])state.character=p.character;if(Number.isFinite(Number(p.voiceVolume)))state.voiceVolume=Number(p.voiceVolume);state.savedPlaces.home=p.home||null;state.savedPlaces.work=p.work||null;state.favorites=JSON.parse(localStorage.getItem(FAVS)||'[]');state.tripHistory=JSON.parse(localStorage.getItem(TRIP_HISTORY)||'[]')}catch{}syncCharacterUI();updateSavedLabels();updateVolumeUI()}
+function ownerSuffix(){return state.firebase.user?.uid||'guest'}
 function settingsKey(){return state.firebase.user?`${SETTINGS}.${state.firebase.user.uid}`:SETTINGS}
+function favoritesStorageKey(){return state.firebase.user?`${FAVS}.${state.firebase.user.uid}`:FAVS}
+function recentsStorageKey(){return state.firebase.user?`${RECENTS}.${state.firebase.user.uid}`:RECENTS}
+function readJson(key,fallback){try{const v=JSON.parse(localStorage.getItem(key)||'null');return v??fallback}catch{return fallback}}
+function loadLocal(){
+  const p=readJson(SETTINGS,{});if(p.character&&characterDefs[p.character])state.character=p.character;if(Number.isFinite(Number(p.voiceVolume)))state.voiceVolume=Number(p.voiceVolume);state.savedPlaces.home=p.home||null;state.savedPlaces.work=p.work||null;
+  state.favorites=readJson(FAVS,[]);state.recentDestinations=readJson(RECENTS,[]);state.tripHistory=readJson(TRIP_HISTORY,[]);
+  syncCharacterUI();updateSavedLabels();updateVolumeUI();renderRecentDestinations();
+}
+function loadUserScopedLocal(){
+  const p=readJson(settingsKey(),{});if(p.character&&characterDefs[p.character])state.character=p.character;if(Number.isFinite(Number(p.voiceVolume)))state.voiceVolume=Number(p.voiceVolume);
+  state.savedPlaces.home=p.home||null;state.savedPlaces.work=p.work||null;
+  state.favorites=readJson(favoritesStorageKey(),[]);state.recentDestinations=readJson(recentsStorageKey(),[]);
+  syncCharacterUI();updateSavedLabels();updateVolumeUI();renderRecentDestinations();
+}
 function saveLocalSettings(){const payload=JSON.stringify({character:state.character,voiceVolume:state.voiceVolume,home:state.savedPlaces.home,work:state.savedPlaces.work});try{localStorage.setItem(settingsKey(),payload);if(!state.firebase.user)localStorage.setItem(SETTINGS,payload)}catch(e){console.warn('local settings save failed',e)}}
+function saveLocalFavorites(){try{localStorage.setItem(favoritesStorageKey(),JSON.stringify(state.favorites));if(!state.firebase.user)localStorage.setItem(FAVS,JSON.stringify(state.favorites))}catch(e){console.warn('favorite local save failed',e)}}
+function saveLocalRecents(){try{localStorage.setItem(recentsStorageKey(),JSON.stringify(state.recentDestinations));if(!state.firebase.user)localStorage.setItem(RECENTS,JSON.stringify(state.recentDestinations))}catch(e){console.warn('recent local save failed',e)}}
 function favoriteId(p){return `${Number(p.lat).toFixed(5)}_${Number(p.lng).toFixed(5)}`}
 async function dbFavoriteRequest(method,place=null,favoriteIdValue=''){
   const u=new URL('/api/favorites',location.origin);u.searchParams.set('owner',placeOwnerKey());if(favoriteIdValue)u.searchParams.set('favoriteId',favoriteIdValue);
@@ -987,16 +1011,22 @@ async function dbFavoriteRequest(method,place=null,favoriteIdValue=''){
 async function saveFavoriteToDb(place){return dbFavoriteRequest('POST',place)}
 async function deleteFavoriteFromDb(id){return dbFavoriteRequest('DELETE',null,id)}
 async function loadDbFavorites(){
-  try{const d=await dbFavoriteRequest('GET');if(Array.isArray(d.items)){state.favorites=d.items.map(x=>({id:x.id,placeId:x.placeId||'',name:x.name,address:x.address||'',lng:Number(x.lng),lat:Number(x.lat)})).filter(pointValid);localStorage.setItem(FAVS,JSON.stringify(state.favorites));updateSavedLabels();return true}}catch(e){console.warn('favorites DB load failed',e)}return false
+  try{const d=await dbFavoriteRequest('GET');if(Array.isArray(d.items)){state.favorites=d.items.map(x=>({id:x.id,placeId:x.placeId||'',name:x.name,address:x.address||'',lng:Number(x.lng),lat:Number(x.lat)})).filter(pointValid);saveLocalFavorites();updateSavedLabels();updateFavoriteButtonState();return {ok:true,count:state.favorites.length}}}catch(e){console.warn('favorites DB load failed',e)}return {ok:false,count:0}
 }
-async function toggleFavorite(){
-  if(!state.destination)return;const id=favoriteId(state.destination),i=state.favorites.findIndex(x=>x.id===id),removing=i>=0;
-  const item={...state.destination,id};
-  if(removing)state.favorites.splice(i,1);else state.favorites.unshift(item);
-  localStorage.setItem(FAVS,JSON.stringify(state.favorites));updateSavedLabels();
-  try{if(removing)await deleteFavoriteFromDb(id);else await saveFavoriteToDb(item)}catch(e){console.warn('favorite DB write failed',e);toast('기기에 저장했지만 DB 연결을 확인해 주세요.',2600)}
-  await saveCloudFavorites();toast(removing?'즐겨찾기에서 삭제했습니다.':'즐겨찾기에 저장했습니다.');
+function isFavoritePlace(place=state.destination){if(!pointValid(place))return false;const id=favoriteId(place);return state.favorites.some(x=>(x.id||favoriteId(x))===id)}
+function updateFavoriteButtonState(){const btn=$('routeFavoriteBtn');if(!btn)return;const active=isFavoritePlace();btn.classList.toggle('active',active);const span=btn.querySelector('[data-icon]');if(span){span.dataset.icon=active?'star':'star-outline';span.innerHTML=icon(active?'star':'star-outline')}btn.setAttribute('aria-label',active?'즐겨찾기 해제':'즐겨찾기 등록')}
+async function addFavoritePlace(place,{message=true}={}){
+  if(!pointValid(place))return false;const id=favoriteId(place);if(isFavoritePlace(place)){if(message)toast('이미 즐겨찾기에 등록된 장소입니다.');return true}
+  const item={...place,id};state.favorites.unshift(item);saveLocalFavorites();updateSavedLabels();updateFavoriteButtonState();
+  try{await saveFavoriteToDb(item)}catch(e){console.warn('favorite DB write failed',e);toast('기기에 저장했지만 DB 연결을 확인해 주세요.',2600)}
+  await saveCloudFavorites();if(message){toast('즐겨찾기 장소로 등록되었습니다.',2600);showPlaceConfirmPopup('즐겨찾기 장소로 등록되었습니다.')};return true
 }
+async function removeFavoritePlace(place,{message=true}={}){
+  if(!pointValid(place))return false;const id=favoriteId(place),i=state.favorites.findIndex(x=>(x.id||favoriteId(x))===id);if(i<0)return false;
+  state.favorites.splice(i,1);saveLocalFavorites();updateSavedLabels();updateFavoriteButtonState();
+  try{await deleteFavoriteFromDb(id)}catch(e){console.warn('favorite DB delete failed',e)}await saveCloudFavorites();if(message){toast('즐겨찾기 장소가 해제되었습니다.',2600);showPlaceConfirmPopup('즐겨찾기 장소가 해제되었습니다.')};return true
+}
+async function toggleFavorite(){if(!state.destination)return;if(isFavoritePlace(state.destination))await removeFavoritePlace(state.destination);else await addFavoritePlace(state.destination)}
 function renderFavoritesList(){
   const box=$('infoModalBody');if(!box)return;
   if(!state.favorites.length){box.innerHTML='<div class="empty-info">저장된 즐겨찾기가 없습니다.</div>';return}
@@ -1007,9 +1037,41 @@ function renderFavoritesList(){
 function openFavoritesList(){openInfoModal('즐겨찾기','');renderFavoritesList()}
 async function navigateFavorite(index){const p=state.favorites[index];if(!p)return;closeInfoModal();closeMy();await chooseDestination(p)}
 async function removeFavoriteAt(index){
-  const p=state.favorites[index];if(!p)return;const id=p.id||favoriteId(p);state.favorites.splice(index,1);localStorage.setItem(FAVS,JSON.stringify(state.favorites));updateSavedLabels();renderFavoritesList();
-  try{await deleteFavoriteFromDb(id)}catch(e){console.warn('favorite DB delete failed',e)}await saveCloudFavorites();toast('즐겨찾기에서 삭제했습니다.');
+  const p=state.favorites[index];if(!p)return;const id=p.id||favoriteId(p);state.favorites.splice(index,1);saveLocalFavorites();updateSavedLabels();renderFavoritesList();
+  try{await deleteFavoriteFromDb(id)}catch(e){console.warn('favorite DB delete failed',e)}await saveCloudFavorites();toast('즐겨찾기 장소가 해제되었습니다.');
 }
+
+function recentId(p){return favoriteId(p)}
+async function dbRecentRequest(method,place=null){
+  const u=new URL('/api/recents',location.origin);u.searchParams.set('owner',placeOwnerKey());
+  const opt={method,headers:{'content-type':'application/json'}};if(place)opt.body=JSON.stringify({owner:placeOwnerKey(),recentId:recentId(place),place});
+  const r=await fetch(u,opt);const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`recents DB HTTP ${r.status}`);return d
+}
+async function saveRecentDestination(place){
+  if(!pointValid(place))return;const id=recentId(place),item={...place,id,lastUsedAt:new Date().toISOString()};state.recentDestinations=[item,...state.recentDestinations.filter(x=>(x.id||recentId(x))!==id)].slice(0,20);saveLocalRecents();renderRecentDestinations();
+  try{await dbRecentRequest('POST',item)}catch(e){console.warn('recent DB save failed',e)}
+}
+async function loadDbRecents(){
+  try{const d=await dbRecentRequest('GET');if(Array.isArray(d.items)){state.recentDestinations=d.items.map(x=>({id:x.id,name:x.name,address:x.address||'',lng:Number(x.lng),lat:Number(x.lat),lastUsedAt:x.lastUsedAt||''})).filter(pointValid);saveLocalRecents();renderRecentDestinations();return {ok:true,count:state.recentDestinations.length}}}catch(e){console.warn('recent DB load failed',e)}return {ok:false,count:0}
+}
+function renderRecentDestinations(){
+  const box=$('recentDestinationList');if(!box)return;
+  const items=(state.recentDestinations||[]).slice(0,6);if(!items.length){box.innerHTML='<div class="recent-empty">최근 목적지가 없습니다.</div>';return}
+  box.innerHTML=items.map((x,i)=>`<button class="recent-item" data-recent-index="${i}"><span class="recent-dot ${i?'blue':''}"></span><span><b>${escapeHtml(x.name||'목적지')}</b><small>${escapeHtml(x.address||'')}</small></span><i data-icon="chevron"></i></button>`).join('');applyIcons(box);box.querySelectorAll('[data-recent-index]').forEach(b=>b.onclick=()=>chooseDestination(items[Number(b.dataset.recentIndex)]));
+}
+async function persistCurrentUserDataIfDbEmpty(placeResult,favResult,recentResult){
+  if(placeResult?.ok&&placeResult.count===0){for(const kind of ['home','work'])if(pointValid(state.savedPlaces[kind]))await savePlaceToDb(kind,state.savedPlaces[kind]).catch(()=>{})}
+  if(favResult?.ok&&favResult.count===0){for(const p of state.favorites.slice(0,50))await saveFavoriteToDb(p).catch(()=>{})}
+  if(recentResult?.ok&&recentResult.count===0){for(const p of state.recentDestinations.slice(0,20))await dbRecentRequest('POST',p).catch(()=>{})}
+}
+async function hydrateAuthenticatedUser(){
+  loadUserScopedLocal();
+  await Promise.all([loadCloudPrefs(),loadCloudFavorites()]);
+  const [places,favs,recents]=await Promise.all([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents()]);
+  await persistCurrentUserDataIfDbEmpty(places,favs,recents);
+  updateSavedLabels();renderRecentDestinations();updateFavoriteButtonState();
+}
+
 function syncCharacterUI(){
   document.querySelectorAll('[data-character]').forEach(b=>b.classList.toggle('active',b.dataset.character===state.character));
   document.querySelectorAll('[data-my-character]').forEach(b=>b.classList.toggle('active',b.dataset.myCharacter===state.character));
@@ -1059,7 +1121,7 @@ function firebaseConfig(){return CONFIG.firebase||{}}
 function firebaseConfigured(){const c=firebaseConfig();return Boolean(c.apiKey&&c.authDomain&&c.projectId&&c.appId)}
 async function initFirebase(){
   state.firebase.configured=firebaseConfigured();if(!state.firebase.configured)return;
-  try{const [appMod,authMod,fsMod]=await Promise.all([import('https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js')]);const app=appMod.initializeApp(firebaseConfig()),auth=authMod.getAuth(app),db=fsMod.getFirestore(app);await authMod.setPersistence(auth,authMod.browserLocalPersistence);state.firebase={...state.firebase,ready:true,auth,db,mods:{authMod,fsMod}};authMod.onAuthStateChanged(auth,user=>{state.firebase.user=user||null;renderProfile();if(user){Promise.all([loadCloudPrefs(),loadCloudFavorites()]).finally(()=>Promise.all([loadDbSavedPlaces(),loadDbFavorites()]))}else Promise.all([loadDbSavedPlaces(),loadDbFavorites()])})}catch(e){console.warn('Firebase init failed',e)}
+  try{const [appMod,authMod,fsMod]=await Promise.all([import('https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js')]);const app=appMod.initializeApp(firebaseConfig()),auth=authMod.getAuth(app),db=fsMod.getFirestore(app);await authMod.setPersistence(auth,authMod.browserLocalPersistence);state.firebase={...state.firebase,ready:true,auth,db,mods:{authMod,fsMod}};authMod.onAuthStateChanged(auth,async user=>{state.firebase.user=user||null;renderProfile();if(user){await hydrateAuthenticatedUser()}else{loadLocal();await Promise.all([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents()]);updateFavoriteButtonState()}})}catch(e){console.warn('Firebase init failed',e)}
 }
 async function loginGoogle(){if(!state.firebase.ready){toast('Firebase 설정을 확인해 주세요.');return}const {authMod}=state.firebase.mods,provider=new authMod.GoogleAuthProvider(),btn=$('googleLoginBtn');btn.disabled=true;btn.textContent='로그인 중';try{const isWebView=/JofamsSmartDrive\/6|; wv\)/i.test(navigator.userAgent);if(isWebView){await authMod.signInWithRedirect(state.firebase.auth,provider);return}const result=await Promise.race([authMod.signInWithPopup(state.firebase.auth,provider),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000))]);state.firebase.user=result.user;renderProfile();toast('로그인되었습니다.')}catch(e){if(e.code==='auth/popup-blocked'||e.message==='timeout'){toast('로그인 창을 다시 열어 주세요.');}else toast('Google 로그인에 실패했습니다.')}finally{btn.disabled=false;btn.textContent='Google 로그인'}}
 async function logout(){if(!state.firebase.ready)return;await state.firebase.mods.authMod.signOut(state.firebase.auth);state.firebase.user=null;renderProfile()}
@@ -1072,7 +1134,13 @@ function renderProfile(){
 async function saveCloudPrefs(){if(!state.firebase.user)return;try{const {fsMod}=state.firebase.mods;await fsMod.setDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'),{character:state.character,voiceVolume:state.voiceVolume,home:state.savedPlaces.home,work:state.savedPlaces.work,updatedAt:fsMod.serverTimestamp()},{merge:true})}catch{}}
 async function loadCloudPrefs(){if(!state.firebase.user)return;try{const {fsMod}=state.firebase.mods,s=await fsMod.getDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'));if(s.exists()){const p=s.data();if(p.character&&characterDefs[p.character])state.character=p.character;if(Number.isFinite(Number(p.voiceVolume)))state.voiceVolume=Number(p.voiceVolume);state.savedPlaces.home=p.home||state.savedPlaces.home;state.savedPlaces.work=p.work||state.savedPlaces.work;syncCharacterUI();updateVolumeUI();updateSavedLabels();saveLocalSettings()}}catch{}}
 async function saveCloudFavorites(){if(!state.firebase.user)return;try{const {fsMod}=state.firebase.mods,ref=fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','favorites');await fsMod.setDoc(ref,{items:state.favorites,updatedAt:fsMod.serverTimestamp()},{merge:true})}catch{}}
-async function loadCloudFavorites(){if(!state.firebase.user)return;try{const {fsMod}=state.firebase.mods,s=await fsMod.getDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','favorites'));if(s.exists()&&Array.isArray(s.data().items)){state.favorites=s.data().items;localStorage.setItem(FAVS,JSON.stringify(state.favorites));updateSavedLabels()}}catch{}}
+async function loadCloudFavorites(){if(!state.firebase.user)return;try{const {fsMod}=state.firebase.mods,s=await fsMod.getDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','favorites'));if(s.exists()&&Array.isArray(s.data().items)){state.favorites=s.data().items;saveLocalFavorites();updateSavedLabels();updateFavoriteButtonState()}}catch{}}
+
+
+let postDriveFavoritePlace=null;
+function openPostDriveFavoritePrompt(place){postDriveFavoritePlace=place;const modal=$('postDriveFavoriteModal');if(!modal)return;$('postDriveFavoriteName').textContent=place.name||'목적지';modal.classList.remove('hidden')}
+function closePostDriveFavoritePrompt(){postDriveFavoritePlace=null;$('postDriveFavoriteModal')?.classList.add('hidden')}
+async function confirmPostDriveFavorite(){const place=postDriveFavoritePlace;if(!place)return closePostDriveFavoritePrompt();await addFavoritePlace(place,{message:true});closePostDriveFavoritePrompt()}
 
 /* ---------- UI EVENTS ---------- */
 
@@ -1100,7 +1168,7 @@ function bindUI(){
   document.querySelectorAll('[data-my-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.myCharacter);syncCharacterUI();toast(`${characterDefs[state.character].name} 가이드로 변경했습니다.`)});
   document.querySelectorAll('[data-voice-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.voiceCharacter);syncCharacterUI();speak(`${characterDefs[state.character].name} 음성 안내입니다.`)});
   $('voiceGuideSettingBtn').onclick=()=>toggleSettingPanel('voiceGuideSettingBtn','voiceGuidePanel');$('characterSettingBtn').onclick=()=>toggleSettingPanel('characterSettingBtn','characterSettingPanel');$('voicePreviewBtn').onclick=()=>speak(`${characterDefs[state.character].name}이 길안내를 시작합니다. 안전운전하세요.`);
-  $('menuBtn').onclick=openMy;$('myBtn').onclick=openMy;$('routeBackBtn').onclick=()=>{cancelAutoStart();setView('home')};$('routeFavoriteBtn').onclick=toggleFavorite;$('startBtn').onclick=startNavigation;$('routeOriginBtn').onclick=openOriginModal;
+  $('menuBtn').onclick=openMy;$('myBtn').onclick=openMy;$('routeBackBtn').onclick=()=>{cancelAutoStart();setView('home')};$('routeFavoriteBtn').onclick=toggleFavorite;$('startBtn').onclick=startNavigation;if($('postDriveFavoriteAddBtn'))$('postDriveFavoriteAddBtn').onclick=confirmPostDriveFavorite;if($('postDriveFavoriteSkipBtn'))$('postDriveFavoriteSkipBtn').onclick=closePostDriveFavoritePrompt;if($('postDriveFavoriteModal'))$('postDriveFavoriteModal').addEventListener('click',e=>{if(e.target===$('postDriveFavoriteModal'))closePostDriveFavoritePrompt()});$('routeOriginBtn').onclick=openOriginModal;
   $('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=recenterDriveMap;$('map3dBtn').onclick=e=>{e.stopPropagation();state.map3D=!state.map3D;applyDriveMapMode();toggleMapControls(true)};$('mapZoomInBtn').onclick=e=>{e.stopPropagation();state.map?.zoomIn({duration:180});toggleMapControls(true)};$('mapZoomOutBtn').onclick=e=>{e.stopPropagation();state.map?.zoomOut({duration:180});toggleMapControls(true)};$('driveView').addEventListener('click',e=>{if(e.target.closest('button,input,.maneuver-stack,.drive-bottom-card,.safety-alert,.traffic-status,.vms-banner'))return;toggleMapControls()});$('driveVoiceBtn').onclick=startVoiceCommand;$('arOpenBtn').onclick=startAR;$('driveArBtn').onclick=startAR;$('routeInfoBtn').onclick=openRouteInfo;$('driveSearchBtn').onclick=openDriveSearch;$('routeInfoClose').onclick=closeRouteInfo;$('routeInfoModal').addEventListener('click',e=>{if(e.target===$('routeInfoModal'))closeRouteInfo()});$('driveSearchClose').onclick=closeDriveSearch;$('driveSearchSubmit').onclick=()=>searchDriveDestinations($('driveSearchInput').value);$('driveSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchDriveDestinations(e.target.value)});$('driveSearchModal').addEventListener('click',e=>{if(e.target===$('driveSearchModal'))closeDriveSearch()});document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{closeDriveMenu();stopWatch();setView('route');loadRouteOptions()};$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;
   $('guideVolume').oninput=e=>changeVolume(e.target.value);$('myGuideVolume').oninput=e=>changeVolume(e.target.value);$('myCloseBtn').onclick=closeMy;$('myModal').addEventListener('click',e=>{if(e.target===$('myModal'))closeMy()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;$('myFavoritesBtn').onclick=openFavoritesList;$('tripHistoryBtn').onclick=openTripHistory;$('noticeBtn').onclick=openNotices;$('appInfoBtn').onclick=openAppInfo;$('privacyBtn').onclick=openPrivacy;$('infoModalClose').onclick=closeInfoModal;$('infoModal').addEventListener('click',e=>{if(e.target===$('infoModal'))closeInfoModal()});
   $('originModalClose').onclick=closeOriginModal;$('useCurrentOriginBtn').onclick=useCurrentOrigin;$('originSearchBtn').onclick=()=>searchOrigins($('originSearchInput').value);$('originSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchOrigins(e.target.value)});$('originModal').addEventListener('click',e=>{if(e.target===$('originModal'))closeOriginModal()});$('arCloseBtn').onclick=stopAR;document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.bottomNav;if(nav==='home'){cancelAutoStart();setView('home')}else if(nav==='route'){if(state.destination){setView('route');refreshMapLayout({fitRoute:true})}else{setView('home');$('destinationInput').focus();toast('목적지를 검색해 주세요.')}}else if(nav==='realtime'){if(state.route&&state.destination){if(state.tripStartedAt)setView('drive');else startNavigation()}else toast('먼저 길찾기를 완료해 주세요.')}else if(nav==='my')openMy()});$('placeModalClose').onclick=()=>$('placeModal').classList.add('hidden');if($('useCurrentPlaceBtn'))$('useCurrentPlaceBtn').onclick=saveCurrentLocationAsPlace;if($('placeSaveBtn'))$('placeSaveBtn').onclick=confirmRegisteredPlace;if($('placeDeleteBtn'))$('placeDeleteBtn').onclick=deleteRegisteredPlace;$('placeSearchBtn').onclick=()=>searchPlaces($('placeSearchInput').value,'placeSearchResults');$('placeSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value,'placeSearchResults')});$('placeModal').addEventListener('click',e=>{if(e.target===$('placeModal'))$('placeModal').classList.add('hidden')});
@@ -1108,4 +1176,4 @@ function bindUI(){
 
 window.addEventListener('orientationchange',()=>setTimeout(tryLandscapeFullscreen,180));window.addEventListener('resize',()=>{applyNightMode();if(state.map)setTimeout(()=>state.map.resize(),80)});document.addEventListener('visibilitychange',()=>{if(!document.hidden){applyNightMode();if(state.tripStartedAt)liveRouteRefresh()}});
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
-applyIcons();loadLocal();bindUI();applyNightMode();initMap();Promise.all([loadDbSavedPlaces(),loadDbFavorites()]);initFirebase();renderProfile();updateOriginUI();updateTripHistorySummary();setView('home');if('speechSynthesis'in window){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices()}setTimeout(showPermissionGate,180);
+applyIcons();loadLocal();bindUI();applyNightMode();initMap();if(!firebaseConfigured())Promise.all([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents()]);initFirebase();renderProfile();updateOriginUI();updateTripHistorySummary();setView('home');if('speechSynthesis'in window){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices()}setTimeout(showPermissionGate,180);
