@@ -184,6 +184,7 @@
         <div class="setting-list">
           <button id="myFavoritesBtn"><span data-icon="star-outline"></span><span><b>즐겨찾기</b><small id="myFavoriteCount">0곳 저장</small></span><i data-icon="chevron"></i></button>
           <button id="tripHistoryBtn"><span data-icon="routes"></span><span><b>주행기록</b><small id="tripHistorySummary">최근 주행 내역</small></span><i data-icon="chevron"></i></button>
+          <button id="futureDepartureBtn"><span data-icon="routes"></span><span><b>다른시간 출발</b><small>출발시간별 예상 소요시간</small></span><i data-icon="chevron"></i></button>
           <button id="voiceGuideSettingBtn" aria-expanded="false"><span data-icon="volume"></span><span><b>음성 가이드</b><small id="voiceCharacterLabel">다임 보이스</small></span><i data-icon="chevron"></i></button>
           <div id="voiceGuidePanel" class="setting-expand hidden">
             <div class="voice-choice-grid" role="group" aria-label="음성 가이드 선택">
@@ -206,6 +207,49 @@
           <button id="appInfoBtn"><span data-icon="settings"></span><span><b>앱정보</b><small>버전 및 서비스 정보</small></span><i data-icon="chevron"></i></button>
           <button id="privacyBtn"><span data-icon="user"></span><span><b>개인정보처리방침</b><small>위치·카메라·계정 정보 안내</small></span><i data-icon="chevron"></i></button>
         </div>
+      </section>
+    </div>
+
+
+    <!-- FUTURE DEPARTURE PREDICTION -->
+    <div id="futureDepartureModal" class="modal hidden">
+      <section class="simple-sheet future-departure-sheet">
+        <header><b>다른시간 출발</b><button id="futureDepartureClose" class="circle-btn"><span data-icon="close"></span></button></header>
+        <p class="future-intro">출발지와 도착지, 출발 시간을 선택하면 현재 경로시간과 시간대·요일 혼잡도를 반영해 예상 소요시간을 계산합니다.</p>
+        <div class="future-place-grid">
+          <div class="future-place-field">
+            <label for="futureOriginInput">출발지</label>
+            <div class="search-box compact"><span data-icon="search"></span><input id="futureOriginInput" placeholder="출발 장소 또는 주소"><button id="futureOriginSearch" type="button"><span data-icon="arrow-right"></span></button></div>
+            <div id="futureOriginResults" class="search-results future-results hidden"></div>
+          </div>
+          <div class="future-place-field">
+            <label for="futureDestinationInput">도착지</label>
+            <div class="search-box compact"><span data-icon="search"></span><input id="futureDestinationInput" placeholder="도착 장소 또는 주소"><button id="futureDestinationSearch" type="button"><span data-icon="arrow-right"></span></button></div>
+            <div id="futureDestinationResults" class="search-results future-results hidden"></div>
+          </div>
+        </div>
+        <div class="future-date-block">
+          <b>출발 날짜</b>
+          <div class="future-segment" id="futureDateMode">
+            <button type="button" data-future-date="today" class="active">오늘</button>
+            <button type="button" data-future-date="tomorrow">내일</button>
+            <button type="button" data-future-date="custom">날짜 선택</button>
+          </div>
+          <input id="futureDateInput" type="date" class="future-date-input hidden" />
+        </div>
+        <div class="future-time-block">
+          <b>출발 시간</b>
+          <div class="future-time-row">
+            <div class="future-segment ampm" id="futureAmPm">
+              <button type="button" data-future-ampm="AM" class="active">오전</button>
+              <button type="button" data-future-ampm="PM">오후</button>
+            </div>
+            <select id="futureHour" aria-label="출발 시"><option value="1">1시</option><option value="2">2시</option><option value="3">3시</option><option value="4">4시</option><option value="5">5시</option><option value="6">6시</option><option value="7">7시</option><option value="8">8시</option><option value="9">9시</option><option value="10">10시</option><option value="11">11시</option><option value="12">12시</option></select>
+            <select id="futureMinute" aria-label="출발 분"><option value="0">00분</option><option value="10">10분</option><option value="20">20분</option><option value="30">30분</option><option value="40">40분</option><option value="50">50분</option></select>
+          </div>
+        </div>
+        <button id="futurePredictBtn" class="primary-btn future-predict-btn" type="button">AI 소요시간 예측</button>
+        <div id="futurePredictionResult" class="future-prediction-result hidden" aria-live="polite"></div>
       </section>
     </div>
 

@@ -13,6 +13,7 @@ const state = {
   savedPlaces:{home:null,work:null},favorites:[],placeKind:null,origin:null,originMode:'current',
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,
   tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,
+  futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
 };
 
@@ -471,8 +472,97 @@ function addTripHistory(entry){state.tripHistory=[entry,...state.tripHistory].sl
 function updateTripHistorySummary(){if($('tripHistorySummary'))$('tripHistorySummary').textContent=state.tripHistory.length?`최근 ${state.tripHistory.length}건 저장`:'주행 기록이 없습니다.'}
 function openInfoModal(title,html){$('infoModalTitle').textContent=title;$('infoModalBody').innerHTML=html;$('infoModal').classList.remove('hidden');applyIcons($('infoModalBody'))}
 function closeInfoModal(){$('infoModal').classList.add('hidden')}
+
+/* ---------- OTHER DEPARTURE TIME / AI ETA ---------- */
+function toLocalDateInput(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`}
+function setFutureDefaultTime(){
+  const d=new Date(Date.now()+30*60*1000),rounded=Math.ceil(d.getMinutes()/10)*10;
+  if(rounded>=60){d.setHours(d.getHours()+1);d.setMinutes(0)}else d.setMinutes(rounded);
+  const h=d.getHours(),ampm=h>=12?'PM':'AM',h12=h%12||12;
+  state.futureAmPm=ampm;
+  if($('futureHour'))$('futureHour').value=String(h12);
+  if($('futureMinute'))$('futureMinute').value=String(Math.floor(d.getMinutes()/10)*10);
+  document.querySelectorAll('[data-future-ampm]').forEach(b=>b.classList.toggle('active',b.dataset.futureAmpm===ampm));
+  if($('futureDateInput')){$('futureDateInput').min=toLocalDateInput(new Date());$('futureDateInput').value=toLocalDateInput(d)}
+}
+function openFutureDeparture(){
+  closeMy();
+  state.futureOrigin=state.user?{...state.user,name:'내 위치',address:'현재 GPS 위치'}:null;
+  state.futureDestination=state.destination?normalizedPlace(state.destination):null;
+  $('futureOriginInput').value=state.futureOrigin?.name||'';
+  $('futureDestinationInput').value=state.futureDestination?.name||'';
+  $('futureOriginResults').classList.add('hidden');$('futureDestinationResults').classList.add('hidden');
+  $('futurePredictionResult').classList.add('hidden');$('futurePredictionResult').innerHTML='';
+  state.futureDateMode='today';document.querySelectorAll('[data-future-date]').forEach(b=>b.classList.toggle('active',b.dataset.futureDate==='today'));$('futureDateInput').classList.add('hidden');
+  setFutureDefaultTime();
+  $('futureDepartureModal').classList.remove('hidden');
+  if(!state.user)locate(false).then(u=>{if(u&&!state.futureOrigin){state.futureOrigin={...u,name:'내 위치',address:'현재 GPS 위치'};$('futureOriginInput').value='내 위치'}});
+}
+function closeFutureDeparture(){$('futureDepartureModal').classList.add('hidden')}
+async function searchFuturePlace(kind){
+  const input=$(kind==='origin'?'futureOriginInput':'futureDestinationInput'),box=$(kind==='origin'?'futureOriginResults':'futureDestinationResults'),q=input.value.trim();
+  if(!q)return;
+  if(kind==='origin'&&/^(내 ?위치|현재 ?위치)$/.test(q)){if(!state.user)await locate(false);if(state.user){state.futureOrigin={...state.user,name:'내 위치',address:'현재 GPS 위치'};input.value='내 위치';box.classList.add('hidden')}return}
+  box.classList.remove('hidden');box.innerHTML='<button class="search-result"><b>검색 중...</b></button>';
+  try{
+    if(!state.user)await locate(false);
+    const u=new URL('/api/search',location.origin);u.searchParams.set('q',q);if(state.user){u.searchParams.set('lng',state.user.lng);u.searchParams.set('lat',state.user.lat)}
+    const r=await fetch(u);if(!r.ok)throw new Error('검색 오류');const d=await r.json(),items=d.items||[];box.innerHTML='';
+    if(!items.length){box.innerHTML='<button class="search-result"><b>검색 결과가 없습니다.</b></button>';return}
+    items.slice(0,7).forEach(x=>{const b=document.createElement('button');b.className='search-result';const dist=Number(x.distance);b.innerHTML=`<b>${escapeHtml(x.name)}</b><small>${escapeHtml(x.address||x.category||'')}${Number.isFinite(dist)&&dist>0?` · ${km(dist)}`:''}</small>`;b.onclick=()=>{const p=normalizedPlace(x);if(kind==='origin')state.futureOrigin=p;else state.futureDestination=p;input.value=p.name;box.classList.add('hidden');$('futurePredictionResult').classList.add('hidden')};box.appendChild(b)})
+  }catch(e){box.innerHTML='<button class="search-result"><b>검색 서버 연결을 확인해 주세요.</b></button>'}
+}
+function futureDepartureDate(){
+  const now=new Date(),d=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  if(state.futureDateMode==='tomorrow')d.setDate(d.getDate()+1);
+  else if(state.futureDateMode==='custom'){
+    const v=$('futureDateInput').value;if(!v)return null;const [y,m,day]=v.split('-').map(Number);d.setFullYear(y,m-1,day);
+  }
+  let h=Number($('futureHour').value)||12;const min=Number($('futureMinute').value)||0;if(state.futureAmPm==='AM'){if(h===12)h=0}else if(h!==12)h+=12;
+  d.setHours(h,min,0,0);return d;
+}
+function trafficForecastFactor(date){
+  const day=date.getDay(),h=date.getHours()+date.getMinutes()/60,weekday=day>=1&&day<=5;
+  let factor=1,level='보통';
+  if(weekday&&h>=7&&h<9.5){factor=1.28;level='출근 혼잡'}
+  else if(weekday&&h>=17&&h<20){factor=1.34;level='퇴근 혼잡'}
+  else if(weekday&&h>=11.5&&h<14){factor=1.08;level='점심시간 교통 증가'}
+  else if(!weekday&&h>=11&&h<18){factor=1.14;level='주말 이동 증가'}
+  else if(h>=22||h<6){factor=.92;level='원활 예상'}
+  else if(weekday){factor=1.04;level='평시'}
+  return {factor,level};
+}
+async function futureRouteEstimate(origin,destination){
+  const body={origin:{lng:origin.lng,lat:origin.lat},destination:{lng:destination.lng,lat:destination.lat},priority:'RECOMMEND',alternatives:false};
+  const r=await fetch('/api/route',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error('경로 계산 실패');return r.json();
+}
+async function predictFutureDeparture(){
+  if(!state.futureOrigin||!pointValid(state.futureOrigin))return toast('출발지를 검색해 선택해 주세요.');
+  if(!state.futureDestination||!pointValid(state.futureDestination))return toast('도착지를 검색해 선택해 주세요.');
+  const depart=futureDepartureDate();if(!depart)return toast('출발 날짜를 선택해 주세요.');
+  if(depart.getTime()<Date.now()-60000)return toast('현재보다 이후 시간을 선택해 주세요.');
+  const result=$('futurePredictionResult');result.className='future-prediction-result loading';result.textContent='경로와 시간대 교통 패턴을 분석하고 있습니다...';
+  try{
+    const route=await futureRouteEstimate(state.futureOrigin,state.futureDestination);if(!route?.duration)throw new Error('경로 시간이 없습니다.');
+    const forecast=trafficForecastFactor(depart),base=Number(route.duration),pred=Math.max(60,Math.round(base*forecast.factor)),arrival=new Date(depart.getTime()+pred*1000);
+    const delta=Math.round((pred-base)/60),confidence=Math.max(65,Math.min(90,Math.round(84-Math.abs(forecast.factor-1)*35)));
+    const departText=depart.toLocaleString('ko-KR',{month:'long',day:'numeric',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:true});
+    const arrivalText=arrival.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:true});
+    result.className='future-prediction-result';result.innerHTML=`<div class="prediction-head"><div><span>AI 예상 소요시간</span><strong>${mins(pred)}</strong></div><span>예측 신뢰도 ${confidence}%</span></div><div class="prediction-route"><b>${escapeHtml(state.futureOrigin.name||'출발지')} → ${escapeHtml(state.futureDestination.name||'도착지')}</b><br>${escapeHtml(departText)} 출발</div><div class="prediction-grid"><div><small>예상 도착</small><b>${escapeHtml(arrivalText)}</b></div><div><small>예상 교통</small><b>${escapeHtml(forecast.level)}</b></div><div><small>현재 기준 경로</small><b>${mins(base)}</b></div><div><small>시간대 영향</small><b>${delta>0?`약 ${delta}분 증가`:delta<0?`약 ${Math.abs(delta)}분 단축`:'변화 적음'}</b></div></div><small class="prediction-note">※ 현재 경로 소요시간에 요일·출퇴근·주말 시간대 패턴을 반영한 예측치입니다. 실제 사고·공사·기상·행사 등에 따라 달라질 수 있습니다.</small>`;
+  }catch(e){result.className='future-prediction-result';result.innerHTML='<b>예측에 실패했습니다.</b><small class="prediction-note">출발지·도착지 또는 네트워크 상태를 확인해 주세요.</small>'}
+}
+function bindFutureDepartureUI(){
+  $('futureDepartureBtn').onclick=openFutureDeparture;$('futureDepartureClose').onclick=closeFutureDeparture;$('futureDepartureModal').addEventListener('click',e=>{if(e.target===$('futureDepartureModal'))closeFutureDeparture()});
+  $('futureOriginSearch').onclick=()=>searchFuturePlace('origin');$('futureDestinationSearch').onclick=()=>searchFuturePlace('destination');
+  $('futureOriginInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchFuturePlace('origin')});$('futureDestinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchFuturePlace('destination')});
+  $('futureOriginInput').addEventListener('input',()=>{if($('futureOriginInput').value!==state.futureOrigin?.name)state.futureOrigin=null});$('futureDestinationInput').addEventListener('input',()=>{if($('futureDestinationInput').value!==state.futureDestination?.name)state.futureDestination=null});
+  document.querySelectorAll('[data-future-date]').forEach(b=>b.onclick=()=>{state.futureDateMode=b.dataset.futureDate;document.querySelectorAll('[data-future-date]').forEach(x=>x.classList.toggle('active',x===b));$('futureDateInput').classList.toggle('hidden',state.futureDateMode!=='custom');if(state.futureDateMode==='custom'&&!$('futureDateInput').value)$('futureDateInput').value=toLocalDateInput(new Date(Date.now()+2*86400000));$('futurePredictionResult').classList.add('hidden')});
+  document.querySelectorAll('[data-future-ampm]').forEach(b=>b.onclick=()=>{state.futureAmPm=b.dataset.futureAmpm;document.querySelectorAll('[data-future-ampm]').forEach(x=>x.classList.toggle('active',x===b));$('futurePredictionResult').classList.add('hidden')});
+  $('futureHour').onchange=$('futureMinute').onchange=$('futureDateInput').onchange=()=>$('futurePredictionResult').classList.add('hidden');$('futurePredictBtn').onclick=predictFutureDeparture;
+}
+
 function openTripHistory(){const items=state.tripHistory||[];const html=items.length?`<div class="history-list">${items.map(x=>`<article><b>${escapeHtml(x.destination||'목적지')}</b><small>${escapeHtml(x.date||'')} · ${km(Number(x.distance)||0)} · ${mins(Number(x.duration)||0)}</small><em>${escapeHtml(characterDefs[x.character]?.name||'')}</em></article>`).join('')}</div>`:'<div class="empty-info">저장된 주행 기록이 없습니다.</div>';openInfoModal('주행기록',html)}
-function openAppInfo(){openInfoModal('앱정보','<div class="info-card"><h3>조팸스 내비</h3><p><b>버전</b> MVP 7.5</p><p>2D 컬러 지도, 실시간 교통상태, AR 안내, 단속카메라·스쿨존·사고·공사 안내와 다임·순식·훈민 캐릭터 음성 안내를 제공합니다.</p></div>')}
+function openAppInfo(){openInfoModal('앱정보','<div class="info-card"><h3>조팸스 내비</h3><p><b>버전</b> MVP 7.5</p><p>2D 컬러 지도, 실시간 교통상태, AR 안내, 단속카메라·스쿨존·사고·공사 안내, 다른시간 출발 AI 소요시간 예측과 다임·순식·훈민 캐릭터 음성 안내를 제공합니다.</p></div>')}
 function openPrivacy(){openInfoModal('개인정보처리방침','<div class="info-card privacy-copy"><h3>개인정보 처리 안내</h3><p>길안내를 위해 사용자가 허용한 경우 현재 위치 정보를 이용합니다. AR 안내는 카메라 영상을 기기 화면에 표시하며, 본 앱 소스에서는 카메라 영상을 서버에 저장하지 않습니다.</p><p>Google 로그인 사용 시 계정의 기본 프로필 정보와 사용자가 저장한 설정·즐겨찾기를 Firebase에 동기화할 수 있습니다. 권한은 브라우저 또는 앱 설정에서 언제든 변경할 수 있습니다.</p><p>실제 상용 배포 전에는 운영주체, 처리 목적, 보유기간, 제3자 제공·처리위탁, 이용자 권리 및 문의처를 반영한 공식 개인정보처리방침으로 교체해야 합니다.</p></div>')}
 async function logTrip(event){try{await fetch('/api/trip',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({event,destination:state.destination?.name||null,distance:state.route?.distance||null,duration:state.tripStartedAt?Math.round((Date.now()-state.tripStartedAt)/1000):null,character:state.character,provider:state.route?.provider||null,guideType:null})})}catch{}}
 const NOTICE_ITEMS=[
@@ -853,6 +943,7 @@ function closeMy(){$('myModal').classList.add('hidden')}
 function toggleSettingPanel(buttonId,panelId){const btn=$(buttonId),panel=$(panelId),open=panel.classList.contains('hidden');panel.classList.toggle('hidden',!open);btn.setAttribute('aria-expanded',String(open));if(open)setTimeout(()=>panel.scrollIntoView({behavior:'smooth',block:'nearest'}),50)}
 async function shareArrival(){if(!state.destination)return;const text=`${state.destination.name}으로 이동 중입니다. 예상 도착 ${$('arrivalTime').textContent.replace('도착 ','')}`;try{if(navigator.share)await navigator.share({title:'조팸스 내비',text});else await navigator.clipboard.writeText(text),toast('도착 정보를 복사했습니다.')}catch{}}
 function bindUI(){
+  bindFutureDepartureUI();
   $('allowLocationBtn').onclick=requestLocationPermission;$('allowCameraBtn').onclick=requestCameraPermission;$('permissionContinueBtn').onclick=closePermissionGate;
   applyIcons();$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));
   document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>setCharacter(b.dataset.character));$('homeShortcut').onclick=()=>state.savedPlaces.home?chooseDestination(state.savedPlaces.home):openPlaceModal('home');$('workShortcut').onclick=()=>state.savedPlaces.work?chooseDestination(state.savedPlaces.work):openPlaceModal('work');$('favoriteShortcut').onclick=openMy;
