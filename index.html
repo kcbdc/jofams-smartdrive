@@ -174,7 +174,7 @@
     <!-- HAMBURGER / DRIVING MENU -->
     <div id="hamburgerMenuModal" class="modal hidden hamburger-menu-modal">
       <section class="hamburger-sheet">
-        <header class="hamburger-header"><div><span data-icon="menu"></span><b>메인 메뉴</b><small>주행에 대한 것</small></div><button id="hamburgerCloseBtn" class="circle-btn" aria-label="닫기"><span data-icon="close"></span></button></header>
+        <header class="hamburger-header"><div><span data-icon="menu"></span><b>햄버거 메뉴</b><small>주행에 대한 것</small></div><button id="hamburgerCloseBtn" class="circle-btn" aria-label="닫기"><span data-icon="close"></span></button></header>
         <div class="hamburger-menu-list">
           <div class="menu-section-label">목적지 관리</div>
           <button id="hambPlaceManageBtn"><span data-icon="location"></span><b>집·회사 위치 관리</b><i data-icon="chevron"></i></button>
@@ -185,8 +185,51 @@
           <button id="hambRoutePriorityBtn"><span data-icon="sliders"></span><b>경로 우선순위 설정</b><i data-icon="chevron"></i></button>
           <div class="menu-section-label">안전 · 지원</div>
           <button id="hambCameraSettingsBtn"><span data-icon="camera"></span><b>단속 카메라 알림 설정</b><i data-icon="chevron"></i></button>
-          <button id="hambSupportBtn"><span data-icon="headset"></span><b>고객센터 / 이용약관</b><i data-icon="chevron"></i></button>
+          <button id="hambSupportBtn"><span data-icon="edit"></span><b>1:1 문의</b><i data-icon="chevron"></i></button>
         </div>
+      </section>
+    </div>
+
+
+    <!-- ROUTE PRIORITY SETTINGS -->
+    <div id="routePriorityModal" class="modal hidden setting-choice-modal">
+      <section class="setting-choice-sheet">
+        <header><div><b>경로 우선순위 설정</b><small id="routePreferenceSummary">현재: 추천</small></div><button id="routePriorityClose" class="circle-btn"><span data-icon="close"></span></button></header>
+        <p>선택한 기준을 다음 길찾기와 경로 이탈 재탐색의 기본값으로 사용합니다.</p>
+        <div class="choice-cards route-pref-cards">
+          <button data-route-pref="recommend"><b>추천</b><small>시간·거리·통행료를 종합한 기본 경로</small></button>
+          <button data-route-pref="fast"><b>빠른길</b><small>예상 소요시간을 우선하는 경로</small></button>
+          <button data-route-pref="free"><b>무료도로</b><small>통행료가 없는 경로를 우선</small></button>
+        </div>
+      </section>
+    </div>
+
+    <!-- CAMERA ALERT SETTINGS -->
+    <div id="cameraAlertModal" class="modal hidden setting-choice-modal">
+      <section class="setting-choice-sheet">
+        <header><div><b>단속 카메라 알림 설정</b><small id="cameraAlertSummary">과속 ON · 신호위반 ON</small></div><button id="cameraAlertClose" class="circle-btn"><span data-icon="close"></span></button></header>
+        <p>OFF로 설정한 카메라는 주행 중 화면·음성 경고에서 제외됩니다.</p>
+        <label class="setting-toggle-row"><span><b>과속 카메라 알림</b><small>속도위반·이동식·일반 단속 안내</small></span><input id="speedCameraAlertToggle" type="checkbox" checked><i></i></label>
+        <label class="setting-toggle-row"><span><b>신호위반 카메라 알림</b><small>신호위반·신호/과속 복합 단속 안내</small></span><input id="signalCameraAlertToggle" type="checkbox" checked><i></i></label>
+      </section>
+    </div>
+
+    <!-- PRIVATE 1:1 INQUIRY -->
+    <div id="inquiryModal" class="modal hidden inquiry-modal">
+      <section class="inquiry-sheet">
+        <header><div><span data-icon="edit"></span><b>1:1 문의</b><small>내가 작성한 문의만 볼 수 있습니다.</small></div><button id="inquiryCloseBtn" class="circle-btn"><span data-icon="close"></span></button></header>
+        <div id="inquiryListWrap">
+          <button id="newInquiryBtn" class="primary-btn inquiry-new"><span data-icon="edit"></span>새 문의 작성</button>
+          <div id="inquiryList" class="inquiry-list"><div class="inquiry-empty">문의 내역을 불러오는 중입니다.</div></div>
+        </div>
+        <div id="inquiryCompose" class="hidden inquiry-compose">
+          <button id="inquiryComposeBack" class="inquiry-back">← 문의 목록</button>
+          <label><b>제목</b><input id="inquiryTitle" maxlength="100" placeholder="문의 제목을 입력해 주세요."></label>
+          <label><b>내용</b><textarea id="inquiryBody" maxlength="3000" rows="9" placeholder="문의 내용을 작성해 주세요."></textarea></label>
+          <p>문의 내용은 로그인한 본인 계정에서만 조회할 수 있습니다.</p>
+          <button id="inquirySubmitBtn" class="primary-btn">문의 등록</button>
+        </div>
+        <div id="inquiryDetail" class="hidden inquiry-detail"></div>
       </section>
     </div>
 

@@ -268,3 +268,14 @@ npx wrangler d1 migrations apply jofams-smartdrive-db --remote
 - 집·회사·즐겨찾기 등록은 로컬 상태/화면/완료 팝업을 즉시 갱신하고 D1/Firebase 동기화는 비동기로 수행합니다.
 - 메인 햄버거 버튼은 주행 관련 메뉴, MY 버튼은 개인 설정·기록 메뉴로 분리했습니다.
 - MY 메뉴는 즐겨찾기 / 주행기록 / 다른시간 출발 / 음성 가이드·캐릭터 / 공지사항 / 앱정보·개인정보처리방침 구조로 정리했습니다.
+
+
+## MVP 7.5.3 개인별 주행 설정 / 1:1 문의
+- 경로 우선순위 `추천 / 빠른길 / 무료도로`를 D1 `user_navigation_settings`에 사용자별 저장합니다.
+- 선택값은 새 경로 조회의 기본 선택 및 경로 이탈 재탐색에 반영됩니다.
+- 과속/신호위반 카메라 알림을 각각 ON/OFF하고 D1에 저장합니다. OFF된 종류는 화면 및 음성 경고에서 제외됩니다.
+- `고객센터 / 이용약관`을 `1:1 문의`로 변경했습니다.
+- 문의는 Firebase 로그인 필수이며 Cloudflare Function이 Firebase ID 토큰을 `accounts:lookup`으로 확인한 뒤 토큰의 UID를 DB 쿼리에 강제 사용합니다. 따라서 클라이언트가 다른 UID를 임의로 지정해도 다른 사용자의 문의를 조회할 수 없습니다.
+- 신규 migration: `0006_user_navigation_settings.sql`
+- 신규 Functions: `/api/user-settings`, `/api/inquiries`
+- Cloudflare 환경변수 `FIREBASE_WEB_API_KEY`를 Firebase Web App의 API key로 설정해야 1:1 문의 인증이 동작합니다.
