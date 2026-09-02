@@ -190,3 +190,9 @@ KAKAO_DIRECTIONS_TIER=standard
   - `data/unmanned_traffic_cameras_part2.json`
 - 앱 시작 시 두 파일을 병렬 로드한 뒤 하나의 카메라 데이터 배열로 합쳐 기존 경로 매칭 로직에 사용합니다.
 - 기존 단일 `data/unmanned_traffic_cameras.json` 파일은 배포 패키지에서 제거했습니다.
+
+
+### AR 중앙 정렬 보정
+- AR 주행 리본이 회전 안내에 따라 우측/좌측 대각선으로 기울던 보정값을 제거했습니다.
+- 유도 리본 중심축은 항상 화면 정중앙을 향합니다.
+- 유도 리본의 최대 전체 폭을 화면 폭의 1/3 이내로 제한해 시야를 과도하게 가리지 않도록 조정했습니다.

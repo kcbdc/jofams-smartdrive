@@ -403,14 +403,16 @@ function drawARScene(){
   // MVP 7.5: AR 화살표는 완전히 제거하고, 샘플처럼 반짝이는 파란 주행 리본이 전방으로 길게 뻗어가도록 구성한다.
   // 소실점은 화면 52% 부근으로 내려 기존보다 더 낮고 안정적인 시야각을 만든다.
   const horizon=H*.52,bottom=H*.985;
-  const idx=state.currentRouteIndex||0,guides=(state.route?.guides||[]).filter(x=>Number(x.routeIndex)>idx+1),next=guides[0];
-  let turnBias=0;if(next){const d=distanceAlong(idx,next.routeIndex);if(d<700){if([1,5].includes(Number(next.type)))turnBias=-1;if([2,6].includes(Number(next.type)))turnBias=1}}
-  const centerX=t=>W/2+turnBias*Math.pow(1-t,1.85)*W*.18;
-  const base=new Path2D(),topHalf=Math.max(6,W*.016),bottomHalf=W*.185;
-  base.moveTo(centerX(0)-topHalf,horizon);
-  base.lineTo(centerX(0)+topHalf,horizon);
-  base.lineTo(centerX(1)+bottomHalf,bottom);
-  base.lineTo(centerX(1)-bottomHalf,bottom);
+  const idx=state.currentRouteIndex||0;
+  // MVP 7.5 AR 정렬 보정: 회전 안내와 무관하게 유도 리본 중심축은 항상 화면 정중앙을 유지한다.
+  // 유도 구역 전체 폭은 화면 폭의 1/3을 넘지 않도록 제한한다.
+  const centerX=()=>W/2;
+  const maxHalfWidth=W/6; // 전체 폭 최대 W/3
+  const base=new Path2D(),topHalf=Math.max(6,W*.014),bottomHalf=Math.min(W*.145,maxHalfWidth);
+  base.moveTo(centerX()-topHalf,horizon);
+  base.lineTo(centerX()+topHalf,horizon);
+  base.lineTo(centerX()+bottomHalf,bottom);
+  base.lineTo(centerX()-bottomHalf,bottom);
   base.closePath();
   const baseGrad=ctx.createLinearGradient(0,horizon,0,bottom);
   baseGrad.addColorStop(0,'rgba(82,220,255,.10)');
@@ -419,11 +421,11 @@ function drawARScene(){
   baseGrad.addColorStop(1,'rgba(22,112,255,.42)');
   ctx.save();ctx.shadowColor='rgba(26,173,255,.28)';ctx.shadowBlur=28;ctx.fillStyle=baseGrad;ctx.fill(base);ctx.restore();
 
-  const core=new Path2D(),topCore=Math.max(4,W*.008),bottomCore=W*.092;
-  core.moveTo(centerX(0)-topCore,horizon);
-  core.lineTo(centerX(0)+topCore,horizon);
-  core.lineTo(centerX(1)+bottomCore,bottom);
-  core.lineTo(centerX(1)-bottomCore,bottom);
+  const core=new Path2D(),topCore=Math.max(4,W*.007),bottomCore=Math.min(W*.072,maxHalfWidth*.52);
+  core.moveTo(centerX()-topCore,horizon);
+  core.lineTo(centerX()+topCore,horizon);
+  core.lineTo(centerX()+bottomCore,bottom);
+  core.lineTo(centerX()-bottomCore,bottom);
   core.closePath();
   const coreGrad=ctx.createLinearGradient(0,horizon,0,bottom);
   coreGrad.addColorStop(0,'rgba(180,245,255,.24)');
@@ -432,11 +434,11 @@ function drawARScene(){
   coreGrad.addColorStop(1,'rgba(34,146,255,.38)');
   ctx.fillStyle=coreGrad;ctx.fill(core);
 
-  const shine=new Path2D(),shineTop=Math.max(2,W*.0036),shineBottom=W*.025;
-  shine.moveTo(centerX(0)-shineTop,horizon);
-  shine.lineTo(centerX(0)+shineTop,horizon);
-  shine.lineTo(centerX(1)+shineBottom,bottom);
-  shine.lineTo(centerX(1)-shineBottom,bottom);
+  const shine=new Path2D(),shineTop=Math.max(2,W*.0032),shineBottom=Math.min(W*.020,maxHalfWidth*.18);
+  shine.moveTo(centerX()-shineTop,horizon);
+  shine.lineTo(centerX()+shineTop,horizon);
+  shine.lineTo(centerX()+shineBottom,bottom);
+  shine.lineTo(centerX()-shineBottom,bottom);
   shine.closePath();
   const shineGrad=ctx.createLinearGradient(0,horizon,0,bottom);
   shineGrad.addColorStop(0,'rgba(255,255,255,.36)');
@@ -448,7 +450,7 @@ function drawARScene(){
   for(let i=0;i<blocks;i++){
     const t0=i/blocks,t1=Math.min(1,t0+.78/blocks);
     const y0=horizon+(bottom-horizon)*Math.pow(t0,.88),y1=horizon+(bottom-horizon)*Math.pow(t1,.88);
-    const x0=centerX(t0),x1=centerX(t1);
+    const x0=centerX(),x1=centerX();
     const w0=Math.max(6,topHalf+(bottomHalf-topHalf)*t0),w1=Math.max(8,topHalf+(bottomHalf-topHalf)*t1);
     const p=new Path2D();
     p.moveTo(x0-w0*.92,y0);p.lineTo(x0+w0*.92,y0);p.lineTo(x1+w1*.86,y1);p.lineTo(x1-w1*.86,y1);p.closePath();
