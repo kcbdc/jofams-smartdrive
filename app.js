@@ -12,7 +12,7 @@ const state = {
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
   savedPlaces:{home:null,work:null},favorites:[],placeKind:null,origin:null,originMode:'current',
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,
-  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,
+  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
 };
 
@@ -65,6 +65,89 @@ function escapeHtml(v=''){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','
 function nearestIndex(lng,lat,geometry){let bi=0,bd=Infinity;const stride=Math.max(1,Math.floor((geometry?.length||0)/1200));for(let i=0;i<(geometry?.length||0);i+=stride){const p=geometry[i],d=(p[0]-lng)**2+(p[1]-lat)**2;if(d<bd){bd=d;bi=i}}return bi}
 function buildCumulative(route){const g=route?.geometry||[],arr=new Array(g.length).fill(0);for(let i=1;i<g.length;i++)arr[i]=arr[i-1]+hav(g[i-1][1],g[i-1][0],g[i][1],g[i][0]);return arr}
 function normalizedPlace(x){return x?{id:x.id||'',name:x.name||'목적지',address:x.address||'',lng:Number(x.lng),lat:Number(x.lat)}:null}
+
+
+const CAMERA_DATASET_URL='/data/unmanned_traffic_cameras.json';
+
+async function loadOfficialCameraRows(){
+  if(Array.isArray(state.officialCameraRows))return state.officialCameraRows;
+  if(state.officialCameraPromise)return state.officialCameraPromise;
+  state.officialCameraPromise=fetch(CAMERA_DATASET_URL,{cache:'force-cache'}).then(r=>{
+    if(!r.ok)throw new Error(`camera dataset HTTP ${r.status}`);
+    return r.json();
+  }).then(d=>{
+    const rows=Array.isArray(d)?d:Array.isArray(d?.records)?d.records:Array.isArray(d?.response?.body?.items)?d.response.body.items:[];
+    state.officialCameraRows=rows;
+    return rows;
+  }).catch(e=>{
+    console.warn('official camera dataset load failed',e);
+    state.officialCameraRows=[];
+    return [];
+  });
+  return state.officialCameraPromise;
+}
+function pickField(obj,keys=[]){for(const k of keys){const v=obj?.[k];if(v!=null&&String(v).trim()!=='')return v}return ''}
+function officialCameraType(raw=''){
+  const s=String(raw||'').trim();
+  if(/신호.*과속|과속.*신호|신호.*속도|속도.*신호/.test(s)||s==='3'||s==='4')return 'signal_speed_camera';
+  if(/신호/.test(s)||s==='2')return 'signal_camera';
+  if(/속도|과속/.test(s)||s==='1')return 'speed_camera';
+  return 'traffic_camera';
+}
+function geometryBounds(geometry=[]){
+  let minLng=Infinity,maxLng=-Infinity,minLat=Infinity,maxLat=-Infinity;
+  for(const p of geometry){const lng=Number(p?.[0]),lat=Number(p?.[1]);if(!Number.isFinite(lng)||!Number.isFinite(lat))continue; if(lng<minLng)minLng=lng;if(lng>maxLng)maxLng=lng;if(lat<minLat)minLat=lat;if(lat>maxLat)maxLat=lat}
+  if(!Number.isFinite(minLng)||!Number.isFinite(minLat))return null;
+  return {minLng,maxLng,minLat,maxLat};
+}
+function expandBounds(bounds,meters=1200){
+  if(!bounds)return null;const midLat=(bounds.minLat+bounds.maxLat)/2,latPad=meters/111320,lonPad=meters/(111320*Math.max(.2,Math.cos(midLat*Math.PI/180)));
+  return {minLng:bounds.minLng-lonPad,maxLng:bounds.maxLng+lonPad,minLat:bounds.minLat-latPad,maxLat:bounds.maxLat+latPad};
+}
+function inBounds(lat,lng,b){return b&&lng>=b.minLng&&lng<=b.maxLng&&lat>=b.minLat&&lat<=b.maxLat}
+async function loadStaticCameraEvents(route){
+  const rows=await loadOfficialCameraRows();
+  const geometry=route?.geometry||[]; if(!rows.length||!geometry.length)return [];
+  const bounds=expandBounds(geometryBounds(geometry),1400); const out=[];
+  for(const row of rows){
+    const lat=Number(pickField(row,['위도','latitude','lat'])),lng=Number(pickField(row,['경도','longitude','lng','lon']));
+    if(!Number.isFinite(lat)||!Number.isFinite(lng)||!inBounds(lat,lng,bounds))continue;
+    const idx=nearestIndex(lng,lat,geometry),p=geometry[idx]; if(!p)continue;
+    const d=hav(lat,lng,p[1],p[0]); if(d>320)continue;
+    const type=officialCameraType(pickField(row,['단속구분','regltSe','규제구분']));
+    const maxspeed=Number(pickField(row,['제한속도','lmttVe','speedLimit']))||0;
+    const protectedArea=String(pickField(row,['보호구역구분','protectedArea'])).trim();
+    const roadName=String(pickField(row,['도로노선명','도로명','roadName'])).trim();
+    const name=String(pickField(row,['설치장소','itlpc','소재지도로명주소','소재지지번주소', '도로노선명'])).trim()||'무인교통단속카메라';
+    const base={
+      id:`local-camera:${pickField(row,['무인교통단속카메라관리번호','mnlssRegltCameraManageNo'])||`${lat}:${lng}`}`,
+      type,lat,lng,routeIndex:idx,name,maxspeed,
+      authority:String(pickField(row,['관리기관명','institutionNm'])).trim(),
+      protectedArea,roadName,source:'전국무인교통단속카메라표준데이터(로컬 파일)'
+    };
+    out.push(base);
+    if(/어린이|스쿨|school/i.test(protectedArea)){
+      out.push({...base,id:`${base.id}:school`,type:'school_zone',name:`${name} 어린이보호구역`,maxspeed:maxspeed||30});
+    }
+  }
+  return mergeSafetyEvents(out,geometry);
+}
+function applyRouteSpeedLimitHints(route,events=[]){
+  const segs=route?.roadSegments||[];
+  const limitEvents=events.filter(e=>Number(e?.maxspeed)>0&&['speed_camera','signal_camera','signal_speed_camera','traffic_camera','speed_limit','school_zone'].includes(e.type));
+  if(!segs.length||!limitEvents.length)return;
+  for(const seg of segs){
+    if(Number(seg?.speedLimit)>0)continue;
+    const start=Number(seg.startIndex)||0,end=Number(seg.endIndex)||start,mid=(start+end)/2;
+    let best=null,bestScore=Infinity;
+    for(const e of limitEvents){
+      const ri=Number(e.routeIndex); if(!Number.isFinite(ri))continue;
+      const score=Math.abs(ri-mid);
+      if(score<bestScore&&score<=90){best=e;bestScore=score}
+    }
+    if(best)seg.speedLimit=Number(best.maxspeed)||0;
+  }
+}
 
 /* ---------- MAP ---------- */
 async function loadMapLibre(){
@@ -315,26 +398,65 @@ function drawARScene(){
   const w=Math.max(1,Math.round(rect.width*dpr)),h=Math.max(1,Math.round(rect.height*dpr));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}
   const ctx=canvas.getContext('2d');ctx.clearRect(0,0,w,h);ctx.save();ctx.scale(dpr,dpr);
   const W=rect.width,H=rect.height;
-  // MVP 7.4: 화살표를 제거하고 샘플처럼 도로에 붙어 보이는 반투명 AR 안내 구역만 표시한다.
-  // 소실점을 화면 위 43% 부근으로 낮춰 기존보다 카메라 각도가 과하게 높아 보이지 않도록 한다.
-  const horizon=H*.43,bottom=H*.965;
+  // MVP 7.5: AR 화살표는 완전히 제거하고, 샘플처럼 반짝이는 파란 주행 리본이 전방으로 길게 뻗어가도록 구성한다.
+  // 소실점은 화면 52% 부근으로 내려 기존보다 더 낮고 안정적인 시야각을 만든다.
+  const horizon=H*.52,bottom=H*.985;
   const idx=state.currentRouteIndex||0,guides=(state.route?.guides||[]).filter(x=>Number(x.routeIndex)>idx+1),next=guides[0];
-  let turnBias=0;if(next){const d=distanceAlong(idx,next.routeIndex);if(d<600){if([1,5].includes(Number(next.type)))turnBias=-1;if([2,6].includes(Number(next.type)))turnBias=1}}
-  const centerX=t=>W/2+turnBias*Math.pow(1-t,1.65)*W*.15;
-  const bands=18;
-  for(let i=bands-1;i>=0;i--){
-    const nearT=i/bands,farT=(i+1)/bands;
-    const y0=horizon+(bottom-horizon)*Math.pow(nearT,.76),y1=horizon+(bottom-horizon)*Math.pow(farT,.76);
-    const w0=8+(W*.24)*Math.pow(nearT,1.12),w1=8+(W*.24)*Math.pow(farT,1.12);
-    const x0=centerX(nearT),x1=centerX(farT);
-    const p=new Path2D();p.moveTo(x0-w0,y0);p.lineTo(x0+w0,y0);p.lineTo(x1+w1,y1);p.lineTo(x1-w1,y1);p.closePath();
-    const alpha=.07+.20*Math.pow(farT,.85);
-    const grad=ctx.createLinearGradient(0,y0,0,y1);grad.addColorStop(0,`rgba(83,230,255,${alpha*.65})`);grad.addColorStop(.55,`rgba(18,181,255,${alpha})`);grad.addColorStop(1,`rgba(0,116,255,${alpha*.92})`);
-    ctx.save();ctx.shadowColor=`rgba(20,187,255,${.22+.18*farT})`;ctx.shadowBlur=8+18*farT;ctx.fillStyle=grad;ctx.fill(p);ctx.restore();
+  let turnBias=0;if(next){const d=distanceAlong(idx,next.routeIndex);if(d<700){if([1,5].includes(Number(next.type)))turnBias=-1;if([2,6].includes(Number(next.type)))turnBias=1}}
+  const centerX=t=>W/2+turnBias*Math.pow(1-t,1.85)*W*.18;
+  const base=new Path2D(),topHalf=Math.max(6,W*.016),bottomHalf=W*.185;
+  base.moveTo(centerX(0)-topHalf,horizon);
+  base.lineTo(centerX(0)+topHalf,horizon);
+  base.lineTo(centerX(1)+bottomHalf,bottom);
+  base.lineTo(centerX(1)-bottomHalf,bottom);
+  base.closePath();
+  const baseGrad=ctx.createLinearGradient(0,horizon,0,bottom);
+  baseGrad.addColorStop(0,'rgba(82,220,255,.10)');
+  baseGrad.addColorStop(.35,'rgba(54,193,255,.22)');
+  baseGrad.addColorStop(.74,'rgba(36,151,255,.32)');
+  baseGrad.addColorStop(1,'rgba(22,112,255,.42)');
+  ctx.save();ctx.shadowColor='rgba(26,173,255,.28)';ctx.shadowBlur=28;ctx.fillStyle=baseGrad;ctx.fill(base);ctx.restore();
+
+  const core=new Path2D(),topCore=Math.max(4,W*.008),bottomCore=W*.092;
+  core.moveTo(centerX(0)-topCore,horizon);
+  core.lineTo(centerX(0)+topCore,horizon);
+  core.lineTo(centerX(1)+bottomCore,bottom);
+  core.lineTo(centerX(1)-bottomCore,bottom);
+  core.closePath();
+  const coreGrad=ctx.createLinearGradient(0,horizon,0,bottom);
+  coreGrad.addColorStop(0,'rgba(180,245,255,.24)');
+  coreGrad.addColorStop(.4,'rgba(108,226,255,.28)');
+  coreGrad.addColorStop(.82,'rgba(56,186,255,.32)');
+  coreGrad.addColorStop(1,'rgba(34,146,255,.38)');
+  ctx.fillStyle=coreGrad;ctx.fill(core);
+
+  const shine=new Path2D(),shineTop=Math.max(2,W*.0036),shineBottom=W*.025;
+  shine.moveTo(centerX(0)-shineTop,horizon);
+  shine.lineTo(centerX(0)+shineTop,horizon);
+  shine.lineTo(centerX(1)+shineBottom,bottom);
+  shine.lineTo(centerX(1)-shineBottom,bottom);
+  shine.closePath();
+  const shineGrad=ctx.createLinearGradient(0,horizon,0,bottom);
+  shineGrad.addColorStop(0,'rgba(255,255,255,.36)');
+  shineGrad.addColorStop(.42,'rgba(209,248,255,.22)');
+  shineGrad.addColorStop(1,'rgba(255,255,255,.08)');
+  ctx.fillStyle=shineGrad;ctx.fill(shine);
+
+  const blocks=14;
+  for(let i=0;i<blocks;i++){
+    const t0=i/blocks,t1=Math.min(1,t0+.78/blocks);
+    const y0=horizon+(bottom-horizon)*Math.pow(t0,.88),y1=horizon+(bottom-horizon)*Math.pow(t1,.88);
+    const x0=centerX(t0),x1=centerX(t1);
+    const w0=Math.max(6,topHalf+(bottomHalf-topHalf)*t0),w1=Math.max(8,topHalf+(bottomHalf-topHalf)*t1);
+    const p=new Path2D();
+    p.moveTo(x0-w0*.92,y0);p.lineTo(x0+w0*.92,y0);p.lineTo(x1+w1*.86,y1);p.lineTo(x1-w1*.86,y1);p.closePath();
+    const alpha=.02+.055*Math.pow(t1,1.15);
+    const g=ctx.createLinearGradient(0,y0,0,y1);
+    g.addColorStop(0,`rgba(255,255,255,${alpha*.55})`);
+    g.addColorStop(1,`rgba(113,236,255,${alpha})`);
+    ctx.fillStyle=g;ctx.fill(p);
   }
-  // 중앙 밝은 코어는 매우 얇고 투명하게 유지해 '앞으로 쭉 뻗는' 깊이감을 만든다. 외곽선은 사용하지 않는다.
-  const core=new Path2D(),topW=4,bottomW=W*.105;core.moveTo(W/2-topW,horizon);core.lineTo(W/2+topW,horizon);core.lineTo(centerX(1)+bottomW,bottom);core.lineTo(centerX(1)-bottomW,bottom);core.closePath();
-  const cg=ctx.createLinearGradient(0,horizon,0,bottom);cg.addColorStop(0,'rgba(124,246,255,.05)');cg.addColorStop(.55,'rgba(46,208,255,.11)');cg.addColorStop(1,'rgba(0,147,255,.18)');ctx.fillStyle=cg;ctx.fill(core);
+
   ctx.restore();state.arFrame=requestAnimationFrame(drawARScene)
 }
 
@@ -345,11 +467,11 @@ function updateTripHistorySummary(){if($('tripHistorySummary'))$('tripHistorySum
 function openInfoModal(title,html){$('infoModalTitle').textContent=title;$('infoModalBody').innerHTML=html;$('infoModal').classList.remove('hidden');applyIcons($('infoModalBody'))}
 function closeInfoModal(){$('infoModal').classList.add('hidden')}
 function openTripHistory(){const items=state.tripHistory||[];const html=items.length?`<div class="history-list">${items.map(x=>`<article><b>${escapeHtml(x.destination||'목적지')}</b><small>${escapeHtml(x.date||'')} · ${km(Number(x.distance)||0)} · ${mins(Number(x.duration)||0)}</small><em>${escapeHtml(characterDefs[x.character]?.name||'')}</em></article>`).join('')}</div>`:'<div class="empty-info">저장된 주행 기록이 없습니다.</div>';openInfoModal('주행기록',html)}
-function openAppInfo(){openInfoModal('앱정보','<div class="info-card"><h3>조팸스 스마트 드라이브</h3><p><b>버전</b> MVP 7.4</p><p>2D 컬러 지도, 실시간 교통상태, AR 안내, 단속카메라·스쿨존·사고·공사 안내와 다임·순식·훈민 캐릭터 음성 안내를 제공합니다.</p></div>')}
+function openAppInfo(){openInfoModal('앱정보','<div class="info-card"><h3>조팸스 내비</h3><p><b>버전</b> MVP 7.5</p><p>2D 컬러 지도, 실시간 교통상태, AR 안내, 단속카메라·스쿨존·사고·공사 안내와 다임·순식·훈민 캐릭터 음성 안내를 제공합니다.</p></div>')}
 function openPrivacy(){openInfoModal('개인정보처리방침','<div class="info-card privacy-copy"><h3>개인정보 처리 안내</h3><p>길안내를 위해 사용자가 허용한 경우 현재 위치 정보를 이용합니다. AR 안내는 카메라 영상을 기기 화면에 표시하며, 본 앱 소스에서는 카메라 영상을 서버에 저장하지 않습니다.</p><p>Google 로그인 사용 시 계정의 기본 프로필 정보와 사용자가 저장한 설정·즐겨찾기를 Firebase에 동기화할 수 있습니다. 권한은 브라우저 또는 앱 설정에서 언제든 변경할 수 있습니다.</p><p>실제 상용 배포 전에는 운영주체, 처리 목적, 보유기간, 제3자 제공·처리위탁, 이용자 권리 및 문의처를 반영한 공식 개인정보처리방침으로 교체해야 합니다.</p></div>')}
 async function logTrip(event){try{await fetch('/api/trip',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({event,destination:state.destination?.name||null,distance:state.route?.distance||null,duration:state.tripStartedAt?Math.round((Date.now()-state.tripStartedAt)/1000):null,character:state.character,provider:state.route?.provider||null,guideType:null})})}catch{}}
 const NOTICE_ITEMS=[
-  {date:'2026.09.01',title:'MVP 7.4 안전·터널·교통정보 안정화',body:'공식 무인단속카메라 연동, 제한속도 표시, 터널 GPS 추정주행, 교통상태 코드 보정과 120초 실시간 경로 갱신을 적용했습니다.'},
+  {date:'2026.09.01',title:'MVP 7.5 AR 리본·단속카메라 로컬데이터 개선',body:'AR 지도 리본 시야각 조정, 로컬 무인단속카메라 데이터 적용, 제한속도 표시 보강, 터널 추정주행과 120초 경로 갱신을 유지합니다.'},
   {date:'2026.09.01',title:'안전운전 정보 안내',body:'단속카메라, 스쿨존, 사고·공사 및 교통정보는 실제 도로 표지와 교통법규를 우선하여 이용해 주세요.'}
 ];
 function openNotices(){openInfoModal('공지사항',`<div class="notice-list">${NOTICE_ITEMS.map(x=>`<article><time>${escapeHtml(x.date)}</time><b>${escapeHtml(x.title)}</b><p>${escapeHtml(x.body)}</p></article>`).join('')}</div>`)}
@@ -418,10 +540,13 @@ function startDestinationCycle(){clearInterval(state.destinationCycleTimer);clea
 function stopDestinationCycle(){clearInterval(state.destinationCycleTimer);clearTimeout(state.destinationHideTimer);state.destinationCycleTimer=0;state.destinationHideTimer=0;hideDestinationBottom()}
 function effectiveSpeedLimit(idx,seg){
   const direct=Number(seg?.speedLimit)||0;if(direct>0)return direct;
+  const roadLimits=(state.route?.roadSegments||[]).filter(s=>Number(s?.speedLimit)>0);
+  let segBest=0,segDist=Infinity;
+  for(const s of roadLimits){const start=Number(s.startIndex)||0,end=Number(s.endIndex)||start;if(idx>=start&&idx<=end)return Number(s.speedLimit)||0;const mid=(start+end)/2;const d=Math.abs(mid-idx);if(d<segDist&&d<=70){segBest=Number(s.speedLimit)||0;segDist=d}}
   const events=(state.safetyEvents||[]).filter(e=>Number(e.maxspeed)>0&&['speed_camera','signal_camera','signal_speed_camera','traffic_camera','speed_limit','school_zone'].includes(e.type));
-  let best=null,bestD=Infinity;
-  for(const e of events){const ri=Number(e.routeIndex);if(!Number.isFinite(ri))continue;const d=Math.abs(distanceAlong(Math.min(idx,ri),Math.max(idx,ri)));if(d<bestD&&d<=900){best=e;bestD=d}}
-  return Number(best?.maxspeed)||0;
+  let best=null,bestScore=Infinity;
+  for(const e of events){const ri=Number(e.routeIndex);if(!Number.isFinite(ri))continue;const routeDelta=Math.abs(ri-idx);if(routeDelta>140)continue;const along=e.routeIndex>=idx?distanceAlong(idx,ri):distanceAlong(ri,idx);const score=along+(e.routeIndex<idx?55:0);if(score<bestScore&&along<=1200){best=e;bestScore=score}}
+  return Number(best?.maxspeed)||segBest||0;
 }
 function updateProgressUI(idx){
   const total=state.routeCumulative.at(-1)||state.route.distance||1,done=state.routeCumulative[idx]||0,remain=Math.max(0,total-done),ratio=Math.max(0,Math.min(1,remain/total)),remainSec=(state.route.duration||0)*ratio;
@@ -482,11 +607,16 @@ function normalizeRouteSafety(route){
 async function loadSafetyEvents(route){
   const seq=++state.safetyRequestSeq;state.safetyEvents=[];state.lastSafetySpoken=new Set();hideSafetyAlert();clearSafetyMarkers();if(!route?.geometry?.length)return;
   const primary=normalizeRouteSafety(route);
+  const official=await loadStaticCameraEvents(route).catch(e=>{console.warn('static camera merge failed',e);return []});
+  let supplemental=[];
   try{
     const r=await fetch('/api/safety',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({points:sampleRoutePoints(route.geometry)})});
     const d=await r.json().catch(()=>({events:[]}));if(seq!==state.safetyRequestSeq)return;
-    state.safetyEvents=mergeSafetyEvents([...primary,...(d.events||[])],route.geometry);
-  }catch{if(seq!==state.safetyRequestSeq)return;state.safetyEvents=mergeSafetyEvents(primary,route.geometry)}
+    supplemental=Array.isArray(d?.events)?d.events:[];
+  }catch(e){if(seq!==state.safetyRequestSeq)return;console.warn('supplemental safety fetch failed',e)}
+  const merged=mergeSafetyEvents([...primary,...official,...supplemental],route.geometry);
+  state.safetyEvents=merged;
+  applyRouteSpeedLimitHints(route,merged);
   renderSafetyMarkers();if(state.currentRouteIndex>=0)updateSafetyUI(state.currentRouteIndex)
 }
 function mergeSafetyEvents(events,geometry){
@@ -716,7 +846,7 @@ function closeDriveMenu(){$('driveMenu').classList.add('hidden')}
 function openMy(){$('myModal').classList.remove('hidden');renderProfile();syncCharacterUI();updateVolumeUI();updateTripHistorySummary()}
 function closeMy(){$('myModal').classList.add('hidden')}
 function toggleSettingPanel(buttonId,panelId){const btn=$(buttonId),panel=$(panelId),open=panel.classList.contains('hidden');panel.classList.toggle('hidden',!open);btn.setAttribute('aria-expanded',String(open));if(open)setTimeout(()=>panel.scrollIntoView({behavior:'smooth',block:'nearest'}),50)}
-async function shareArrival(){if(!state.destination)return;const text=`${state.destination.name}으로 이동 중입니다. 예상 도착 ${$('arrivalTime').textContent.replace('도착 ','')}`;try{if(navigator.share)await navigator.share({title:'조팸스 스마트 드라이브',text});else await navigator.clipboard.writeText(text),toast('도착 정보를 복사했습니다.')}catch{}}
+async function shareArrival(){if(!state.destination)return;const text=`${state.destination.name}으로 이동 중입니다. 예상 도착 ${$('arrivalTime').textContent.replace('도착 ','')}`;try{if(navigator.share)await navigator.share({title:'조팸스 내비',text});else await navigator.clipboard.writeText(text),toast('도착 정보를 복사했습니다.')}catch{}}
 function bindUI(){
   $('allowLocationBtn').onclick=requestLocationPermission;$('allowCameraBtn').onclick=requestCameraPermission;$('permissionContinueBtn').onclick=closePermissionGate;
   applyIcons();$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));
