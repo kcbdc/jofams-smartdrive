@@ -246,3 +246,11 @@ KAKAO_DIRECTIONS_TIER=standard
 ```bash
 npx wrangler d1 migrations apply jofams-smartdrive-db --remote
 ```
+
+
+## 즐겨찾기 D1 저장 및 목록화 개선
+- D1 `favorite_places` 테이블과 `/api/favorites` API를 추가했습니다.
+- 즐겨찾기 등록/삭제 시 로컬스토리지 + D1 + 로그인 사용자의 Firestore 동기화를 유지합니다.
+- 홈/마이페이지의 즐겨찾기 버튼을 누르면 저장된 모든 장소가 목록으로 표시됩니다.
+- 각 즐겨찾기에서 바로 길찾기 또는 삭제할 수 있습니다.
+- 마이그레이션: `migrations/0004_favorite_places.sql`
