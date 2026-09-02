@@ -1018,9 +1018,13 @@ function pickDaimVoice(){
   return voices.find(v=>female.test(`${v.name||''} ${v.voiceURI||''}`)) || voices[0] || null;
 }
 
-function nativeTtsAvailable(){
+function androidNativeTtsAvailable(){
   try{return Boolean(window.JofamsTtsBridge&&typeof window.JofamsTtsBridge.speak==='function')}catch{return false}
 }
+function iosNativeTtsAvailable(){
+  try{return Boolean(window.webkit?.messageHandlers?.jofamsTts?.postMessage)}catch{return false}
+}
+function nativeTtsAvailable(){return androidNativeTtsAvailable()||iosNativeTtsAvailable()}
 function speak(text){
   if(!state.sound||!text) return;
   const c=characterDefs[state.character];
@@ -1030,9 +1034,8 @@ function speak(text){
       ? {rate:1.08,pitch:.96}
       : {rate:c.rate,pitch:c.pitch};
 
-  // Android WebView에서는 시스템 Web Speech API보다 네이티브 Android TTS를 우선한다.
-  // WebView의 speechSynthesis 음성목록이 비어 있거나 백그라운드 복귀 후 멈추는 문제를 방지한다.
-  if(nativeTtsAvailable()){
+  // Android 앱: JavaScriptInterface 기반 Android TextToSpeech.
+  if(androidNativeTtsAvailable()){
     try{
       window.JofamsTtsBridge.speak(
         String(text),
@@ -1042,7 +1045,23 @@ function speak(text){
         Number(state.voiceVolume)||.8
       );
       return;
-    }catch(e){console.warn('native TTS fallback',e)}
+    }catch(e){console.warn('Android native TTS fallback',e)}
+  }
+
+  // iOS WKWebView 앱: WKScriptMessageHandler -> AVSpeechSynthesizer.
+  // Safari/PWA에는 message handler가 없으므로 아래 Web Speech API로 자동 fallback된다.
+  if(iosNativeTtsAvailable()){
+    try{
+      window.webkit.messageHandlers.jofamsTts.postMessage({
+        action:'speak',
+        text:String(text),
+        character:state.character,
+        rate:Number(profile.rate)||1,
+        pitch:Number(profile.pitch)||1,
+        volume:Number(state.voiceVolume)||.8
+      });
+      return;
+    }catch(e){console.warn('iOS native TTS fallback',e)}
   }
 
   if(!('speechSynthesis' in window)) return;
@@ -1061,6 +1080,15 @@ function speak(text){
 }
 window.addEventListener('jofams-native-tts-state',e=>{
   if(e?.detail?.ready===false&&e?.detail?.message)console.warn(e.detail.message);
+});
+
+window.addEventListener('jofams-ios-app-resume',()=>{
+  try{if('speechSynthesis' in window)speechSynthesis.resume()}catch{}
+});
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden){
+    try{if('speechSynthesis' in window)speechSynthesis.resume()}catch{}
+  }
 });
 
 function ownerSuffix(){return state.firebase.user?.uid||'guest'}
