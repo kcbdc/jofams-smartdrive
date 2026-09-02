@@ -174,7 +174,7 @@
     <!-- HAMBURGER / DRIVING MENU -->
     <div id="hamburgerMenuModal" class="modal hidden hamburger-menu-modal">
       <section class="hamburger-sheet">
-        <header class="hamburger-header"><div><span data-icon="menu"></span><b>햄버거 메뉴</b><small>주행에 대한 것</small></div><button id="hamburgerCloseBtn" class="circle-btn" aria-label="닫기"><span data-icon="close"></span></button></header>
+        <header class="hamburger-header"><div><span data-icon="menu"></span><b>메인 메뉴</b><small>주행에 대한 것</small></div><button id="hamburgerCloseBtn" class="circle-btn" aria-label="닫기"><span data-icon="close"></span></button></header>
         <div class="hamburger-menu-list">
           <div class="menu-section-label">목적지 관리</div>
           <button id="hambPlaceManageBtn"><span data-icon="location"></span><b>집·회사 위치 관리</b><i data-icon="chevron"></i></button>
@@ -271,10 +271,36 @@
           </div>
           <button id="noticeBtn"><span data-icon="megaphone"></span><span><b>공지사항</b><small>서비스 업데이트 및 안내</small></span><i data-icon="chevron"></i></button>
           <button id="appPrivacyBtn"><span data-icon="document"></span><span><b>앱정보 / 개인정보처리방침</b><small>버전·개인정보 처리 안내</small></span><i data-icon="chevron"></i></button>
+          <button id="adminModeBtn" class="hidden admin-mode-entry"><span data-icon="settings"></span><span><b>관리자 모드</b><small>공지·콘텐츠·1:1 문의 관리</small></span><i data-icon="chevron"></i></button>
         </div>
       </section>
     </div>
 
+
+    <!-- ADMIN MODE -->
+    <div id="adminModal" class="modal hidden admin-modal">
+      <section class="admin-sheet">
+        <header><div><span data-icon="settings"></span><b>관리자 모드</b><small id="adminAccountLabel">관리자 계정</small></div><button id="adminCloseBtn" class="circle-btn"><span data-icon="close"></span></button></header>
+        <div class="admin-tabs">
+          <button data-admin-tab="notices" class="active">공지사항</button>
+          <button data-admin-tab="content">앱정보·개인정보</button>
+          <button data-admin-tab="inquiries">1:1 문의</button>
+        </div>
+        <section id="adminNoticesPanel" class="admin-panel">
+          <div class="admin-form"><label><b>공지 제목</b><input id="adminNoticeTitle" maxlength="120" placeholder="공지 제목"></label><label><b>공지 내용</b><textarea id="adminNoticeBody" rows="6" maxlength="5000" placeholder="공지 내용을 입력하세요."></textarea></label><button id="adminNoticeSaveBtn" class="primary-btn">공지 등록</button></div>
+          <div id="adminNoticeList" class="admin-list"></div>
+        </section>
+        <section id="adminContentPanel" class="admin-panel hidden">
+          <label><b>앱정보</b><textarea id="adminAppInfoText" rows="7" maxlength="8000"></textarea></label>
+          <label><b>개인정보처리방침</b><textarea id="adminPrivacyText" rows="12" maxlength="15000"></textarea></label>
+          <button id="adminContentSaveBtn" class="primary-btn">수정 내용 저장</button>
+        </section>
+        <section id="adminInquiriesPanel" class="admin-panel hidden">
+          <div id="adminInquiryList" class="admin-list"></div>
+          <div id="adminInquiryDetail" class="admin-inquiry-detail hidden"></div>
+        </section>
+      </section>
+    </div>
 
     <!-- FUTURE DEPARTURE PREDICTION -->
     <div id="futureDepartureModal" class="modal hidden">

@@ -279,3 +279,12 @@ npx wrangler d1 migrations apply jofams-smartdrive-db --remote
 - 신규 migration: `0006_user_navigation_settings.sql`
 - 신규 Functions: `/api/user-settings`, `/api/inquiries`
 - Cloudflare 환경변수 `FIREBASE_WEB_API_KEY`를 Firebase Web App의 API key로 설정해야 1:1 문의 인증이 동작합니다.
+
+## MVP 7.5.4 관리자 모드
+- 메인 햄버거 패널 제목을 `메인 메뉴`로 변경했습니다.
+- Firebase 로그인 이메일이 `churchoffire@gmail.com`인 경우에만 MY 페이지에 `관리자 모드`가 표시됩니다.
+- 관리자 기능: 공지사항 등록/삭제, 앱정보/개인정보처리방침 수정, 전체 1:1 문의 조회 및 답변 등록.
+- 관리자 API는 화면의 이메일 문자열만 신뢰하지 않고 Firebase ID Token을 서버에서 검증한 후 이메일이 관리자 주소와 정확히 일치하는지 다시 확인합니다.
+- D1 테이블: `app_notices`, `app_content`; `user_inquiries.user_email` 필드 추가.
+- 신규 마이그레이션: `migrations/0007_admin_content.sql`.
+- Cloudflare 환경변수 `FIREBASE_WEB_API_KEY`와 D1 binding `DB`가 필요합니다.

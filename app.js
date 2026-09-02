@@ -1,5 +1,6 @@
 const $ = id => document.getElementById(id);
 const CONFIG = window.__APP_CONFIG__ || {};
+const ADMIN_EMAIL='churchoffire@gmail.com';
 const SETTINGS='jofams-navi.settings.v75';
 const FAVS='jofams-navi.favorites.v75';
 const RECENTS='jofams-navi.recents.v75';
@@ -18,7 +19,7 @@ const state = {
   savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,
   tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,
-  futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],
+  futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
 };
 
@@ -707,14 +708,14 @@ function bindFutureDepartureUI(){
 }
 
 function openTripHistory(){const items=state.tripHistory||[];const html=items.length?`<div class="history-list">${items.map(x=>`<article><b>${escapeHtml(x.destination||'목적지')}</b><small>${escapeHtml(x.date||'')} · ${km(Number(x.distance)||0)} · ${mins(Number(x.duration)||0)}</small><em>${escapeHtml(characterDefs[x.character]?.name||'')}</em></article>`).join('')}</div>`:'<div class="empty-info">저장된 주행 기록이 없습니다.</div>';openInfoModal('주행기록',html)}
-function openAppInfo(){openInfoModal('앱정보','<div class="info-card"><h3>조팸스 내비</h3><p><b>버전</b> MVP 7.5.3</p><p>2D 컬러 지도, 실시간 교통상태, AR 안내, 단속카메라·스쿨존·사고·공사 안내, 다른시간 출발 AI 소요시간 예측과 다임·순식·훈민 캐릭터 음성 안내를 제공합니다.</p></div>')}
-function openPrivacy(){openInfoModal('개인정보처리방침','<div class="info-card privacy-copy"><h3>개인정보 처리 안내</h3><p>길안내를 위해 사용자가 허용한 경우 현재 위치 정보를 이용합니다. AR 안내는 카메라 영상을 기기 화면에 표시하며, 본 앱 소스에서는 카메라 영상을 서버에 저장하지 않습니다.</p><p>Google 로그인 사용 시 계정의 기본 프로필 정보와 사용자가 저장한 설정·즐겨찾기를 Firebase에 동기화할 수 있습니다. 권한은 브라우저 또는 앱 설정에서 언제든 변경할 수 있습니다.</p><p>실제 상용 배포 전에는 운영주체, 처리 목적, 보유기간, 제3자 제공·처리위탁, 이용자 권리 및 문의처를 반영한 공식 개인정보처리방침으로 교체해야 합니다.</p></div>')}
+function openAppInfo(){openInfoModal('앱정보','<div class="info-card"><h3>조팸스 내비</h3><p><b>버전</b> MVP 7.5.4</p><p>2D 컬러 지도, 실시간 교통상태, AR 안내, 단속카메라·스쿨존·사고·공사 안내, 다른시간 출발 AI 소요시간 예측과 다임·순식·훈민 캐릭터 음성 안내를 제공합니다.</p></div>')}
+async function openPrivacy(){const c=await loadPublicContent();openInfoModal('개인정보처리방침',`<div class="info-card privacy-copy">${escapeHtml(c.privacy||'개인정보처리방침이 준비 중입니다.').replace(/\n/g,'<br>')}</div>`)}
 async function logTrip(event){try{await fetch('/api/trip',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({event,destination:state.destination?.name||null,distance:state.route?.distance||null,duration:state.tripStartedAt?Math.round((Date.now()-state.tripStartedAt)/1000):null,character:state.character,provider:state.route?.provider||null,guideType:null})})}catch{}}
 const NOTICE_ITEMS=[
   {date:'2026.09.01',title:'MVP 7.5 AR 리본·단속카메라 로컬데이터 개선',body:'AR 지도 리본 시야각 조정, 로컬 무인단속카메라 데이터 적용, 제한속도 표시 보강, 터널 추정주행과 120초 경로 갱신을 유지합니다.'},
   {date:'2026.09.01',title:'안전운전 정보 안내',body:'단속카메라, 스쿨존, 사고·공사 및 교통정보는 실제 도로 표지와 교통법규를 우선하여 이용해 주세요.'}
 ];
-function openNotices(){openInfoModal('공지사항',`<div class="notice-list">${NOTICE_ITEMS.map(x=>`<article><time>${escapeHtml(x.date)}</time><b>${escapeHtml(x.title)}</b><p>${escapeHtml(x.body)}</p></article>`).join('')}</div>`)}
+async function openNotices(){try{const d=await fetch('/api/content?type=notices').then(r=>r.json());const items=Array.isArray(d.items)&&d.items.length?d.items:NOTICE_ITEMS;openInfoModal('공지사항',`<div class="notice-list">${items.map(x=>`<article><time>${escapeHtml(x.date||x.createdAt||'')}</time><b>${escapeHtml(x.title)}</b><p>${escapeHtml(x.body).replace(/\n/g,'<br>')}</p></article>`).join('')}</div>`)}catch{openInfoModal('공지사항',`<div class="notice-list">${NOTICE_ITEMS.map(x=>`<article><time>${escapeHtml(x.date)}</time><b>${escapeHtml(x.title)}</b><p>${escapeHtml(x.body)}</p></article>`).join('')}</div>`)}}
 function applyNightMode(){const h=new Date().getHours(),night=h>=19||h<6;document.body.classList.toggle('night-map',night);return night}
 async function tryLandscapeFullscreen(){
   const landscape=matchMedia('(orientation: landscape)').matches;
@@ -755,7 +756,7 @@ async function liveRouteRefresh(){
     if(improvement>=120){state.route={...r,_label:'실시간 경로',_character:state.character};state.routeCumulative=buildCumulative(state.route);drawRoute(state.route,{fit:false});await loadSafetyEvents(state.route);updateDriving(true);toast('실시간 교통을 반영해 2분 이상 빠른 경로로 변경했습니다.');speak('실시간 교통을 반영해 2분 이상 빠른 경로로 변경했습니다.')}
   }catch(e){console.warn('live route refresh failed',e)}
 }
-function startLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.liveRouteTimer=0 /* MVP 7.5.3: 자동 재탐색은 경로 이탈시에만 수행 */}
+function startLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.liveRouteTimer=0 /* MVP 7.5.4: 자동 재탐색은 경로 이탈시에만 수행 */}
 function stopLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.liveRouteTimer=0}
 
 function setView(view){
@@ -1191,6 +1192,7 @@ function renderProfile(){
   $('googleLoginBtn').classList.toggle('hidden',!!u);$('logoutBtn').classList.toggle('hidden',!u);
   if(u){$('profileName').textContent=u.displayName||'사용자';$('profileEmail').textContent=u.email||'';$('profilePhoto').src=u.photoURL||characterDefs[state.character].avatar;wrap?.classList.toggle('google-photo',Boolean(u.photoURL))}
   else{$('profileName').textContent='조팸스 드라이버';$('profileEmail').textContent='Google 로그인으로 동기화할 수 있어요.';$('profilePhoto').src=characterDefs[state.character].avatar;wrap?.classList.remove('google-photo')}
+  updateAdminUI();
 }
 async function saveCloudPrefs(){if(!state.firebase.user)return;try{const {fsMod}=state.firebase.mods;await fsMod.setDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'),{character:state.character,voiceVolume:state.voiceVolume,home:state.savedPlaces.home,work:state.savedPlaces.work,updatedAt:fsMod.serverTimestamp()},{merge:true})}catch{}}
 async function loadCloudPrefs(){if(!state.firebase.user)return;try{const {fsMod}=state.firebase.mods,s=await fsMod.getDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'));if(s.exists()){const p=s.data();if(p.character&&characterDefs[p.character])state.character=p.character;if(Number.isFinite(Number(p.voiceVolume)))state.voiceVolume=Number(p.voiceVolume);state.savedPlaces.home=p.home||state.savedPlaces.home;state.savedPlaces.work=p.work||state.savedPlaces.work;syncCharacterUI();updateVolumeUI();updateSavedLabels();saveLocalSettings()}}catch{}}
@@ -1215,6 +1217,24 @@ function startVoiceCommand(){
   try{rec.start()}catch{toast('음성 인식을 시작하지 못했습니다.')}
 }
 
+
+
+function isAdminUser(){return String(state.firebase.user?.email||'').toLowerCase()===ADMIN_EMAIL}
+async function authFetch(url,opt={}){const token=await firebaseIdToken();if(!token)throw new Error('LOGIN_REQUIRED');const headers={...(opt.headers||{}),'authorization':`Bearer ${token}`};return fetch(url,{...opt,headers})}
+async function loadPublicContent(){try{const r=await fetch('/api/content?type=content'),d=await r.json();return d.content||{}}catch{return {appInfo:'MVP 7.5.4',privacy:'개인정보처리방침이 준비 중입니다.'}}}
+function updateAdminUI(){const btn=$('adminModeBtn');if(btn)btn.classList.toggle('hidden',!isAdminUser())}
+function openAdminMode(){if(!isAdminUser())return toast('관리자 계정만 이용할 수 있습니다.');$('adminAccountLabel').textContent=state.firebase.user.email;$('adminModal').classList.remove('hidden');switchAdminTab('notices')}
+function closeAdminMode(){$('adminModal')?.classList.add('hidden')}
+function switchAdminTab(tab){document.querySelectorAll('[data-admin-tab]').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===tab));['notices','content','inquiries'].forEach(k=>$(`admin${k[0].toUpperCase()+k.slice(1)}Panel`)?.classList.toggle('hidden',k!==tab));if(tab==='notices')loadAdminNotices();if(tab==='content')loadAdminContent();if(tab==='inquiries')loadAdminInquiries()}
+async function adminContentRequest(type,method='GET',body=null){const u=new URL('/api/content',location.origin);u.searchParams.set('type',type);const opt={method,headers:{'content-type':'application/json'}};if(body)opt.body=JSON.stringify(body);const r=method==='GET'?await fetch(u):await authFetch(u,opt);const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`HTTP ${r.status}`);return d}
+async function loadAdminNotices(){try{const d=await adminContentRequest('notices');state.adminNotices=d.items||[];const box=$('adminNoticeList');box.innerHTML=state.adminNotices.length?state.adminNotices.map(x=>`<article><div><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.createdAt||'')}</small></div><button data-admin-notice-delete="${x.id}">삭제</button><p>${escapeHtml(x.body).replace(/\n/g,'<br>')}</p></article>`).join(''):'<div class="inquiry-empty">등록된 공지가 없습니다.</div>';box.querySelectorAll('[data-admin-notice-delete]').forEach(b=>b.onclick=()=>deleteAdminNotice(b.dataset.adminNoticeDelete))}catch{toast('공지 목록을 불러오지 못했습니다.')}}
+async function saveAdminNotice(){const title=$('adminNoticeTitle').value.trim(),body=$('adminNoticeBody').value.trim();if(title.length<2||body.length<2)return toast('공지 제목과 내용을 입력해 주세요.');const btn=$('adminNoticeSaveBtn');btn.disabled=true;try{await adminContentRequest('notices','POST',{title,body});$('adminNoticeTitle').value='';$('adminNoticeBody').value='';showPlaceConfirmPopup('공지사항이 등록되었습니다.');loadAdminNotices()}catch{toast('공지 등록에 실패했습니다.')}finally{btn.disabled=false}}
+async function deleteAdminNotice(id){if(!confirm('이 공지를 삭제할까요?'))return;try{await adminContentRequest('notices','DELETE',{id});showPlaceConfirmPopup('공지사항이 삭제되었습니다.');loadAdminNotices()}catch{toast('공지 삭제에 실패했습니다.')}}
+async function loadAdminContent(){try{const d=await adminContentRequest('content');const c=d.content||{};$('adminAppInfoText').value=c.appInfo||'';$('adminPrivacyText').value=c.privacy||''}catch{toast('콘텐츠를 불러오지 못했습니다.')}}
+async function saveAdminContent(){const btn=$('adminContentSaveBtn');btn.disabled=true;try{await adminContentRequest('content','PUT',{appInfo:$('adminAppInfoText').value,privacy:$('adminPrivacyText').value});showPlaceConfirmPopup('앱정보와 개인정보처리방침이 수정되었습니다.')}catch{toast('수정 내용 저장에 실패했습니다.')}finally{btn.disabled=false}}
+async function loadAdminInquiries(){try{const r=await authFetch('/api/inquiries?admin=1'),d=await r.json();if(!r.ok)throw new Error();const box=$('adminInquiryList'),items=d.items||[];box.innerHTML=items.length?items.map(x=>`<button data-admin-inquiry="${x.id}" class="inquiry-row"><span><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.email||'')} · ${escapeHtml(x.createdAt||'')}</small></span><em class="${x.status==='answered'?'answered':''}">${inquiryStatusLabel(x.status)}</em></button>`).join(''):'<div class="inquiry-empty">접수된 문의가 없습니다.</div>';box.querySelectorAll('[data-admin-inquiry]').forEach(b=>b.onclick=()=>openAdminInquiry(b.dataset.adminInquiry))}catch{toast('문의 목록을 불러오지 못했습니다.')}}
+async function openAdminInquiry(id){try{const r=await authFetch(`/api/inquiries?id=${encodeURIComponent(id)}&admin=1`),d=await r.json();if(!r.ok)throw new Error();const x=d.item,box=$('adminInquiryDetail');box.innerHTML=`<button id="adminInquiryBack" class="inquiry-back">← 문의 목록</button><h3>${escapeHtml(x.title)}</h3><div class="inquiry-meta"><span>${escapeHtml(x.email||'')}</span><b>${inquiryStatusLabel(x.status)}</b></div><section><b>문의 내용</b><p>${escapeHtml(x.body).replace(/\n/g,'<br>')}</p></section><label><b>답변</b><textarea id="adminInquiryAnswer" rows="7" maxlength="5000">${escapeHtml(x.answer||'')}</textarea></label><button id="adminInquiryAnswerBtn" class="primary-btn">답변 저장</button>`;$('adminInquiryList').classList.add('hidden');box.classList.remove('hidden');$('adminInquiryBack').onclick=()=>{box.classList.add('hidden');$('adminInquiryList').classList.remove('hidden');loadAdminInquiries()};$('adminInquiryAnswerBtn').onclick=()=>saveAdminInquiryAnswer(id)}catch{toast('문의 내용을 열 수 없습니다.')}}
+async function saveAdminInquiryAnswer(id){const answer=$('adminInquiryAnswer').value.trim();if(answer.length<2)return toast('답변 내용을 입력해 주세요.');try{const r=await authFetch('/api/inquiries',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({id,answer})});if(!r.ok)throw new Error();showPlaceConfirmPopup('1:1 문의 답변이 등록되었습니다.');openAdminInquiry(id)}catch{toast('답변 저장에 실패했습니다.')}}
 
 /* ---------- 1:1 INQUIRY ---------- */
 async function inquiryRequest(method='GET',body=null,id=null){
@@ -1261,7 +1281,7 @@ function openRoutePrioritySettings(){closeHamburgerMenu();renderUserSettingsUI()
 function openCameraAlertSettings(){closeHamburgerMenu();renderUserSettingsUI();$('cameraAlertModal')?.classList.remove('hidden')}
 function openSupportTerms(){closeHamburgerMenu();openInquiryModal()}
 function openWaypointSaved(){closeHamburgerMenu();openInfoModal('경유지 코스 저장함','<div class="empty-info">저장된 경유지 코스가 없습니다.</div>')}
-function openAppPrivacy(){openInfoModal('앱정보 / 개인정보처리방침',`<div class="info-card privacy-copy"><h3>조팸스 내비</h3><p><b>버전</b> MVP 7.5.3</p><p>위치·카메라·계정정보는 길안내와 사용자 설정 동기화에 필요한 범위에서 처리합니다.</p><p>상용 배포 전 공식 개인정보처리방침의 운영주체·보유기간·문의처를 최종 반영해야 합니다.</p></div>`)}
+async function openAppPrivacy(){const c=await loadPublicContent();openInfoModal('앱정보 / 개인정보처리방침',`<div class="info-card privacy-copy"><h3>조팸스 내비</h3><p>${escapeHtml(c.appInfo||'앱정보가 준비 중입니다.').replace(/\n/g,'<br>')}</p><hr><p>${escapeHtml(c.privacy||'개인정보처리방침이 준비 중입니다.').replace(/\n/g,'<br>')}</p></div>`)}
 function openDriveMenu(){$('driveMenu').classList.remove('hidden')}
 function closeDriveMenu(){$('driveMenu').classList.add('hidden')}
 function openMy(){$('myModal').classList.remove('hidden');renderProfile();syncCharacterUI();updateVolumeUI();updateTripHistorySummary()}
@@ -1284,6 +1304,7 @@ function bindUI(){
   if($('routePriorityClose'))$('routePriorityClose').onclick=()=>$('routePriorityModal').classList.add('hidden');document.querySelectorAll('[data-route-pref]').forEach(b=>b.onclick=()=>chooseRoutePreference(b.dataset.routePref));
   if($('cameraAlertClose'))$('cameraAlertClose').onclick=()=>$('cameraAlertModal').classList.add('hidden');if($('speedCameraAlertToggle'))$('speedCameraAlertToggle').onchange=e=>updateCameraAlertSetting('speed',e.target.checked);if($('signalCameraAlertToggle'))$('signalCameraAlertToggle').onchange=e=>updateCameraAlertSetting('signal',e.target.checked);
   if($('inquiryCloseBtn'))$('inquiryCloseBtn').onclick=closeInquiryModal;if($('newInquiryBtn'))$('newInquiryBtn').onclick=startInquiryCompose;if($('inquiryComposeBack'))$('inquiryComposeBack').onclick=backInquiryList;if($('inquirySubmitBtn'))$('inquirySubmitBtn').onclick=submitInquiry;
+  if($('adminModeBtn'))$('adminModeBtn').onclick=openAdminMode;if($('adminCloseBtn'))$('adminCloseBtn').onclick=closeAdminMode;document.querySelectorAll('[data-admin-tab]').forEach(b=>b.onclick=()=>switchAdminTab(b.dataset.adminTab));if($('adminNoticeSaveBtn'))$('adminNoticeSaveBtn').onclick=saveAdminNotice;if($('adminContentSaveBtn'))$('adminContentSaveBtn').onclick=saveAdminContent;
   $('originModalClose').onclick=closeOriginModal;$('useCurrentOriginBtn').onclick=useCurrentOrigin;$('originSearchBtn').onclick=()=>searchOrigins($('originSearchInput').value);$('originSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchOrigins(e.target.value)});$('originModal').addEventListener('click',e=>{if(e.target===$('originModal'))closeOriginModal()});$('arCloseBtn').onclick=stopAR;document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.bottomNav;if(nav==='home'){cancelAutoStart();setView('home')}else if(nav==='route'){if(state.destination){setView('route');refreshMapLayout({fitRoute:true})}else{setView('home');$('destinationInput').focus();toast('목적지를 검색해 주세요.')}}else if(nav==='realtime'){if(state.route&&state.destination){if(state.tripStartedAt)setView('drive');else startNavigation()}else toast('먼저 길찾기를 완료해 주세요.')}else if(nav==='my')openMy()});$('placeModalClose').onclick=()=>$('placeModal').classList.add('hidden');if($('useCurrentPlaceBtn'))$('useCurrentPlaceBtn').onclick=saveCurrentLocationAsPlace;if($('placeSaveBtn'))$('placeSaveBtn').onclick=confirmRegisteredPlace;if($('placeDeleteBtn'))$('placeDeleteBtn').onclick=deleteRegisteredPlace;$('placeSearchBtn').onclick=()=>searchPlaces($('placeSearchInput').value,'placeSearchResults');$('placeSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value,'placeSearchResults')});$('placeModal').addEventListener('click',e=>{if(e.target===$('placeModal'))$('placeModal').classList.add('hidden')});
 }
 
