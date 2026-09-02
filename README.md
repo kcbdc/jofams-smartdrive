@@ -231,3 +231,18 @@ KAKAO_DIRECTIONS_TIER=standard
 - 로그인 사용자는 기존 Firestore preferences 동기화를 유지하고, 비로그인 사용자는 로컬 설정으로 저장합니다.
 - AR 유도 리본 표시 높이를 화면 세로 높이의 약 30% 이내로 확대했습니다.
 - 도착 공유 문구를 `'장소명' 이동 중입니다. 예상 도착 00:00` 형식으로 변경했습니다.
+
+
+## MVP 7.5.2 집·회사 D1 저장 안정화
+- Cloudflare D1 `saved_places` 테이블을 추가했습니다. (`migrations/0003_saved_places.sql`)
+- `/api/places`가 집/회사 위치의 조회, 등록/변경, 삭제를 처리합니다.
+- 함수가 최초 실행될 때 테이블이 없으면 `CREATE TABLE IF NOT EXISTS`로 자동 보완합니다.
+- 로그인 사용자는 Firebase UID 기반 owner key, 비로그인 사용자는 기기별 installation ID 기반 owner key를 사용합니다.
+- 로컬스토리지와 D1을 함께 사용해 네트워크 장애 시에도 기기 저장은 유지합니다.
+- 등록/변경/삭제 완료 시 화면 중앙 확인 팝업이 표시됩니다.
+
+### D1 적용 확인
+`wrangler.toml`의 D1 binding 이름은 `DB`여야 합니다. 기존 D1에 명시적으로 마이그레이션을 적용하려면:
+```bash
+npx wrangler d1 migrations apply jofams-smartdrive-db --remote
+```

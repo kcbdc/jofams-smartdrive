@@ -3,6 +3,7 @@ const CONFIG = window.__APP_CONFIG__ || {};
 const SETTINGS='jofams-navi.settings.v75';
 const FAVS='jofams-navi.favorites.v75';
 const TRIP_HISTORY='jofams-navi.trip-history.v75';
+const INSTALLATION_ID='jofams-navi.installation-id.v1';
 let maplibregl = null;
 const characterDefs = {
   daim:{name:'다임',car:'/assets/daim_car.png',marker:'/assets/daim_car_marker.png',rear:'/assets/daim_car_rear.png',avatar:'/assets/daim.png',rate:.96,pitch:1.08,voiceLabel:'다임 보이스'},
@@ -13,7 +14,7 @@ const state = {
   map:null,mapReady:false,pendingRouteDraw:null,mapFallbackTried:false,mapWatchdog:0,user:null, destination:null, routeOptions:[], route:null, selectedRoute:0,
   userMarker:null,destMarker:null,originMarker:null,watchId:null,character:'daim',voiceVolume:.8,sound:true,
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
-  savedPlaces:{home:null,work:null},favorites:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',
+  savedPlaces:{home:null,work:null},favorites:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,
   tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,
@@ -364,13 +365,55 @@ async function saveCurrentLocationAsPlace(){
 }
 async function confirmRegisteredPlace(){
   const kind=state.placeKind,p=state.placeCandidate;if(!['home','work'].includes(kind)||!pointValid(p))return showPlaceFeedback('먼저 저장할 장소를 선택해 주세요.','error');
-  const wasRegistered=Boolean(state.savedPlaces[kind]);state.savedPlaces[kind]={...p};saveLocalSettings();if(state.firebase.user)await saveCloudPrefs();state.placeCandidate=null;updateSavedLabels();renderPlaceManageState();const msg=`${placeKindLabel(kind)} 위치가 ${wasRegistered?'변경':'등록'}되었습니다.`;showPlaceFeedback(msg,'success');toast(msg,2600)
+  const wasRegistered=Boolean(state.savedPlaces[kind]),btn=$('placeSaveBtn');if(btn){btn.disabled=true;btn.textContent='저장 중'}
+  state.savedPlaces[kind]={...p};saveLocalSettings();
+  let dbOk=false;
+  try{await savePlaceToDb(kind,state.savedPlaces[kind]);dbOk=true;if(state.firebase.user)await saveCloudPrefs()}catch(e){console.warn('place DB save failed',e)}
+  state.placeCandidate=null;updateSavedLabels();renderPlaceManageState();
+  const action=wasRegistered?'변경':'등록',msg=`${placeKindLabel(kind)} 위치가 ${action}되었습니다.`;
+  showPlaceFeedback(dbOk?`${msg} DB에 저장되었습니다.`:`${msg} 기기에 저장되었으며 DB 연결을 확인해 주세요.`,'success');
+  showPlaceConfirmPopup(`${placeKindLabel(kind)} 위치가 ${action}되었습니다.`);toast(msg,2600)
 }
 async function deleteRegisteredPlace(){
-  const kind=state.placeKind;if(!['home','work'].includes(kind)||!state.savedPlaces[kind])return;state.savedPlaces[kind]=null;state.placeCandidate=null;saveLocalSettings();if(state.firebase.user)await saveCloudPrefs();updateSavedLabels();renderPlaceManageState();const msg=`${placeKindLabel(kind)} 위치를 삭제했습니다.`;showPlaceFeedback(msg,'deleted');toast(msg,2400)
+  const kind=state.placeKind;if(!['home','work'].includes(kind)||!state.savedPlaces[kind])return;const btn=$('placeDeleteBtn');if(btn)btn.disabled=true;
+  state.savedPlaces[kind]=null;state.placeCandidate=null;saveLocalSettings();
+  let dbOk=false;try{await deletePlaceFromDb(kind);dbOk=true;if(state.firebase.user)await saveCloudPrefs()}catch(e){console.warn('place DB delete failed',e)}
+  updateSavedLabels();renderPlaceManageState();const msg=`${placeKindLabel(kind)} 위치가 삭제되었습니다.`;showPlaceFeedback(dbOk?`${msg} DB에서도 삭제되었습니다.`:msg,'deleted');showPlaceConfirmPopup(msg);toast(msg,2400);if(btn)btn.disabled=false
 }
 async function saveRegisteredPlace(x){selectPlaceCandidate(x);return confirmRegisteredPlace()}
 function updateSavedLabels(){$('homeLabel').textContent=state.savedPlaces.home?.name||'등록';$('workLabel').textContent=state.savedPlaces.work?.name||'등록';$('favoriteLabel').textContent=`${state.favorites.length}곳`;$('myFavoriteCount').textContent=`${state.favorites.length}곳 저장`}
+
+function installationId(){
+  try{
+    let id=localStorage.getItem(INSTALLATION_ID);
+    if(!id){id=(crypto?.randomUUID?.()||`dev-${Date.now()}-${Math.random().toString(36).slice(2,12)}`);localStorage.setItem(INSTALLATION_ID,id)}
+    return id;
+  }catch{return `memory-${location.hostname}`}
+}
+function placeOwnerKey(){return state.firebase.user?.uid?`firebase:${state.firebase.user.uid}`:`device:${installationId()}`}
+async function dbPlaceRequest(method,kind=null,place=null){
+  const u=new URL('/api/places',location.origin);u.searchParams.set('owner',placeOwnerKey());if(kind)u.searchParams.set('kind',kind);
+  const opt={method,headers:{'content-type':'application/json'}};
+  if(place)opt.body=JSON.stringify({owner:placeOwnerKey(),kind,place});
+  const r=await fetch(u,opt);const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`places DB HTTP ${r.status}`);return d
+}
+async function savePlaceToDb(kind,place){
+  const d=await dbPlaceRequest('POST',kind,place);state.placeDbReady=Boolean(d.stored);return d
+}
+async function deletePlaceFromDb(kind){
+  const d=await dbPlaceRequest('DELETE',kind);state.placeDbReady=Boolean(d.deleted||d.ok);return d
+}
+async function loadDbSavedPlaces(){
+  try{
+    const d=await dbPlaceRequest('GET');const items=d.items||{};state.placeDbReady=true;
+    for(const kind of ['home','work'])if(items[kind]&&pointValid(items[kind]))state.savedPlaces[kind]=items[kind];
+    saveLocalSettings();updateSavedLabels();if(state.placeKind)renderPlaceManageState();return true
+  }catch(e){console.warn('saved places DB load failed',e);state.placeDbReady=false;return false}
+}
+function showPlaceConfirmPopup(message){
+  const pop=$('placeConfirmPopup');if(!pop){toast(message,2800);return}
+  $('placeConfirmMessage').textContent=message;pop.classList.remove('hidden');clearTimeout(showPlaceConfirmPopup.t);showPlaceConfirmPopup.t=setTimeout(()=>pop.classList.add('hidden'),2400)
+}
 
 /* ---------- ROUTES ---------- */
 async function routeRequest(priority='RECOMMEND',avoid=null){
@@ -986,7 +1029,7 @@ function firebaseConfig(){return CONFIG.firebase||{}}
 function firebaseConfigured(){const c=firebaseConfig();return Boolean(c.apiKey&&c.authDomain&&c.projectId&&c.appId)}
 async function initFirebase(){
   state.firebase.configured=firebaseConfigured();if(!state.firebase.configured)return;
-  try{const [appMod,authMod,fsMod]=await Promise.all([import('https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js')]);const app=appMod.initializeApp(firebaseConfig()),auth=authMod.getAuth(app),db=fsMod.getFirestore(app);await authMod.setPersistence(auth,authMod.browserLocalPersistence);state.firebase={...state.firebase,ready:true,auth,db,mods:{authMod,fsMod}};authMod.onAuthStateChanged(auth,user=>{state.firebase.user=user||null;renderProfile();if(user){loadCloudPrefs();loadCloudFavorites()}})}catch(e){console.warn('Firebase init failed',e)}
+  try{const [appMod,authMod,fsMod]=await Promise.all([import('https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js')]);const app=appMod.initializeApp(firebaseConfig()),auth=authMod.getAuth(app),db=fsMod.getFirestore(app);await authMod.setPersistence(auth,authMod.browserLocalPersistence);state.firebase={...state.firebase,ready:true,auth,db,mods:{authMod,fsMod}};authMod.onAuthStateChanged(auth,user=>{state.firebase.user=user||null;renderProfile();if(user){Promise.all([loadCloudPrefs(),loadCloudFavorites()]).finally(loadDbSavedPlaces)}else loadDbSavedPlaces()})}catch(e){console.warn('Firebase init failed',e)}
 }
 async function loginGoogle(){if(!state.firebase.ready){toast('Firebase 설정을 확인해 주세요.');return}const {authMod}=state.firebase.mods,provider=new authMod.GoogleAuthProvider(),btn=$('googleLoginBtn');btn.disabled=true;btn.textContent='로그인 중';try{const isWebView=/JofamsSmartDrive\/6|; wv\)/i.test(navigator.userAgent);if(isWebView){await authMod.signInWithRedirect(state.firebase.auth,provider);return}const result=await Promise.race([authMod.signInWithPopup(state.firebase.auth,provider),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000))]);state.firebase.user=result.user;renderProfile();toast('로그인되었습니다.')}catch(e){if(e.code==='auth/popup-blocked'||e.message==='timeout'){toast('로그인 창을 다시 열어 주세요.');}else toast('Google 로그인에 실패했습니다.')}finally{btn.disabled=false;btn.textContent='Google 로그인'}}
 async function logout(){if(!state.firebase.ready)return;await state.firebase.mods.authMod.signOut(state.firebase.auth);state.firebase.user=null;renderProfile()}
@@ -1035,4 +1078,4 @@ function bindUI(){
 
 window.addEventListener('orientationchange',()=>setTimeout(tryLandscapeFullscreen,180));window.addEventListener('resize',()=>{applyNightMode();if(state.map)setTimeout(()=>state.map.resize(),80)});document.addEventListener('visibilitychange',()=>{if(!document.hidden){applyNightMode();if(state.tripStartedAt)liveRouteRefresh()}});
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
-applyIcons();loadLocal();bindUI();applyNightMode();initMap();initFirebase();renderProfile();updateOriginUI();updateTripHistorySummary();setView('home');if('speechSynthesis'in window){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices()}setTimeout(showPermissionGate,180);
+applyIcons();loadLocal();bindUI();applyNightMode();initMap();loadDbSavedPlaces();initFirebase();renderProfile();updateOriginUI();updateTripHistorySummary();setView('home');if('speechSynthesis'in window){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices()}setTimeout(showPermissionGate,180);
