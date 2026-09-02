@@ -36,6 +36,10 @@
           <button id="workShortcut"><span data-icon="office"></span><b>회사</b><small id="workLabel">등록</small></button>
           <button id="favoriteShortcut"><span data-icon="star"></span><b>즐겨찾기</b><small id="favoriteLabel">0곳</small></button>
         </div>
+        <div class="saved-place-manage-row" aria-label="집 회사 위치 관리">
+          <button id="homeManageBtn" type="button"><span data-icon="settings"></span><b>집 위치 관리</b></button>
+          <button id="workManageBtn" type="button"><span data-icon="settings"></span><b>회사 위치 관리</b></button>
+        </div>
 
         <section class="home-block">
           <div class="block-title"><b>최근 목적지</b><span>자주 가는 곳을 빠르게</span></div>
@@ -273,11 +277,22 @@
 
     <!-- PLACE REGISTRATION -->
     <div id="placeModal" class="modal hidden">
-      <section class="simple-sheet">
-        <header><b id="placeModalTitle">장소 등록</b><button id="placeModalClose" class="circle-btn"><span data-icon="close"></span></button></header>
-        <button id="useCurrentPlaceBtn" class="current-origin-btn place-current-btn" type="button"><span class="point start"></span><span><b>현재 위치로 등록</b><small>현재 GPS 좌표를 집/회사 위치로 저장</small></span><i data-icon="chevron"></i></button>
+      <section class="simple-sheet place-manage-sheet">
+        <header><b id="placeModalTitle">장소 관리</b><button id="placeModalClose" class="circle-btn"><span data-icon="close"></span></button></header>
+        <div id="placeSavedStatus" class="place-saved-status empty" aria-live="polite">
+          <span data-icon="location"></span><div><small>현재 등록 위치</small><b id="placeSavedName">등록된 장소 없음</b><em id="placeSavedAddress">장소를 검색하거나 현재 위치를 선택하세요.</em></div>
+        </div>
+        <button id="useCurrentPlaceBtn" class="current-origin-btn place-current-btn" type="button"><span class="point start"></span><span><b>현재 위치 선택</b><small>현재 GPS 좌표를 저장 후보로 선택</small></span><i data-icon="chevron"></i></button>
         <div class="search-box"><span data-icon="search"></span><input id="placeSearchInput" placeholder="장소 또는 주소 검색"><button id="placeSearchBtn"><span data-icon="arrow-right"></span></button></div>
         <div id="placeSearchResults" class="search-results"></div>
+        <div id="placeCandidateCard" class="place-candidate-card hidden" aria-live="polite">
+          <small>선택한 장소</small><b id="placeCandidateName">-</b><span id="placeCandidateAddress">-</span><em>아래 버튼을 눌러 저장을 확정해 주세요.</em>
+        </div>
+        <div class="place-manage-actions">
+          <button id="placeSaveBtn" type="button" class="place-save-btn" disabled>등록</button>
+          <button id="placeDeleteBtn" type="button" class="place-delete-btn hidden">삭제</button>
+        </div>
+        <div id="placeActionFeedback" class="place-action-feedback hidden" aria-live="assertive"></div>
       </section>
     </div>
 
