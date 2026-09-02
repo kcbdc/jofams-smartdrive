@@ -1185,8 +1185,60 @@ async function initFirebase(){
   state.firebase.configured=firebaseConfigured();if(!state.firebase.configured)return;
   try{const [appMod,authMod,fsMod]=await Promise.all([import('https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js')]);const app=appMod.initializeApp(firebaseConfig()),auth=authMod.getAuth(app),db=fsMod.getFirestore(app);await authMod.setPersistence(auth,authMod.browserLocalPersistence);state.firebase={...state.firebase,ready:true,auth,db,mods:{authMod,fsMod}};authMod.onAuthStateChanged(auth,async user=>{state.firebase.user=user||null;renderProfile();if(user){await hydrateAuthenticatedUser()}else{loadLocal();loadLocalUserSettings();await Promise.all([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents(),loadUserSettings()]);updateFavoriteButtonState()}})}catch(e){console.warn('Firebase init failed',e)}
 }
-async function loginGoogle(){if(!state.firebase.ready){toast('Firebase 설정을 확인해 주세요.');return}const {authMod}=state.firebase.mods,provider=new authMod.GoogleAuthProvider(),btn=$('googleLoginBtn');btn.disabled=true;btn.textContent='로그인 중';try{const isWebView=/JofamsSmartDrive\/6|; wv\)/i.test(navigator.userAgent);if(isWebView){await authMod.signInWithRedirect(state.firebase.auth,provider);return}const result=await Promise.race([authMod.signInWithPopup(state.firebase.auth,provider),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000))]);state.firebase.user=result.user;renderProfile();toast('로그인되었습니다.')}catch(e){if(e.code==='auth/popup-blocked'||e.message==='timeout'){toast('로그인 창을 다시 열어 주세요.');}else toast('Google 로그인에 실패했습니다.')}finally{btn.disabled=false;btn.textContent='Google 로그인'}}
-async function logout(){if(!state.firebase.ready)return;await state.firebase.mods.authMod.signOut(state.firebase.auth);state.firebase.user=null;renderProfile()}
+function nativeGoogleAuthAvailable(){
+  try{return Boolean(window.JofamsAuthBridge&&typeof window.JofamsAuthBridge.signInGoogle==='function')}catch{return false}
+}
+async function completeNativeGoogleLogin(idToken){
+  if(!idToken||!state.firebase.ready)throw new Error('NATIVE_TOKEN_INVALID');
+  const {authMod}=state.firebase.mods;
+  const credential=authMod.GoogleAuthProvider.credential(idToken);
+  const result=await authMod.signInWithCredential(state.firebase.auth,credential);
+  state.firebase.user=result.user;
+  renderProfile();
+  await hydrateAuthenticatedUser();
+  toast('로그인되었습니다.');
+  return result.user;
+}
+window.addEventListener('jofams-native-google-token',async e=>{
+  const btn=$('googleLoginBtn');
+  try{
+    if(btn){btn.disabled=true;btn.textContent='로그인 반영 중'}
+    await completeNativeGoogleLogin(e?.detail?.idToken||'');
+  }catch(err){
+    console.warn('native google credential sign-in failed',err);
+    toast('Google 로그인 정보를 앱에 반영하지 못했습니다.',3000);
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='Google 로그인'}
+  }
+});
+window.addEventListener('jofams-native-google-error',e=>{
+  const btn=$('googleLoginBtn');if(btn){btn.disabled=false;btn.textContent='Google 로그인'}
+  toast(e?.detail?.message||'Google 로그인에 실패했습니다.',3200);
+});
+async function loginGoogle(){
+  if(!state.firebase.ready){toast('Firebase 설정을 확인해 주세요.');return}
+  const {authMod}=state.firebase.mods,provider=new authMod.GoogleAuthProvider(),btn=$('googleLoginBtn');btn.disabled=true;btn.textContent='로그인 중';
+  try{
+    if(nativeGoogleAuthAvailable()){
+      window.JofamsAuthBridge.signInGoogle();
+      return;
+    }
+    const isWebView=/JofamsSmartDrive\/|;\s*wv\)/i.test(navigator.userAgent);
+    if(isWebView){toast('Android 앱 로그인 브리지를 확인해 주세요.',3000);return}
+    const result=await Promise.race([authMod.signInWithPopup(state.firebase.auth,provider),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000))]);
+    state.firebase.user=result.user;renderProfile();await hydrateAuthenticatedUser();toast('로그인되었습니다.');
+  }catch(e){
+    if(e.code==='auth/popup-blocked'||e.message==='timeout')toast('로그인 창을 다시 열어 주세요.');else toast('Google 로그인에 실패했습니다.');
+  }finally{
+    if(!nativeGoogleAuthAvailable()){btn.disabled=false;btn.textContent='Google 로그인'}
+  }
+}
+async function logout(){
+  if(!state.firebase.ready)return;
+  await state.firebase.mods.authMod.signOut(state.firebase.auth);
+  try{if(nativeGoogleAuthAvailable()&&typeof window.JofamsAuthBridge.signOutGoogle==='function')window.JofamsAuthBridge.signOutGoogle()}catch{}
+  state.firebase.user=null;renderProfile();
+}
 function renderProfile(){
   const u=state.firebase.user,wrap=$('profilePhoto')?.closest('.profile-photo');
   $('googleLoginBtn').classList.toggle('hidden',!!u);$('logoutBtn').classList.toggle('hidden',!u);
@@ -1287,7 +1339,30 @@ function closeDriveMenu(){$('driveMenu').classList.add('hidden')}
 function openMy(){$('myModal').classList.remove('hidden');renderProfile();syncCharacterUI();updateVolumeUI();updateTripHistorySummary()}
 function closeMy(){$('myModal').classList.add('hidden')}
 function toggleSettingPanel(buttonId,panelId){const btn=$(buttonId),panel=$(panelId),open=panel.classList.contains('hidden');panel.classList.toggle('hidden',!open);btn.setAttribute('aria-expanded',String(open));if(open)setTimeout(()=>panel.scrollIntoView({behavior:'smooth',block:'nearest'}),50)}
-async function shareArrival(){if(!state.destination)return;const text=`'${state.destination.name}' 이동 중입니다. 예상 도착 ${$('arrivalTime').textContent.replace('도착 ','')}`;try{if(navigator.share)await navigator.share({title:'조팸스 내비',text});else await navigator.clipboard.writeText(text),toast('도착 정보를 복사했습니다.')}catch{}}
+function nativeShareAvailable(){
+  try{return Boolean(window.JofamsShareBridge&&typeof window.JofamsShareBridge.shareText==='function')}catch{return false}
+}
+window.addEventListener('jofams-native-share-opened',()=>toast('공유할 앱을 선택해 주세요.',1800));
+window.addEventListener('jofams-native-share-error',e=>toast(e?.detail?.message||'공유 기능을 실행하지 못했습니다.',2600));
+async function shareArrival(){
+  if(!state.destination)return;
+  const text=`'${state.destination.name}' 이동 중입니다. 예상 도착 ${$('arrivalTime').textContent.replace('도착 ','')}`;
+  try{
+    // Android 앱에서는 시스템 공유 시트를 사용한다. 공유 앱을 닫으면 기존 WebView 화면으로 자연스럽게 복귀한다.
+    if(nativeShareAvailable()){
+      window.JofamsShareBridge.shareText('조팸스 내비',text);
+      return;
+    }
+    if(navigator.share){
+      await navigator.share({title:'조팸스 내비',text});
+      return;
+    }
+    await navigator.clipboard.writeText(text);
+    toast('도착 정보를 복사했습니다.');
+  }catch(e){
+    if(e?.name!=='AbortError')toast('공유 기능을 실행하지 못했습니다.',2400);
+  }
+}
 function bindUI(){
   bindFutureDepartureUI();
   $('allowLocationBtn').onclick=requestLocationPermission;$('allowCameraBtn').onclick=requestCameraPermission;$('permissionContinueBtn').onclick=closePermissionGate;
