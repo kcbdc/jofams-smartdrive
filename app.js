@@ -67,16 +67,18 @@ function buildCumulative(route){const g=route?.geometry||[],arr=new Array(g.leng
 function normalizedPlace(x){return x?{id:x.id||'',name:x.name||'목적지',address:x.address||'',lng:Number(x.lng),lat:Number(x.lat)}:null}
 
 
-const CAMERA_DATASET_URL='/data/unmanned_traffic_cameras.json';
+const CAMERA_DATASET_URLS=['/data/unmanned_traffic_cameras_part1.json','/data/unmanned_traffic_cameras_part2.json'];
 
 async function loadOfficialCameraRows(){
   if(Array.isArray(state.officialCameraRows))return state.officialCameraRows;
   if(state.officialCameraPromise)return state.officialCameraPromise;
-  state.officialCameraPromise=fetch(CAMERA_DATASET_URL,{cache:'force-cache'}).then(r=>{
-    if(!r.ok)throw new Error(`camera dataset HTTP ${r.status}`);
-    return r.json();
-  }).then(d=>{
-    const rows=Array.isArray(d)?d:Array.isArray(d?.records)?d.records:Array.isArray(d?.response?.body?.items)?d.response.body.items:[];
+  state.officialCameraPromise=Promise.all(CAMERA_DATASET_URLS.map(async url=>{
+    const r=await fetch(url,{cache:'force-cache'});
+    if(!r.ok)throw new Error(`camera dataset HTTP ${r.status}: ${url}`);
+    const d=await r.json();
+    return Array.isArray(d)?d:Array.isArray(d?.records)?d.records:Array.isArray(d?.response?.body?.items)?d.response.body.items:[];
+  })).then(parts=>{
+    const rows=parts.flat();
     state.officialCameraRows=rows;
     return rows;
   }).catch(e=>{

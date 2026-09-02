@@ -176,9 +176,17 @@ KAKAO_DIRECTIONS_TIER=standard
 
 
 ## MVP 7.5 로컬 단속카메라 데이터·AR 리본 개선
-- 첨부된 `전국무인교통단속카메라표준데이터.json`을 `data/unmanned_traffic_cameras.json`으로 포함했습니다.
+- 첨부된 `전국무인교통단속카메라표준데이터.json`을 `data/unmanned_traffic_cameras_part1.json`과 `data/unmanned_traffic_cameras_part2.json` 두 파일로 분할하여 포함했습니다.
 - 기존 `data.go.kr` 실시간 OpenAPI 연동 코드는 제거했고, 앱은 배포 패키지에 포함된 로컬 JSON 데이터를 기준으로 경로 주변 단속카메라를 확인합니다.
 - `/api/safety`는 보조적인 OSM 사고/공사/스쿨존 정보만 반환하도록 단순화했습니다.
 - 주행 HUD 제한속도는 경로 세그먼트 값이 없을 때 로컬 카메라 데이터와 보호구역 제한속도를 이용해 보강합니다.
 - AR 안내는 화살표 대신 샘플 이미지 스타일의 반투명 파란 리본/주행 구역으로 렌더링하며, 소실점을 더 낮춰 과도한 상향 시점을 줄였습니다.
 - 결과 패키지: `jofams-smartdrive-mvp7-5.zip`
+
+
+### MVP 7.5 카메라 데이터 2분할
+- 대용량 전국무인교통단속카메라 데이터는 2개 파일로 분할했습니다.
+  - `data/unmanned_traffic_cameras_part1.json`
+  - `data/unmanned_traffic_cameras_part2.json`
+- 앱 시작 시 두 파일을 병렬 로드한 뒤 하나의 카메라 데이터 배열로 합쳐 기존 경로 매칭 로직에 사용합니다.
+- 기존 단일 `data/unmanned_traffic_cameras.json` 파일은 배포 패키지에서 제거했습니다.
