@@ -8,7 +8,7 @@
   <title>조팸스 내비</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.5.7.6" />
+  <link rel="stylesheet" href="/styles.css?v=7.5.7.7" />
 </head>
 <body>
   <main id="app">
@@ -253,6 +253,11 @@
         <div class="setting-list my-reference-menu">
           <button id="myFavoritesBtn"><span data-icon="star-outline"></span><span><b>즐겨찾기</b><small id="myFavoriteCount">0곳 저장</small></span><i data-icon="chevron"></i></button>
           <button id="tripHistoryBtn"><span data-icon="routes"></span><span><b>주행기록</b><small id="tripHistorySummary">최근 주행 내역</small></span><i data-icon="chevron"></i></button>
+          <div class="my-permission-card">
+            <div class="my-permission-title"><span data-icon="document"></span><span><b>앱 권한 / 개인정보</b><small>위치·카메라 조회 동의 상태</small></span></div>
+            <label class="setting-toggle-row"><span><b>위치정보 조회 동의</b><small id="locationConsentState">동의 · 시스템 권한 확인 중</small></span><input id="locationConsentToggle" type="checkbox" checked><i></i></label>
+            <label class="setting-toggle-row"><span><b>카메라 조회 동의</b><small id="cameraConsentState">동의 · 시스템 권한 확인 중</small></span><input id="cameraConsentToggle" type="checkbox" checked><i></i></label>
+          </div>
           <button id="futureDepartureBtn"><span data-icon="clock"></span><span><b>다른시간 출발</b><small>출발시간별 예상 소요시간</small></span><i data-icon="chevron"></i></button>
           <button id="voiceGuideSettingBtn" aria-expanded="false"><span data-icon="volume"></span><span><b>음성 가이드 / 캐릭터</b><small id="voiceCharacterLabel">다임 보이스</small></span><i data-icon="chevron"></i></button>
           <div id="voiceGuidePanel" class="setting-expand hidden">
@@ -457,7 +462,7 @@
     <div id="toast" class="toast hidden"></div>
   </main>
 
-  <script src="/config.js?v=7.5.7.6"></script>
-  <script type="module" src="/app.js?v=7.5.7.6"></script>
+  <script src="/config.js?v=7.5.7.7"></script>
+  <script type="module" src="/app.js?v=7.5.7.7"></script>
 </body>
 </html>

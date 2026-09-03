@@ -33,10 +33,8 @@ async function routeWithKakao(origin,destination,body,env){
     }
     u.searchParams.set('summary','false');
     u.searchParams.set('alternatives', body.alternatives===false ? 'false' : 'true');
-    if(affiliate){
-      u.searchParams.set('road_details','true');
-      u.searchParams.set('road_details_extra_info','safety|roadevent');
-    }
+    u.searchParams.set('road_details','true');
+    if(affiliate)u.searchParams.set('road_details_extra_info','safety|roadevent');
 
     const r = await fetch(u,{headers:{Authorization:`KakaoAK ${env.KAKAO_REST_API_KEY}`,'Content-Type':'application/json'}});
     const d = await r.json().catch(()=>({}));
@@ -83,7 +81,8 @@ function normalizeRoadExtra(road){
   const rawEvents=road.roadevent ?? road.road_event ?? road.road_events ?? road.roadEvents ?? [];
   const safeties=Array.isArray(rawSafety)?rawSafety:(rawSafety&&typeof rawSafety==='object'?[rawSafety]:[]);
   const roadEvents=Array.isArray(rawEvents)?rawEvents:(rawEvents&&typeof rawEvents==='object'?[rawEvents]:[]);
-  const speedLimit=firstFinite(road.speed_limit,road.speedLimit,road.limit_speed,road.limitSpeed,road.max_speed,road.maxSpeed,road.regulation_speed,road.regulationSpeed,...safeties.map(x=>x?.speed_limit??x?.speedLimit??x?.limit_speed??x?.maxspeed));
+  const detail=road.road_detail||road.roadDetail||road.detail||{};
+  const speedLimit=firstFinite(road.speed_limit,road.speedLimit,road.limit_speed,road.limitSpeed,road.max_speed,road.maxSpeed,road.regulation_speed,road.regulationSpeed,detail.speed_limit,detail.speedLimit,detail.limit_speed,detail.maxspeed,...safeties.map(x=>x?.speed_limit??x?.speedLimit??x?.limit_speed??x?.maxspeed));
   return {speedLimit:speedLimit||0,safeties:safeties.map(compactObject),roadEvents:roadEvents.map(compactObject)};
 }
 function compactObject(x){if(!x||typeof x!=='object')return {value:String(x??'')};const o={};for(const [k,v] of Object.entries(x)){if(['string','number','boolean'].includes(typeof v)||v===null)o[k]=v}return o}
