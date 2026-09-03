@@ -19,7 +19,7 @@ const state = {
   savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,
   tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,
-  futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,
+  futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
 };
 
@@ -301,6 +301,18 @@ function applyGps(pos,fly=false){
   const c=pos.coords||pos,stateObj={lng:Number(c.longitude??c.lng),lat:Number(c.latitude??c.lat),speed:Number(c.speed),heading:Number(c.heading),accuracy:Number(c.accuracy)||0,estimated:false};
   if(!pointValid(stateObj))return;
   const now=Date.now(),sampleTime=Number(pos?.timestamp)||now;
+  // 브라우저/일부 단말이 speed를 null/0으로 주는 경우 연속 GPS 좌표의 이동거리로 실제 주행속도를 보완한다.
+  const prevSpeedSample=state.lastSpeedSample;
+  if(prevSpeedSample&&sampleTime>prevSpeedSample.t){
+    const dt=(sampleTime-prevSpeedSample.t)/1000,dist=haversine(prevSpeedSample.lat,prevSpeedSample.lng,stateObj.lat,stateObj.lng);
+    if(dt>=.3&&dt<=5&&Number.isFinite(dist)){
+      const jitter=Math.max(1.5,Math.min(6,((prevSpeedSample.accuracy||0)+(stateObj.accuracy||0))*.18));
+      const derived=dist>=jitter?Math.min(70,dist/dt):(dist<1.5?0:NaN);
+      if(Number.isFinite(derived)&&( !Number.isFinite(stateObj.speed)||stateObj.speed<.7&&derived>=.7))stateObj.speed=derived;
+      else if(Number.isFinite(derived)&&Number.isFinite(stateObj.speed)&&stateObj.speed>=.7)stateObj.speed=stateObj.speed*.75+derived*.25;
+    }
+  }
+  state.lastSpeedSample={lat:stateObj.lat,lng:stateObj.lng,t:sampleTime,accuracy:stateObj.accuracy};
   // 터널에서 네이티브 위치 공급자가 오래된 마지막 좌표를 다시 전달하면 실제 GPS로 간주하지 않는다.
   if(state.tripStartedAt&&now-sampleTime>4500)return;
   if(Number.isFinite(stateObj.speed)&&stateObj.speed>=0)state.lastRealSpeedMps=stateObj.speed;
@@ -1276,16 +1288,43 @@ async function confirmPostDriveFavorite(){const place=postDriveFavoritePlace;if(
 
 /* ---------- UI EVENTS ---------- */
 
+function normalizeVoiceDestination(text){
+  return String(text||'').trim()
+    .replace(/^(목적지|목적지를)\s*/,'')
+    .replace(/(으로|로)?\s*(가줘|가자|안내해줘|안내해|길안내해줘|길 안내해줘|변경해줘|변경해)$/,'')
+    .trim();
+}
+async function handleVoiceCommandText(raw){
+  const text=String(raw||'').trim();if(!text)return toast('목적지를 다시 말씀해 주세요.');
+  if(text.includes('재탐색'))return reroute();
+  if(text.includes('안내 종료')||text.includes('길 안내 종료'))return stopNavigation();
+  if(text.includes('다임'))return setCharacter('daim');
+  if(text.includes('순식'))return setCharacter('sunsik');
+  if(text.includes('훈민'))return setCharacter('hunmin');
+  const q=normalizeVoiceDestination(text);if(!q)return toast('목적지를 다시 말씀해 주세요.');
+  toast(`“${q}” 목적지를 찾고 있습니다...`,2200);
+  try{
+    const u=new URL('/api/search',location.origin);u.searchParams.set('q',q);if(state.user){u.searchParams.set('lng',state.user.lng);u.searchParams.set('lat',state.user.lat)}
+    const r=await fetch(u);if(!r.ok)throw new Error();const d=await r.json(),item=(d.items||[])[0];
+    if(!item)return toast(`“${q}” 검색 결과가 없습니다.`,2800);
+    if(state.tripStartedAt){toast(`${item.name}(으)로 목적지를 변경합니다.`,2200);await changeDestinationWhileDriving(item)}
+    else await chooseDestination(item);
+  }catch(e){console.warn('voice destination search failed',e);toast('음성 목적지 검색에 실패했습니다.',2800)}
+}
 function startVoiceCommand(){
+  if(window.JofamsVoiceBridge?.isNativeVoiceAvailable?.()){
+    toast('목적지를 말씀해 주세요.');
+    try{return window.JofamsVoiceBridge.startRecognition()}catch(e){console.warn('native voice bridge failed',e)}
+  }
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){toast('이 기기에서는 음성 명령을 지원하지 않습니다.');return}
   const rec=new SR();rec.lang='ko-KR';rec.interimResults=false;rec.maxAlternatives=1;
-  toast('음성 명령을 듣고 있습니다...');
-  rec.onresult=e=>{const text=(e.results?.[0]?.[0]?.transcript||'').trim();if(!text)return;if(text.includes('재탐색'))reroute();else if(text.includes('안내 종료')||text.includes('길 안내 종료'))stopNavigation();else if(text.includes('다임'))setCharacter('daim');else if(text.includes('순식'))setCharacter('sunsik');else if(text.includes('훈민'))setCharacter('hunmin');else toast(`음성 명령: ${text}`,2600)};
+  toast('목적지를 말씀해 주세요...');
+  rec.onresult=e=>handleVoiceCommandText((e.results?.[0]?.[0]?.transcript||'').trim());
   rec.onerror=()=>toast('음성 인식을 다시 시도해 주세요.');
   try{rec.start()}catch{toast('음성 인식을 시작하지 못했습니다.')}
 }
-
+window.addEventListener('jofams-native-voice-result',e=>handleVoiceCommandText(e.detail?.text||e.detail||''));
 
 
 function isAdminUser(){return String(state.firebase.user?.email||'').toLowerCase()===ADMIN_EMAIL}

@@ -415,3 +415,9 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .ar-character-car.moving img{animation:jofamsArHudBob .72s ease-in-out infinite alternate}
 @keyframes jofamsArHudBob{0%{translate:0 0}100%{translate:0 -4px}}
 @media (prefers-reduced-motion:reduce){.ar-character-car.moving img{animation:none}}
+
+/* 7.5.7.5: 일반 지도 캐릭터만 현재 위치에서 화면 높이의 3% 후진. AR 캐릭터는 기존 위치 유지. */
+.character-car-marker.rear-version img{transform:translateY(3vh)}
+.character-car-marker.rear-version.jofams-car-moving img{animation:jofamsDriveBobRear .72s ease-in-out infinite alternate}
+@keyframes jofamsDriveBobRear{0%{transform:translateY(3vh) scale(1)}100%{transform:translateY(calc(3vh - 4px)) scale(1.015)}}
+@media (prefers-reduced-motion:reduce){.character-car-marker.rear-version.jofams-car-moving img{animation:none;transform:translateY(3vh)}}
