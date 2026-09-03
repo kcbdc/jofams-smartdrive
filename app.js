@@ -304,7 +304,7 @@ function applyGps(pos,fly=false){
   // 브라우저/일부 단말이 speed를 null/0으로 주는 경우 연속 GPS 좌표의 이동거리로 실제 주행속도를 보완한다.
   const prevSpeedSample=state.lastSpeedSample;
   if(prevSpeedSample&&sampleTime>prevSpeedSample.t){
-    const dt=(sampleTime-prevSpeedSample.t)/1000,dist=haversine(prevSpeedSample.lat,prevSpeedSample.lng,stateObj.lat,stateObj.lng);
+    const dt=(sampleTime-prevSpeedSample.t)/1000,dist=hav(prevSpeedSample.lat,prevSpeedSample.lng,stateObj.lat,stateObj.lng);
     if(dt>=.3&&dt<=5&&Number.isFinite(dist)){
       const jitter=Math.max(1.5,Math.min(6,((prevSpeedSample.accuracy||0)+(stateObj.accuracy||0))*.18));
       const derived=dist>=jitter?Math.min(70,dist/dt):(dist<1.5?0:NaN);
@@ -645,6 +645,23 @@ function drawARScene(){
 
   ctx.restore();state.arFrame=requestAnimationFrame(drawARScene)
 }
+function toLocalDateInput(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`}
+function setFutureDefaultTime(){
+  const d=new Date(Date.now()+30*60*1000),rounded=Math.ceil(d.getMinutes()/10)*10;
+  if(rounded>=60){d.setHours(d.getHours()+1);d.setMinutes(0)}else d.setMinutes(rounded);
+  const h=d.getHours(),ampm=h>=12?'PM':'AM',h12=h%12||12;state.futureAmPm=ampm;
+  if($('futureHour'))$('futureHour').value=String(h12);if($('futureMinute'))$('futureMinute').value=String(Math.floor(d.getMinutes()/10)*10);
+  document.querySelectorAll('[data-future-ampm]').forEach(b=>b.classList.toggle('active',b.dataset.futureAmpm===ampm));
+  if($('futureDateInput')){$('futureDateInput').min=toLocalDateInput(new Date());$('futureDateInput').value=toLocalDateInput(d)}
+}
+
+/* ---------- 7.5.7.6 RESTORED COMMON HELPERS ---------- */
+function saveTripHistory(){try{localStorage.setItem(TRIP_HISTORY,JSON.stringify((state.tripHistory||[]).slice(0,50)))}catch(e){console.warn('trip history save failed',e)}}
+function addTripHistory(entry){state.tripHistory=[entry,...(state.tripHistory||[])].slice(0,50);saveTripHistory();updateTripHistorySummary()}
+function updateTripHistorySummary(){const el=$('tripHistorySummary');if(el)el.textContent=(state.tripHistory||[]).length?`최근 ${state.tripHistory.length}건 저장`:'주행 기록이 없습니다.'}
+function openInfoModal(title,html){const titleEl=$('infoModalTitle'),bodyEl=$('infoModalBody'),modal=$('infoModal');if(!modal)return;if(titleEl)titleEl.textContent=title||'';if(bodyEl){bodyEl.innerHTML=html||'';try{applyIcons(bodyEl)}catch(e){console.warn('modal icon render failed',e)}}modal.classList.remove('hidden')}
+function closeInfoModal(){const modal=$('infoModal');if(modal)modal.classList.add('hidden')}
+
 function openFutureDeparture(){
   closeMy();
   state.futureOrigin=state.user?{...state.user,name:'내 위치',address:'현재 GPS 위치'}:null;
@@ -784,9 +801,20 @@ function setView(view){
 function startNavigation(){if(!state.route||!state.destination)return;cancelAutoStart();state.tripStartedAt=Date.now();startDestinationCycle();logTrip('start');setView('drive');startWatch();ensureUserMarker();updateCarMarkerImage();state.routeCumulative=buildCumulative(state.route);drawRoute(state.route,{fit:false});updateDriving(true);startLiveRouteRefresh();applyNightMode();setTimeout(tryLandscapeFullscreen,100);speak(`${characterDefs[state.character].name}이 안내를 시작합니다.`)}
 function stopNavigation(){
   const finishedDestination=state.destination?{...state.destination}:null;
-  if(state.tripStartedAt){logTrip('finish');addTripHistory({destination:state.destination?.name||'목적지',date:new Date().toLocaleString('ko-KR'),distance:state.route?.distance||0,duration:Math.round((Date.now()-state.tripStartedAt)/1000),character:state.character})}
-  state.tripStartedAt=0;stopDestinationCycle();stopLiveRouteRefresh();stopAR();stopWatch();cancelAutoStart();$('driveMenu').classList.add('hidden');clearRouteLayer();clearSafetyMarkers();hideSafetyAlert();state.safetyEvents=[];state.route=null;state.routeOptions=[];if(state.destMarker){state.destMarker.remove();state.destMarker=null}if(state.originMarker){state.originMarker.remove();state.originMarker=null}state.destination=null;state.origin=null;state.originMode='current';updateOverspeed(0,0);setView('home');toast('안내를 종료했습니다.');
-  if(finishedDestination&&!isFavoritePlace(finishedDestination))setTimeout(()=>openPostDriveFavoritePrompt(finishedDestination),350)
+  // 안내 종료는 어떤 부가기능 오류가 발생해도 반드시 홈 화면까지 복귀해야 한다.
+  try{if(state.tripStartedAt)logTrip('finish')}catch(e){console.warn('finish log failed',e)}
+  try{if(state.tripStartedAt)addTripHistory({destination:state.destination?.name||'목적지',date:new Date().toLocaleString('ko-KR'),distance:state.route?.distance||0,duration:Math.round((Date.now()-state.tripStartedAt)/1000),character:state.character})}catch(e){console.warn('trip history finish failed',e)}
+  state.tripStartedAt=0;
+  for(const fn of [stopDestinationCycle,stopLiveRouteRefresh,stopAR,stopWatch,cancelAutoStart,clearRouteLayer,clearSafetyMarkers,hideSafetyAlert]){try{fn?.()}catch(e){console.warn('navigation cleanup failed',e)}}
+  try{$('driveMenu')?.classList.add('hidden')}catch{}
+  state.safetyEvents=[];state.route=null;state.routeOptions=[];
+  try{if(state.destMarker){state.destMarker.remove();state.destMarker=null}}catch{state.destMarker=null}
+  try{if(state.originMarker){state.originMarker.remove();state.originMarker=null}}catch{state.originMarker=null}
+  state.destination=null;state.origin=null;state.originMode='current';
+  try{updateOverspeed(0,0)}catch{}
+  try{setView('home')}catch(e){console.error('home restore failed',e);$('homeView')?.classList.remove('hidden');$('driveView')?.classList.add('hidden')}
+  toast('안내를 종료했습니다.');
+  if(finishedDestination&&!isFavoritePlace(finishedDestination))setTimeout(()=>{try{openPostDriveFavoritePrompt(finishedDestination)}catch(e){console.warn('favorite prompt failed',e)}},350)
 }
 function updateDriving(force=false){
   if(!state.user||!state.route?.geometry?.length)return;const g=state.route.geometry,idx=nearestIndex(state.user.lng,state.user.lat,g);state.currentRouteIndex=idx;ensureUserMarker();
@@ -1396,6 +1424,22 @@ function openMy(){$('myModal').classList.remove('hidden');renderProfile();syncCh
 function closeMy(){$('myModal').classList.add('hidden')}
 function toggleSettingPanel(buttonId,panelId){const btn=$(buttonId),panel=$(panelId),open=panel.classList.contains('hidden');panel.classList.toggle('hidden',!open);btn.setAttribute('aria-expanded',String(open));if(open)setTimeout(()=>panel.scrollIntoView({behavior:'smooth',block:'nearest'}),50)}
 async function shareArrival(){if(!state.destination)return;const text=`'${state.destination.name}' 이동 중입니다. 예상 도착 ${$('arrivalTime').textContent.replace('도착 ','')}`;try{if(navigator.share)await navigator.share({title:'조팸스 내비',text});else await navigator.clipboard.writeText(text),toast('도착 정보를 복사했습니다.')}catch{}}
+
+let criticalUiBound=false;
+function bindCriticalUI(){
+  if(criticalUiBound)return;criticalUiBound=true;
+  // 안내 종료는 다른 UI 바인딩 오류와 무관하게 항상 동작하도록 캡처 단계에서 독립 처리한다.
+  document.addEventListener('click',e=>{
+    const btn=e.target?.closest?.('#endNavBtn');if(!btn)return;
+    e.preventDefault();e.stopPropagation();stopNavigation();
+  },true);
+  document.addEventListener('click',e=>{
+    const btn=e.target?.closest?.('#driveMenuBtn');if(!btn)return;
+    if(!$('driveMenu')?.classList.contains('hidden'))return;
+    try{openDriveMenu()}catch(err){console.warn('drive menu open failed',err)}
+  },true);
+}
+
 function bindUI(){
   try{bindFutureDepartureUI();}catch(e){console.warn('UI bind section 1 failed',e)}
   try{$('allowLocationBtn').onclick=requestLocationPermission;$('allowCameraBtn').onclick=requestCameraPermission;$('permissionContinueBtn').onclick=closePermissionGate;}catch(e){console.warn('UI bind section 2 failed',e)}
@@ -1424,6 +1468,7 @@ if('serviceWorker' in navigator)window.addEventListener('load',async()=>{
 function bootstrapApp(){
   try{applyIcons()}catch(e){console.warn('applyIcons failed',e)}
   try{loadLocal()}catch(e){console.warn('loadLocal failed',e)}
+  try{bindCriticalUI()}catch(e){console.warn('critical UI bind failed',e)}
   try{bindUI()}catch(e){console.error('UI binding failed',e);toast('화면 초기화 오류가 복구되었습니다. 새로고침해 주세요.',3500)}
   try{applyNightMode()}catch(e){console.warn('night mode failed',e)}
   Promise.resolve().then(()=>initMap()).catch(e=>console.warn('map init failed',e));
