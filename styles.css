@@ -379,3 +379,33 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 
 /* MVP 7.5.4 admin mode */
 .admin-mode-entry{background:#f3f7ff!important}.admin-mode-entry b{color:#145ec4}.admin-sheet{position:absolute;z-index:2;left:50%;top:50%;transform:translate(-50%,-50%);width:min(760px,calc(100vw - 22px));max-height:min(88dvh,900px);overflow:auto;background:#fff;border-radius:24px;padding:18px;box-shadow:0 24px 70px rgba(9,30,65,.28)}.admin-sheet>header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.admin-sheet>header>div{display:grid;grid-template-columns:28px 1fr;column-gap:8px;align-items:center}.admin-sheet>header>div svg{grid-row:1/3;width:25px;height:25px;color:#1765d4}.admin-sheet>header b{font-size:21px}.admin-sheet>header small{font-size:10px;color:#7a8491}.admin-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:5px;background:#f1f4f8;border-radius:13px;margin-bottom:14px}.admin-tabs button{height:42px;border:0;border-radius:10px;background:transparent;font-weight:800;color:#66717f}.admin-tabs button.active{background:#fff;color:#1765d4;box-shadow:0 2px 8px rgba(20,53,96,.1)}.admin-panel{display:grid;gap:12px}.admin-form,.adminContentPanel{display:grid;gap:10px}.admin-panel label b{display:block;font-size:12px;margin-bottom:5px}.admin-panel input,.admin-panel textarea{width:100%;box-sizing:border-box;border:1px solid #dce2eb;border-radius:12px;padding:11px;font:inherit;line-height:1.5;resize:vertical}.admin-list{display:grid;gap:8px}.admin-list article{border:1px solid #e4e8ef;border-radius:13px;padding:12px;position:relative}.admin-list article>div{padding-right:54px}.admin-list article b{font-size:14px}.admin-list article small{display:block;font-size:9px;color:#88919d;margin-top:3px}.admin-list article p{font-size:12px;line-height:1.55;margin-top:8px;color:#414c5b}.admin-list article>button{position:absolute;right:9px;top:9px;border:0;border-radius:8px;background:#fff0f0;color:#bc2e2e;padding:6px 8px;font-size:10px;font-weight:800}.admin-inquiry-detail label{display:block;margin-top:12px}.admin-inquiry-detail textarea{margin-top:6px}.admin-inquiry-detail .primary-btn{margin-top:10px}@media(max-width:520px){.admin-sheet{padding:14px;border-radius:20px}.admin-tabs button{font-size:11px}.admin-sheet>header b{font-size:18px}}
+
+
+/* 7.5.7 Android/iOS navigation stabilization */
+.drive-ar-camera{display:none;position:absolute;z-index:1;inset:0;width:100%;height:100%;object-fit:cover;background:#000;pointer-events:none}
+.drive-view.ar-camera-active .drive-ar-camera{display:block}
+.drive-view.ar-camera-active{background:transparent!important}
+.drive-view.ar-camera-active~*{} /* keep the same navigation HUD; only background source changes */
+.drive-view.ar-camera-active .maneuver-stack,
+.drive-view.ar-camera-active .floating-voice,
+.drive-view.ar-camera-active .floating-ar,
+.drive-view.ar-camera-active .speed-panel,
+.drive-view.ar-camera-active .traffic-route-rail,
+.drive-view.ar-camera-active .drive-side-actions,
+.drive-view.ar-camera-active .drive-map-controls,
+.drive-view.ar-camera-active .traffic-status,
+.drive-view.ar-camera-active .vms-banner,
+.drive-view.ar-camera-active .drive-bottom-card,
+.drive-view.ar-camera-active .safety-alert,
+.drive-view.ar-camera-active .overspeed-flash{z-index:20}
+.character-car-marker.jofams-car-moving img{animation:jofamsDriveBob .72s ease-in-out infinite alternate}
+@keyframes jofamsDriveBob{0%{transform:translateY(0) scale(1)}100%{transform:translateY(-4px) scale(1.015)}}
+@media (prefers-reduced-motion:reduce){.character-car-marker.jofams-car-moving img{animation:none}}
+
+.drive-ar-character{display:none;position:absolute;z-index:18;left:50%;bottom:138px;width:104px;height:82px;transform:translateX(-50%);pointer-events:none}
+.drive-ar-character img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 9px 9px rgba(0,0,0,.34))}
+.drive-view.ar-camera-active .drive-ar-character{display:block}
+.drive-ar-character.moving img{animation:jofamsArDriveBob .72s ease-in-out infinite alternate}
+@keyframes jofamsArDriveBob{0%{transform:translateY(0) scale(1)}100%{transform:translateY(-5px) scale(1.018)}}
+@media (orientation:landscape){.drive-ar-character{bottom:96px;width:88px;height:68px}}
+@media (prefers-reduced-motion:reduce){.drive-ar-character.moving img{animation:none}}

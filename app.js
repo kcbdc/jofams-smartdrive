@@ -19,7 +19,7 @@ const state = {
   savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,
   tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,
-  futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,
+  futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
 };
 
@@ -152,7 +152,7 @@ async function loadStaticCameraEvents(route){
 function normalizeRoadName(v=''){return String(v||'').replace(/\s+/g,'').replace(/(대로|로|길|거리)$/,'').toLowerCase()}
 function applyRouteSpeedLimitHints(route,events=[]){
   const segs=route?.roadSegments||[],cum=buildCumulative(route);
-  const limitEvents=events.filter(e=>Number(e?.maxspeed)>0&&['speed_camera','signal_camera','signal_speed_camera','traffic_camera','speed_limit','school_zone'].includes(e.type));
+  const limitEvents=events.filter(e=>Number(e?.maxspeed)>0&&e.type==='speed_limit');
   if(!segs.length||!limitEvents.length)return;
   for(const seg of segs){
     if(Number(seg?.speedLimit)>0)continue;
@@ -242,7 +242,13 @@ function refreshMapLayout({fitRoute=false}={}){
 function makeCarMarker(){const el=document.createElement('div');el.className='character-car-marker rear-version';el.innerHTML=`<img src="${characterDefs[state.character].rear||characterDefs[state.character].marker}" alt="${characterDefs[state.character].name} 자동차 후면">`;return new maplibregl.Marker({element:el,anchor:'center',rotationAlignment:'viewport'});}
 function updateCarMarkerImage(){const img=state.userMarker?.getElement()?.querySelector('img');if(img)img.src=characterDefs[state.character].rear||characterDefs[state.character].marker}
 function makeDestMarker(){const el=document.createElement('div');el.className='destination-pin';return new maplibregl.Marker({element:el,anchor:'bottom'})}
-function ensureUserMarker(){if(!state.user||!state.map)return;if(!state.userMarker)state.userMarker=makeCarMarker().setLngLat([state.user.lng,state.user.lat]).addTo(state.map);else state.userMarker.setLngLat([state.user.lng,state.user.lat])}
+function updateUserMarkerMotion(){
+  const moving=Boolean(state.tripStartedAt)&&Math.max(0,Number(state.user?.speed)||0)>.35;
+  const el=state.userMarker?.getElement();if(el)el.classList.toggle('jofams-car-moving',moving);
+  const ar=$('driveArCharacter');if(ar)ar.classList.toggle('moving',moving&&state.arCameraMode);
+  const img=$('driveArCharacterImg');if(img)img.src=characterDefs[state.character].rear||characterDefs[state.character].marker;
+}
+function ensureUserMarker(){if(!state.user||!state.map)return;if(!state.userMarker)state.userMarker=makeCarMarker().setLngLat([state.user.lng,state.user.lat]).addTo(state.map);else state.userMarker.setLngLat([state.user.lng,state.user.lat]);updateUserMarkerMotion()}
 function setDestinationMarker(){if(state.destMarker)state.destMarker.remove();if(state.destination&&state.map)state.destMarker=makeDestMarker().setLngLat([state.destination.lng,state.destination.lat]).addTo(state.map)}
 function updateOriginMarker(){if(state.originMarker){state.originMarker.remove();state.originMarker=null}if(state.originMode!=='custom'||!state.origin||!state.map)return;const el=document.createElement('div');el.className='origin-pin';state.originMarker=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([state.origin.lng,state.origin.lat]).addTo(state.map)}
 function trafficClassFromValues(speed,stateCode){
@@ -291,13 +297,20 @@ async function locate(fly=true){
 function applyGps(pos,fly=false){
   const c=pos.coords||pos,stateObj={lng:Number(c.longitude??c.lng),lat:Number(c.latitude??c.lat),speed:Number(c.speed),heading:Number(c.heading),accuracy:Number(c.accuracy)||0,estimated:false};
   if(!pointValid(stateObj))return;
-  const now=Date.now();
+  const now=Date.now(),sampleTime=Number(pos?.timestamp)||now;
+  // 터널에서 네이티브 위치 공급자가 오래된 마지막 좌표를 다시 전달하면 실제 GPS로 간주하지 않는다.
+  if(state.tripStartedAt&&now-sampleTime>4500)return;
   if(Number.isFinite(stateObj.speed)&&stateObj.speed>=0)state.lastRealSpeedMps=stateObj.speed;
   if(Number.isFinite(stateObj.heading))state.lastRealHeading=stateObj.heading;
-  state.lastRealGpsAt=now;state.lastGpsTickAt=now;state.gpsEstimated=false;
+  state.lastRealGpsAt=now;state.lastGpsTickAt=now;state.deadReckoningLastAt=now;state.gpsEstimated=false;
   if(!Number.isFinite(stateObj.speed))stateObj.speed=state.lastRealSpeedMps||0;
   if(!Number.isFinite(stateObj.heading))stateObj.heading=state.lastRealHeading;
-  state.user=stateObj;ensureUserMarker();
+  state.user=stateObj;
+  if(state.route?.geometry?.length&&state.routeCumulative?.length){
+    const idx=nearestIndex(stateObj.lng,stateObj.lat,state.route.geometry);
+    state.deadReckoningDistance=Number(state.routeCumulative[idx])||0;
+  }else state.deadReckoningDistance=null;
+  ensureUserMarker();
   if(fly)state.map.easeTo({center:[stateObj.lng,stateObj.lat],zoom:16,duration:500});
   if(state.route&&$('driveView')&&!$('driveView').classList.contains('hidden'))updateDriving();
 }
@@ -306,20 +319,26 @@ function pointAtRouteDistance(target){
   const total=cum.at(-1)||0,t=Math.max(0,Math.min(total,target));let lo=0,hi=cum.length-1;
   while(lo<hi){const mid=(lo+hi)>>1;if(cum[mid]<t)lo=mid+1;else hi=mid}
   const i=Math.max(1,lo),a=cum[i-1],b=cum[i],r=b>a?(t-a)/(b-a):0,p0=g[i-1],p1=g[i];
-  return{lng:p0[0]+(p1[0]-p0[0])*r,lat:p0[1]+(p1[1]-p0[1])*r,index:i,heading:bearing(p0[1],p0[0],p1[1],p1[0])};
+  return{lng:p0[0]+(p1[0]-p0[0])*r,lat:p0[1]+(p1[1]-p0[1])*r,index:i,heading:bearing(p0[1],p0[0],p1[1],p1[0]),distance:t};
 }
 function deadReckoningTick(){
   if(!state.tripStartedAt||!state.route?.geometry?.length||!state.routeCumulative.length||!state.user)return;
-  const now=Date.now(),sinceReal=now-(state.lastRealGpsAt||0);if(sinceReal<2500||sinceReal>120000)return;
-  const speed=Math.max(0,Number(state.lastRealSpeedMps)||0);if(speed<1.2)return;
-  const dt=Math.min(2,(now-(state.lastGpsTickAt||now))/1000);state.lastGpsTickAt=now;if(dt<=0)return;
-  const idx=Math.max(0,state.currentRouteIndex||nearestIndex(state.user.lng,state.user.lat,state.route.geometry));
-  const currentDist=state.routeCumulative[idx]||0,target=currentDist+speed*dt,p=pointAtRouteDistance(target);if(!p)return;
-  state.user={...state.user,lng:p.lng,lat:p.lat,speed,heading:p.heading,accuracy:Math.max(35,Number(state.user.accuracy)||0),estimated:true};state.gpsEstimated=true;ensureUserMarker();updateDriving();
-  if(now-state.lastDeadReckoningNoticeAt>30000){state.lastDeadReckoningNoticeAt=now;toast('GPS 신호 약함 · 차량 속도로 터널 위치를 추정 중입니다.',2200)}
+  const now=Date.now(),sinceReal=now-(state.lastRealGpsAt||0);if(sinceReal<2500||sinceReal>180000)return;
+  const speed=Math.max(0,Number(state.lastRealSpeedMps)||Number(state.user.speed)||0);
+  if(speed<.35){state.deadReckoningLastAt=now;state.user.speed=0;updateUserMarkerMotion();return}
+  const last=state.deadReckoningLastAt||state.lastGpsTickAt||now,dt=Math.min(2.5,Math.max(.2,(now-last)/1000));state.deadReckoningLastAt=now;state.lastGpsTickAt=now;
+  if(!Number.isFinite(state.deadReckoningDistance)){
+    const idx=Math.max(0,nearestIndex(state.user.lng,state.user.lat,state.route.geometry));state.deadReckoningDistance=Number(state.routeCumulative[idx])||0;
+  }
+  state.deadReckoningDistance=Math.min(state.routeCumulative.at(-1)||Infinity,state.deadReckoningDistance+speed*dt);
+  const p=pointAtRouteDistance(state.deadReckoningDistance);if(!p)return;
+  state.currentRouteIndex=p.index;
+  state.user={...state.user,lng:p.lng,lat:p.lat,speed,heading:p.heading,accuracy:Math.max(45,Number(state.user.accuracy)||0),estimated:true};state.gpsEstimated=true;
+  ensureUserMarker();updateDriving(true);
+  if(now-state.lastDeadReckoningNoticeAt>30000){state.lastDeadReckoningNoticeAt=now;toast('GPS 신호 없음 · 현재 속도로 터널 주행 위치를 추정합니다.',2200)}
 }
-function startDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningTimer=setInterval(deadReckoningTick,1000)}
-function stopDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningTimer=0;state.gpsEstimated=false}
+function startDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningLastAt=Date.now();state.deadReckoningTimer=setInterval(deadReckoningTick,500)}
+function stopDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningTimer=0;state.gpsEstimated=false;state.deadReckoningDistance=null;state.deadReckoningLastAt=0}
 function startWatch(){if(state.watchId!=null)return;state.watchId=navigator.geolocation.watchPosition(p=>applyGps(p,false),()=>{}, {enableHighAccuracy:true,maximumAge:0,timeout:7000});startDeadReckoning()}
 function stopWatch(){if(state.watchId!=null){navigator.geolocation.clearWatch(state.watchId);state.watchId=null}stopDeadReckoning()}
 
@@ -520,97 +539,25 @@ async function searchOrigins(q){
 }
 
 async function startAR(){
-  if(state.arRunning)return;
+  if(state.arCameraMode){stopAR();return}
   if(!state.route||!state.destination){toast('먼저 길안내를 시작해 주세요.');return}
   if(!navigator.mediaDevices?.getUserMedia){toast('이 기기에서는 AR 카메라를 지원하지 않습니다.');return}
   try{
-    state.arStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
-    $('arVideo').srcObject=state.arStream;state.arRunning=true;$('arView').classList.remove('hidden');$('bottomNav').classList.add('hidden');$('driveMenu').classList.add('hidden');
-    $('arCharacterCar').src=characterDefs[state.character].marker;updateAROverlay();drawARScene();
+    state.arStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+    const video=$('driveArCamera');video.srcObject=state.arStream;await video.play().catch(()=>{});
+    state.arCameraMode=true;state.arRunning=true;$('driveView').classList.add('ar-camera-active');updateUserMarkerMotion();
+    const b=$('arOpenBtn');if(b)b.textContent='지도';const m=$('driveArBtn');if(m){const label=m.querySelector('b');if(label)label.textContent='지도 보기'}
+    updateUserMarkerMotion();toast('AR 카메라 안내로 전환했습니다.',1200);
   }catch(e){console.warn(e);toast('카메라 권한을 허용해 주세요.',3000)}
 }
 function stopAR(){
-  if(state.arFrame)cancelAnimationFrame(state.arFrame);state.arFrame=0;state.arRunning=false;$('arView')?.classList.add('hidden');
+  state.arRunning=false;state.arCameraMode=false;$('driveView')?.classList.remove('ar-camera-active');
+  const video=$('driveArCamera');if(video){try{video.pause()}catch{}video.srcObject=null}
   if(state.arStream){state.arStream.getTracks().forEach(t=>t.stop());state.arStream=null}
-  if(!$('driveView')?.classList.contains('hidden'))$('bottomNav')?.classList.add('hidden');
+  const b=$('arOpenBtn');if(b)b.textContent='AR';const m=$('driveArBtn');if(m){const label=m.querySelector('b');if(label)label.textContent='AR 안내'}
 }
-function updateAROverlay(){
-  if(!state.route||!state.user)return;const idx=state.currentRouteIndex||0,total=state.routeCumulative.at(-1)||state.route.distance||1,done=state.routeCumulative[idx]||0,remain=Math.max(0,total-done),ratio=Math.max(0,Math.min(1,remain/total)),remainSec=(state.route.duration||0)*ratio;
-  const guides=(state.route.guides||[]).filter(x=>Number(x.routeIndex)>idx+1),g=guides[0];
-  if(g){const d=distanceAlong(idx,g.routeIndex);$('arTurnIcon').innerHTML=turnSvg(g.type);$('arTurnDistance').textContent=km(d);$('arCenterDistance').textContent=km(d);$('arTurnRoad').textContent=g.name||g.guidance||'다음 안내'}
-  else{$('arTurnIcon').innerHTML=turnSvg(0);$('arTurnDistance').textContent=km(remain);$('arCenterDistance').textContent=km(remain);$('arTurnRoad').textContent='목적지까지 직진'}
-  $('arSpeed').textContent=Math.max(0,Math.round((state.user.speed||0)*3.6));$('arEta').textContent=eta(remainSec);$('arRemain').textContent=km(remain);$('arCharacterCar').src=characterDefs[state.character].rear||characterDefs[state.character].marker;
-  const marker=$('arCharacterMarker');if(marker){const near=g?Math.max(0,Math.min(1,1-distanceAlong(idx,g.routeIndex)/650)):0;marker.classList.add('rear-facing');marker.style.setProperty('--ar-car-x','0px');marker.style.setProperty('--ar-car-y',`${-near*26}px`)}
-}
-function drawARScene(){
-  if(!state.arRunning)return;
-  const canvas=$('arCanvas'),rect=canvas.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1);
-  const w=Math.max(1,Math.round(rect.width*dpr)),h=Math.max(1,Math.round(rect.height*dpr));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}
-  const ctx=canvas.getContext('2d');ctx.clearRect(0,0,w,h);ctx.save();ctx.scale(dpr,dpr);
-  const W=rect.width,H=rect.height;
-  // MVP 7.5: AR 화살표는 완전히 제거하고, 샘플처럼 반짝이는 파란 주행 리본이 전방으로 길게 뻗어가도록 구성한다.
-  // 소실점은 화면 52% 부근으로 내려 기존보다 더 낮고 안정적인 시야각을 만든다.
-  const horizon=H*.685,bottom=H*.985;
-  const idx=state.currentRouteIndex||0;
-  // MVP 7.5 AR 정렬 보정: 회전 안내와 무관하게 유도 리본 중심축은 항상 화면 정중앙을 유지한다.
-  // 유도 구역 전체 폭은 화면 폭의 1/3을 넘지 않도록 제한한다.
-  const centerX=()=>W/2;
-  const maxHalfWidth=W/6; // 전체 폭 최대 W/3
-  const base=new Path2D(),topHalf=Math.max(6,W*.014),bottomHalf=Math.min(W*.145,maxHalfWidth);
-  base.moveTo(centerX()-topHalf,horizon);
-  base.lineTo(centerX()+topHalf,horizon);
-  base.lineTo(centerX()+bottomHalf,bottom);
-  base.lineTo(centerX()-bottomHalf,bottom);
-  base.closePath();
-  const baseGrad=ctx.createLinearGradient(0,horizon,0,bottom);
-  baseGrad.addColorStop(0,'rgba(82,220,255,.10)');
-  baseGrad.addColorStop(.35,'rgba(54,193,255,.22)');
-  baseGrad.addColorStop(.74,'rgba(36,151,255,.32)');
-  baseGrad.addColorStop(1,'rgba(22,112,255,.42)');
-  ctx.save();ctx.shadowColor='rgba(26,173,255,.28)';ctx.shadowBlur=28;ctx.fillStyle=baseGrad;ctx.fill(base);ctx.restore();
-
-  const core=new Path2D(),topCore=Math.max(4,W*.007),bottomCore=Math.min(W*.072,maxHalfWidth*.52);
-  core.moveTo(centerX()-topCore,horizon);
-  core.lineTo(centerX()+topCore,horizon);
-  core.lineTo(centerX()+bottomCore,bottom);
-  core.lineTo(centerX()-bottomCore,bottom);
-  core.closePath();
-  const coreGrad=ctx.createLinearGradient(0,horizon,0,bottom);
-  coreGrad.addColorStop(0,'rgba(180,245,255,.24)');
-  coreGrad.addColorStop(.4,'rgba(108,226,255,.28)');
-  coreGrad.addColorStop(.82,'rgba(56,186,255,.32)');
-  coreGrad.addColorStop(1,'rgba(34,146,255,.38)');
-  ctx.fillStyle=coreGrad;ctx.fill(core);
-
-  const shine=new Path2D(),shineTop=Math.max(2,W*.0032),shineBottom=Math.min(W*.020,maxHalfWidth*.18);
-  shine.moveTo(centerX()-shineTop,horizon);
-  shine.lineTo(centerX()+shineTop,horizon);
-  shine.lineTo(centerX()+shineBottom,bottom);
-  shine.lineTo(centerX()-shineBottom,bottom);
-  shine.closePath();
-  const shineGrad=ctx.createLinearGradient(0,horizon,0,bottom);
-  shineGrad.addColorStop(0,'rgba(255,255,255,.36)');
-  shineGrad.addColorStop(.42,'rgba(209,248,255,.22)');
-  shineGrad.addColorStop(1,'rgba(255,255,255,.08)');
-  ctx.fillStyle=shineGrad;ctx.fill(shine);
-
-  const blocks=14;
-  for(let i=0;i<blocks;i++){
-    const t0=i/blocks,t1=Math.min(1,t0+.78/blocks);
-    const y0=horizon+(bottom-horizon)*Math.pow(t0,.88),y1=horizon+(bottom-horizon)*Math.pow(t1,.88);
-    const x0=centerX(),x1=centerX();
-    const w0=Math.max(6,topHalf+(bottomHalf-topHalf)*t0),w1=Math.max(8,topHalf+(bottomHalf-topHalf)*t1);
-    const p=new Path2D();
-    p.moveTo(x0-w0*.92,y0);p.lineTo(x0+w0*.92,y0);p.lineTo(x1+w1*.86,y1);p.lineTo(x1-w1*.86,y1);p.closePath();
-    const alpha=.02+.055*Math.pow(t1,1.15);
-    const g=ctx.createLinearGradient(0,y0,0,y1);
-    g.addColorStop(0,`rgba(255,255,255,${alpha*.55})`);
-    g.addColorStop(1,`rgba(113,236,255,${alpha})`);
-    ctx.fillStyle=g;ctx.fill(p);
-  }
-
-  ctx.restore();state.arFrame=requestAnimationFrame(drawARScene)
-}
+function updateAROverlay(){updateUserMarkerMotion()}
+function drawARScene(){/* 7.5.7: 별도 AR HUD/리본 제거. 일반 안내 UI 위에 후면 카메라만 표시한다. */}
 
 /* ---------- DRIVE ---------- */
 function saveTripHistory(){try{localStorage.setItem(TRIP_HISTORY,JSON.stringify(state.tripHistory.slice(0,50)))}catch{}}
@@ -785,17 +732,19 @@ function showDestinationBottom(duration=10000){if(!state.tripStartedAt||!state.d
 function startDestinationCycle(){clearInterval(state.destinationCycleTimer);clearTimeout(state.destinationHideTimer);hideDestinationBottom();state.destinationCycleTimer=setInterval(()=>showDestinationBottom(10000),180000)}
 function stopDestinationCycle(){clearInterval(state.destinationCycleTimer);clearTimeout(state.destinationHideTimer);state.destinationCycleTimer=0;state.destinationHideTimer=0;hideDestinationBottom()}
 function effectiveSpeedLimit(idx,seg){
+  // 현재 주행 도로의 route road detail을 최우선으로 사용한다.
   const direct=Number(seg?.speedLimit)||0;if(direct>0)return direct;
-  const segName=normalizeRoadName(seg?.name||''),start=Math.max(0,Number(seg?.startIndex)||idx),end=Math.max(start,Number(seg?.endIndex)||idx);
-  const events=(state.safetyEvents||[]).filter(e=>Number(e.maxspeed)>0&&['speed_camera','signal_camera','signal_speed_camera','traffic_camera','speed_limit','school_zone'].includes(e.type));
+  // 단속카메라 제한속도는 인접/평행도로 오인 가능성이 있어 도로 제한속도 표시에 사용하지 않는다.
+  // 보조 데이터도 OSM의 명시적 maxspeed(speed_limit)만 현재 세그먼트와 맞을 때 사용한다.
+  const start=Math.max(0,Number(seg?.startIndex)||idx),end=Math.max(start,Number(seg?.endIndex)||idx),segName=normalizeRoadName(seg?.name||'');
   let best=null,bestScore=Infinity;
-  for(const e of events){
+  for(const e of (state.safetyEvents||[])){
+    if(e.type!=='speed_limit'||!(Number(e.maxspeed)>0))continue;
     const ri=Number(e.routeIndex);if(!Number.isFinite(ri))continue;
-    const inside=ri>=start&&ri<=end,eRoad=normalizeRoadName(e.roadName||e.name||'');
-    const sameRoad=Boolean(segName&&eRoad&&(eRoad.includes(segName)||segName.includes(eRoad)));
-    if(!inside&&!sameRoad)continue;
-    const along=ri>=idx?distanceAlong(idx,ri):distanceAlong(ri,idx);if(along>650)continue;
-    const score=along+(inside?0:100)+(sameRoad?0:140)+(e.type==='speed_limit'?-120:0)+(ri<idx?70:0);
+    const inside=ri>=start&&ri<=end;if(!inside&&Math.abs(ri-idx)>8)continue;
+    const eRoad=normalizeRoadName(e.roadName||e.name||'');
+    if(segName&&eRoad&&!(eRoad.includes(segName)||segName.includes(eRoad)))continue;
+    const score=Math.abs(ri-idx)+(inside?0:20)+(segName&&eRoad?0:10);
     if(score<bestScore){best=e;bestScore=score}
   }
   return Number(best?.maxspeed)||0;
@@ -835,10 +784,13 @@ function recenterDriveMap(){
 }
 async function reroute(){if(!state.user||!state.destination)return;state.lastRerouteAt=Date.now();toast('경로를 다시 탐색합니다.');speak('경로를 다시 탐색합니다.');try{const spec=routePreferenceSpec(),r=await routeRequest(spec.priority,spec.avoid);state.route={...r,_label:`재탐색 · ${spec.label}`,_character:state.character};state.routeCumulative=buildCumulative(state.route);drawRoute(state.route,{fit:false});loadSafetyEvents(state.route);updateDriving(true)}catch{toast('재탐색에 실패했습니다.') }}
 function checkOffRoute(idx){
+  // 터널/도심 음영에서 추정 좌표로는 절대 재탐색하지 않는다.
+  if(state.gpsEstimated||state.user?.estimated)return;
   if(Date.now()-state.lastRerouteAt<15000)return;
   const p=state.route.geometry[idx];if(!p)return;
   const d=hav(state.user.lat,state.user.lng,p[1],p[0]);
-  if(d>55)state.offRouteHits=(state.offRouteHits||0)+1;else state.offRouteHits=0;
+  const accuracy=Math.max(0,Number(state.user.accuracy)||0),threshold=Math.max(55,Math.min(95,accuracy*1.35));
+  if(d>threshold)state.offRouteHits=(state.offRouteHits||0)+1;else state.offRouteHits=0;
   if(state.offRouteHits>=3){state.offRouteHits=0;reroute()}
 }
 
@@ -1018,78 +970,30 @@ function pickDaimVoice(){
   return voices.find(v=>female.test(`${v.name||''} ${v.voiceURI||''}`)) || voices[0] || null;
 }
 
-function androidNativeTtsAvailable(){
-  try{return Boolean(window.JofamsTtsBridge&&typeof window.JofamsTtsBridge.speak==='function')}catch{return false}
-}
-function iosNativeTtsAvailable(){
-  try{return Boolean(window.webkit?.messageHandlers?.jofamsTts?.postMessage)}catch{return false}
-}
-function nativeTtsAvailable(){return androidNativeTtsAvailable()||iosNativeTtsAvailable()}
 function speak(text){
-  if(!state.sound||!text) return;
+  if(!state.sound||!text||!('speechSynthesis' in window)) return;
   const c=characterDefs[state.character];
-  const profile=state.character==='sunsik'
-    ? {rate:.84,pitch:.72}
-    : state.character==='hunmin'
-      ? {rate:1.08,pitch:.96}
-      : {rate:c.rate,pitch:c.pitch};
-
-  // Android 앱: JavaScriptInterface 기반 Android TextToSpeech.
-  if(androidNativeTtsAvailable()){
-    try{
-      window.JofamsTtsBridge.speak(
-        String(text),
-        state.character,
-        Number(profile.rate)||1,
-        Number(profile.pitch)||1,
-        Number(state.voiceVolume)||.8
-      );
-      return;
-    }catch(e){console.warn('Android native TTS fallback',e)}
-  }
-
-  // iOS WKWebView 앱: WKScriptMessageHandler -> AVSpeechSynthesizer.
-  // Safari/PWA에는 message handler가 없으므로 아래 Web Speech API로 자동 fallback된다.
-  if(iosNativeTtsAvailable()){
-    try{
-      window.webkit.messageHandlers.jofamsTts.postMessage({
-        action:'speak',
-        text:String(text),
-        character:state.character,
-        rate:Number(profile.rate)||1,
-        pitch:Number(profile.pitch)||1,
-        volume:Number(state.voiceVolume)||.8
-      });
-      return;
-    }catch(e){console.warn('iOS native TTS fallback',e)}
-  }
-
-  if(!('speechSynthesis' in window)) return;
   const u=new SpeechSynthesisUtterance(text);
   u.lang='ko-KR';
   u.volume=state.voiceVolume;
+
   if(state.character==='sunsik'){
-    u.voice=pickMaleKoreanVoice('sunsik');u.rate=.82;u.pitch=.58;
+    u.voice=pickMaleKoreanVoice('sunsik');
+    u.rate=.82;
+    u.pitch=.58;
   }else if(state.character==='hunmin'){
-    u.voice=pickMaleKoreanVoice('hunmin');u.rate=1.08;u.pitch=.92;
+    u.voice=pickMaleKoreanVoice('hunmin');
+    u.rate=1.08;
+    u.pitch=.92;
   }else{
-    u.voice=pickDaimVoice();u.rate=c.rate;u.pitch=c.pitch;
+    u.voice=pickDaimVoice();
+    u.rate=c.rate;
+    u.pitch=c.pitch;
   }
+
   speechSynthesis.cancel();
   speechSynthesis.speak(u);
 }
-window.addEventListener('jofams-native-tts-state',e=>{
-  if(e?.detail?.ready===false&&e?.detail?.message)console.warn(e.detail.message);
-});
-
-window.addEventListener('jofams-ios-app-resume',()=>{
-  try{if('speechSynthesis' in window)speechSynthesis.resume()}catch{}
-});
-document.addEventListener('visibilitychange',()=>{
-  if(!document.hidden){
-    try{if('speechSynthesis' in window)speechSynthesis.resume()}catch{}
-  }
-});
 
 function ownerSuffix(){return state.firebase.user?.uid||'guest'}
 function settingsKey(){return state.firebase.user?`${SETTINGS}.${state.firebase.user.uid}`:SETTINGS}
@@ -1231,16 +1135,40 @@ function firebaseConfig(){return CONFIG.firebase||{}}
 function firebaseConfigured(){const c=firebaseConfig();return Boolean(c.apiKey&&c.authDomain&&c.projectId&&c.appId)}
 async function initFirebase(){
   state.firebase.configured=firebaseConfigured();if(!state.firebase.configured)return;
-  try{const [appMod,authMod,fsMod]=await Promise.all([import('https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js')]);const app=appMod.initializeApp(firebaseConfig()),auth=authMod.getAuth(app),db=fsMod.getFirestore(app);await authMod.setPersistence(auth,authMod.browserLocalPersistence);state.firebase={...state.firebase,ready:true,auth,db,mods:{authMod,fsMod}};authMod.onAuthStateChanged(auth,async user=>{state.firebase.user=user||null;renderProfile();if(user){await hydrateAuthenticatedUser()}else{loadLocal();loadLocalUserSettings();await Promise.all([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents(),loadUserSettings()]);updateFavoriteButtonState()}})}catch(e){console.warn('Firebase init failed',e)}
+  try{
+    const [appMod,authMod,fsMod]=await Promise.all([import('https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js')]);
+    const app=appMod.initializeApp(firebaseConfig()),auth=authMod.getAuth(app),db=fsMod.getFirestore(app);await authMod.setPersistence(auth,authMod.browserLocalPersistence);state.firebase={...state.firebase,ready:true,auth,db,mods:{authMod,fsMod}};
+    installNativeGoogleAuthHandlers();
+    authMod.onAuthStateChanged(auth,async user=>{state.firebase.user=user||null;resetLoginButton();renderProfile();if(user){state.loginPending=false;await hydrateAuthenticatedUser()}else{loadLocal();loadLocalUserSettings();await Promise.all([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents(),loadUserSettings()]);updateFavoriteButtonState()}})
+  }catch(e){console.warn('Firebase init failed',e);resetLoginButton()}
 }
-async function loginGoogle(){if(!state.firebase.ready){toast('Firebase 설정을 확인해 주세요.');return}const {authMod}=state.firebase.mods,provider=new authMod.GoogleAuthProvider(),btn=$('googleLoginBtn');btn.disabled=true;btn.textContent='로그인 중';try{const isWebView=/JofamsSmartDrive\/6|; wv\)/i.test(navigator.userAgent);if(isWebView){await authMod.signInWithRedirect(state.firebase.auth,provider);return}const result=await Promise.race([authMod.signInWithPopup(state.firebase.auth,provider),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000))]);state.firebase.user=result.user;renderProfile();toast('로그인되었습니다.')}catch(e){if(e.code==='auth/popup-blocked'||e.message==='timeout'){toast('로그인 창을 다시 열어 주세요.');}else toast('Google 로그인에 실패했습니다.')}finally{btn.disabled=false;btn.textContent='Google 로그인'}}
-async function logout(){if(!state.firebase.ready)return;await state.firebase.mods.authMod.signOut(state.firebase.auth);state.firebase.user=null;renderProfile()}
-function renderProfile(){
-  const u=state.firebase.user,wrap=$('profilePhoto')?.closest('.profile-photo');
-  $('googleLoginBtn').classList.toggle('hidden',!!u);$('logoutBtn').classList.toggle('hidden',!u);
-  if(u){$('profileName').textContent=u.displayName||'사용자';$('profileEmail').textContent=u.email||'';$('profilePhoto').src=u.photoURL||characterDefs[state.character].avatar;wrap?.classList.toggle('google-photo',Boolean(u.photoURL))}
-  else{$('profileName').textContent='조팸스 드라이버';$('profileEmail').textContent='Google 로그인으로 동기화할 수 있어요.';$('profilePhoto').src=characterDefs[state.character].avatar;wrap?.classList.remove('google-photo')}
-  updateAdminUI();
+function resetLoginButton(){const btn=$('googleLoginBtn');if(!btn)return;btn.disabled=false;btn.textContent='Google 로그인'}
+function setLoginPending(){state.loginPending=true;state.loginStartedAt=Date.now();const btn=$('googleLoginBtn');if(btn){btn.disabled=true;btn.textContent='로그인 중'}}
+function nativeAuthAvailable(){try{return Boolean(window.JofamsAuthBridge&&typeof window.JofamsAuthBridge.signInGoogle==='function')}catch{return false}}
+function installNativeGoogleAuthHandlers(){
+  if(window.__JOFAMS_NATIVE_AUTH_HANDLERS__)return;window.__JOFAMS_NATIVE_AUTH_HANDLERS__=true;
+  window.addEventListener('jofams-native-google-token',async e=>{
+    try{
+      if(!state.firebase.ready)throw new Error('Firebase가 준비되지 않았습니다.');
+      const idToken=e?.detail?.idToken;if(!idToken)throw new Error('Google ID Token이 없습니다.');
+      const {authMod}=state.firebase.mods,credential=authMod.GoogleAuthProvider.credential(idToken);
+      const result=await authMod.signInWithCredential(state.firebase.auth,credential);state.firebase.user=result.user;state.loginPending=false;renderProfile();await hydrateAuthenticatedUser();toast('로그인되었습니다.');
+    }catch(err){console.warn('native google credential failed',err);toast('Google 로그인 처리에 실패했습니다.',3000)}finally{resetLoginButton()}
+  });
+  window.addEventListener('jofams-native-google-error',e=>{state.loginPending=false;resetLoginButton();toast(e?.detail?.message||'Google 로그인에 실패했습니다.',3500)});
+  window.addEventListener('jofams-app-resumed',()=>{if(state.loginPending&&Date.now()-state.loginStartedAt>1500)setTimeout(()=>{if(!state.firebase.user&&state.loginPending){state.loginPending=false;resetLoginButton();toast('로그인이 완료되지 않았습니다. 다시 시도해 주세요.',2600)}},1800)});
+  window.addEventListener('pageshow',()=>{if(!state.loginPending)resetLoginButton()});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&!state.loginPending)resetLoginButton()});
+}
+async function loginGoogle(){
+  if(!state.firebase.ready){toast('Firebase 설정을 확인해 주세요.');return}
+  setLoginPending();
+  try{
+    if(nativeAuthAvailable()){window.JofamsAuthBridge.signInGoogle();return}
+    const {authMod}=state.firebase.mods,provider=new authMod.GoogleAuthProvider();
+    const result=await Promise.race([authMod.signInWithPopup(state.firebase.auth,provider),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),12000))]);
+    state.firebase.user=result.user;state.loginPending=false;renderProfile();await hydrateAuthenticatedUser();toast('로그인되었습니다.');
+  }catch(e){state.loginPending=false;if(e.code==='auth/popup-blocked'||e.message==='timeout')toast('로그인 창을 다시 열어 주세요.');else toast('Google 로그인에 실패했습니다.');resetLoginButton()}
 }
 async function saveCloudPrefs(){if(!state.firebase.user)return;try{const {fsMod}=state.firebase.mods;await fsMod.setDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'),{character:state.character,voiceVolume:state.voiceVolume,home:state.savedPlaces.home,work:state.savedPlaces.work,updatedAt:fsMod.serverTimestamp()},{merge:true})}catch{}}
 async function loadCloudPrefs(){if(!state.firebase.user)return;try{const {fsMod}=state.firebase.mods,s=await fsMod.getDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'));if(s.exists()){const p=s.data();if(p.character&&characterDefs[p.character])state.character=p.character;if(Number.isFinite(Number(p.voiceVolume)))state.voiceVolume=Number(p.voiceVolume);state.savedPlaces.home=p.home||state.savedPlaces.home;state.savedPlaces.work=p.work||state.savedPlaces.work;syncCharacterUI();updateVolumeUI();updateSavedLabels();saveLocalSettings()}}catch{}}

@@ -1,4 +1,4 @@
-const CACHE='jofams-smartdrive-mvp7-4-20260902';
+const CACHE='jofams-navi-7-5-7-20260903';
 const STATIC=[
   '/','/index.html','/styles.css','/app.js','/manifest.webmanifest',
   '/assets/daim.png','/assets/sunsik.png','/assets/hunmin.png',

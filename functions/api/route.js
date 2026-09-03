@@ -83,7 +83,7 @@ function normalizeRoadExtra(road){
   const rawEvents=road.roadevent ?? road.road_event ?? road.road_events ?? road.roadEvents ?? [];
   const safeties=Array.isArray(rawSafety)?rawSafety:(rawSafety&&typeof rawSafety==='object'?[rawSafety]:[]);
   const roadEvents=Array.isArray(rawEvents)?rawEvents:(rawEvents&&typeof rawEvents==='object'?[rawEvents]:[]);
-  const speedLimit=firstFinite(road.speed_limit,road.speedLimit,road.limit_speed,road.limitSpeed,...safeties.map(x=>x?.speed_limit??x?.speedLimit));
+  const speedLimit=firstFinite(road.speed_limit,road.speedLimit,road.limit_speed,road.limitSpeed,road.max_speed,road.maxSpeed,road.regulation_speed,road.regulationSpeed,...safeties.map(x=>x?.speed_limit??x?.speedLimit??x?.limit_speed??x?.maxspeed));
   return {speedLimit:speedLimit||0,safeties:safeties.map(compactObject),roadEvents:roadEvents.map(compactObject)};
 }
 function compactObject(x){if(!x||typeof x!=='object')return {value:String(x??'')};const o={};for(const [k,v] of Object.entries(x)){if(['string','number','boolean'].includes(typeof v)||v===null)o[k]=v}return o}

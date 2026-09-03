@@ -55,7 +55,7 @@ async function loadOverpass(points){
     else if(t.maxspeed)type='speed_limit';
     else if(t.tunnel==='yes')type='tunnel';
     if(!type)continue;
-    events.push({id:`osm:${type}:${e.type}:${e.id}`,type,lat,lng,name:t.name||t['name:ko']||'',maxspeed:num(t.maxspeed)||0,source:'OpenStreetMap'});
+    events.push({id:`osm:${type}:${e.type}:${e.id}`,type,lat,lng,name:t.name||t['name:ko']||t.ref||'',roadName:t.name||t['name:ko']||t.ref||'',maxspeed:num(t.maxspeed)||0,source:'OpenStreetMap'});
   }
   return events;
 }
