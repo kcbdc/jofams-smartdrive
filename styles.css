@@ -473,8 +473,67 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   .character-car-marker.rear-version img{transform:translateY(1.5vh)!important}
 }
 @media (orientation:landscape){
-  .character-car-marker.rear-version{transform:translateY(10vh)!important}
-  .character-car-marker.rear-version img{transform:translateY(0)!important}
-  .character-car-marker.rear-version.jofams-car-moving img{animation:jofamsDriveBobRearLandscape7582 .72s ease-in-out infinite alternate!important}
-  @keyframes jofamsDriveBobRearLandscape7582{0%{transform:translateY(0) scale(1)}100%{transform:translateY(-3px) scale(1.012)}}
+  /* Marker 루트의 transform은 MapLibre가 좌표 배치에 사용하므로 절대 덮어쓰지 않는다. */
+  .character-car-marker.rear-version img{transform:translateY(4vh)!important;opacity:1!important;visibility:visible!important}
+  .character-car-marker.rear-version.jofams-car-moving img{animation:jofamsDriveBobRearLandscape7583 .72s ease-in-out infinite alternate!important}
+  @keyframes jofamsDriveBobRearLandscape7583{0%{transform:translateY(4vh) scale(1)}100%{transform:translateY(calc(4vh - 3px)) scale(1.012)}}
 }
+
+
+/* === 7.5.8.3 route endpoint swap / AR forward ribbon / history alignment === */
+.route-swap-endpoints-btn{
+  width:32px!important;height:32px!important;border:1px solid #dbe6f5!important;border-radius:50%!important;
+  background:#f4f8fd!important;color:#1767d7!important;display:grid!important;place-items:center!important;
+  padding:0!important;font-size:13px!important;font-weight:900!important;letter-spacing:-3px!important;
+}
+.route-swap-endpoints-btn span{display:block;transform:translateX(-1px);white-space:nowrap}
+.route-point-row{grid-template-columns:auto auto minmax(0,1fr) 34px!important}
+
+/* AR 자동차 아래 리본: 도로가 계속 아래로 밀려 내려가며 자동차가 앞으로 달리는 듯한 효과 */
+.ar-character-car .ar-motion-ribbon{
+  display:block!important;position:absolute!important;z-index:-1!important;left:50%!important;
+  top:68%!important;width:34px!important;height:118px!important;transform:translateX(-50%) perspective(160px) rotateX(58deg)!important;
+  transform-origin:50% 0!important;border-radius:4px 4px 18px 18px!important;pointer-events:none!important;
+  background:
+    linear-gradient(90deg,transparent 0 12%,rgba(75,169,255,.18) 12% 20%,transparent 20% 80%,rgba(75,169,255,.18) 80% 88%,transparent 88% 100%),
+    repeating-linear-gradient(180deg,rgba(255,255,255,.92) 0 8px,rgba(89,180,255,.12) 8px 22px,transparent 22px 38px)!important;
+  filter:drop-shadow(0 0 7px rgba(53,153,255,.52))!important;
+  opacity:.88!important;
+  animation:jofamsArRibbonForward7583 .62s linear infinite!important;
+}
+@keyframes jofamsArRibbonForward7583{
+  from{background-position:0 0,0 0}
+  to{background-position:0 0,0 38px}
+}
+@media(orientation:landscape){
+  .ar-character-car .ar-motion-ribbon{width:27px!important;height:82px!important;top:64%!important}
+}
+@media(prefers-reduced-motion:reduce){
+  .ar-character-car .ar-motion-ribbon{animation:jofamsArRibbonForward7583 1.4s linear infinite!important}
+}
+
+/* 주행기록 = 즐겨찾기 목록과 같은 카드 여백/액션 스타일 */
+.history-list{display:grid!important;gap:10px!important;padding:4px 0 12px!important}
+.history-list article{
+  display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;align-items:center!important;
+  gap:12px!important;padding:14px!important;border:1px solid #e7ebf2!important;border-radius:16px!important;
+  background:#fff!important;box-shadow:0 5px 14px rgba(20,38,68,.06)!important;
+}
+.history-list .history-copy{min-width:0!important}
+.history-list .history-copy b{font-size:15px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.history-list .history-copy small{margin-top:5px!important;font-size:11px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.history-actions{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-end!important;gap:6px!important;white-space:nowrap!important}
+.history-actions em,.history-delete-btn{
+  position:static!important;min-width:auto!important;height:auto!important;min-height:0!important;
+  border:0!important;border-radius:10px!important;padding:8px 10px!important;font-size:11px!important;
+  font-weight:800!important;line-height:1!important;white-space:nowrap!important;
+}
+.history-actions em{background:#eaf2ff!important;color:#1763c7!important;font-style:normal!important}
+.history-delete-btn{background:#fff0f0!important;color:#c82f36!important}
+@media(max-width:420px){
+  .history-list article{grid-template-columns:minmax(0,1fr) auto!important;padding:12px!important;gap:8px!important}
+  .history-actions{flex-wrap:nowrap!important;gap:5px!important}
+  .history-actions em,.history-delete-btn{padding:7px 8px!important;font-size:10px!important}
+}
+
+.ar-character-car>.ar-motion-ribbon{display:block!important}

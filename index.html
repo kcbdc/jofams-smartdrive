@@ -8,7 +8,7 @@
   <title>조팸스 내비</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.5.8.2" />
+  <link rel="stylesheet" href="/styles.css?v=7.5.8.3" />
 </head>
 <body>
   <main id="app">
@@ -69,11 +69,11 @@
         <div class="route-addresses">
           <div class="route-point-row route-origin-row">
             <span class="point start"></span><small>출발</small><b id="routeAddressOrigin">내 위치</b>
-            <button id="routeAddWaypointFromOriginBtn" class="route-add-waypoint-btn" type="button" aria-label="출발지 뒤에 경유지 추가">+</button>
+            <button id="routeSwapEndpointsBtn" class="route-swap-endpoints-btn" type="button" aria-label="출발지와 목적지 바꾸기"><span aria-hidden="true">↓↑</span></button>
           </div>
           <div class="route-point-row route-destination-row">
             <span class="point end"></span><small>도착</small><b id="routeAddressDest">목적지</b>
-            <button id="routeAddWaypointBtn" class="route-add-waypoint-btn" type="button" aria-label="목적지 앞에 경유지 추가">+</button>
+            <button id="routeAddWaypointBtn" class="route-add-waypoint-btn" type="button" aria-label="중간 경유지 추가">+</button>
           </div>
         </div>
         <div id="routeSelectedWaypoints" class="route-selected-waypoints hidden"></div>
@@ -449,7 +449,7 @@
         <div class="ar-guide-card"><div id="arTurnIcon" class="ar-turn-icon"></div><div><b id="arTurnDistance">--m</b><small id="arTurnRoad">다음 안내</small></div></div>
       </header>
       <div class="ar-center-distance" id="arCenterDistance">--m</div>
-      <div id="arCharacterMarker" class="ar-character-car"><img id="arCharacterCar" src="/assets/daim_car_marker.png" alt="안내 캐릭터 자동차"></div>
+      <div id="arCharacterMarker" class="ar-character-car"><div class="ar-motion-ribbon" aria-hidden="true"></div><img id="arCharacterCar" src="/assets/daim_car_marker.png" alt="안내 캐릭터 자동차"></div>
       <div class="ar-bottom-info"><div><strong id="arSpeed">0</strong><span>km/h</span></div><div><small>도착</small><b id="arEta">--:--</b><span id="arRemain">--km</span></div></div>
     </section>
 
@@ -493,6 +493,6 @@
   </main>
 
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.5.8.2"></script>
+  <script type="module" src="/app.js?v=7.5.8.3"></script>
 </body>
 </html>
