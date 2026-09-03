@@ -244,17 +244,36 @@ function refreshMapLayout({fitRoute=false}={}){
   requestAnimationFrame(run);setTimeout(run,80);setTimeout(run,280);
 }
 
+
+function alignDriveCharacterWithSpeedLimit(){
+  if(!state.tripStartedAt||!state.map||!state.user||!state.userMarker)return;
+  const el=state.userMarker.getElement?.(), speed=$('speedLimit')?.closest('.speed-limit');
+  if(!el||!speed)return;
+  if((window.innerWidth||0)<=(window.innerHeight||0)){
+    el.style.removeProperty('--drive-car-offset-y');
+    return;
+  }
+  try{
+    const canvas=state.map.getCanvas?.(), cr=canvas?.getBoundingClientRect?.(), sr=speed.getBoundingClientRect();
+    const p=state.map.project([state.user.lng,state.user.lat]);
+    if(!cr||!Number.isFinite(p?.y))return;
+    const desiredY=(sr.top+sr.height/2)-cr.top;
+    const maxShift=Math.max(90,cr.height*.48);
+    const offset=Math.max(-maxShift,Math.min(maxShift,desiredY-p.y));
+    el.style.setProperty('--drive-car-offset-y',`${Math.round(offset)}px`);
+    el.style.opacity='1';el.style.visibility='visible';el.style.display='block';
+  }catch(e){console.warn('drive character alignment failed',e)}
+}
+
 function ensureDriveCharacterAfterViewportChange(){
   if(!state.tripStartedAt||!state.map||!state.user)return;
   try{
     state.map.resize();
-    if(!state.carMarker){
-      state.carMarker=makeCarMarker().setLngLat([state.user.lng,state.user.lat]).addTo(state.map);
-    }else{
-      state.carMarker.setLngLat([state.user.lng,state.user.lat]);
-      const el=state.carMarker.getElement?.();
-      if(el){el.style.opacity='1';el.style.visibility='visible'}
-    }
+    if(state.carMarker){try{state.carMarker.remove()}catch{}state.carMarker=null}
+    ensureUserMarker();
+    const el=state.userMarker?.getElement?.();
+    if(el){el.style.opacity='1';el.style.visibility='visible';el.style.display='block'}
+    alignDriveCharacterWithSpeedLimit();
     updateDriving(true);
   }catch(e){console.warn('drive marker viewport recovery failed',e)}
 }
@@ -265,6 +284,7 @@ function makeDestMarker(){const el=document.createElement('div');el.className='d
 function updateUserMarkerMotion(){
   const moving=Boolean(state.tripStartedAt)&&Math.max(0,Number(state.user?.speed)||0)>.35;
   const el=state.userMarker?.getElement();if(el)el.classList.toggle('jofams-car-moving',moving);
+  if(state.tripStartedAt)setTimeout(alignDriveCharacterWithSpeedLimit,0);
   const ar=$('driveArCharacter');if(ar)ar.classList.toggle('moving',moving&&state.arCameraMode);const arMarker=$('arCharacterMarker');if(arMarker)arMarker.classList.toggle('moving',moving&&state.arRunning);
   const img=$('driveArCharacterImg');if(img)img.src=characterDefs[state.character].rear||characterDefs[state.character].marker;
 }
@@ -1161,7 +1181,12 @@ async function searchDriveDestinations(q){
 
 function openDrivePlaceChoice(item){
   const p=normalizedPlace(item);if(!pointValid(p))return;
-  state.pendingDriveSearchPlace=p;$('drivePlaceChoiceName').textContent=p.name||'선택한 장소';$('drivePlaceChoiceModal').classList.remove('hidden');
+  state.pendingDriveSearchPlace=p;
+  closeDriveSearch();
+  $('drivePlaceChoiceName').textContent=p.name||'선택한 장소';
+  const modal=$('drivePlaceChoiceModal');
+  modal.classList.remove('hidden');
+  modal.style.zIndex='10080';
 }
 function closeDrivePlaceChoice(){state.pendingDriveSearchPlace=null;$('drivePlaceChoiceModal').classList.add('hidden')}
 async function applyDrivePlaceChoice(mode){
@@ -1608,7 +1633,18 @@ function bindUI(){
   try{document.querySelectorAll('[data-my-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.myCharacter);syncCharacterUI();toast(`${characterDefs[state.character].name} 가이드로 변경했습니다.`)});}catch(e){console.warn('UI bind section 5 failed',e)}
   try{document.querySelectorAll('[data-voice-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.voiceCharacter);syncCharacterUI();speak(`${characterDefs[state.character].name} 음성 안내입니다.`)});}catch(e){console.warn('UI bind section 6 failed',e)}
   try{$('voiceGuideSettingBtn').onclick=()=>{const opening=$('voiceGuidePanel').classList.contains('hidden');$('voiceGuidePanel').classList.toggle('hidden',!opening);$('characterSettingPanel').classList.toggle('hidden',!opening);$('voiceGuideSettingBtn').setAttribute('aria-expanded',String(opening))};$('voicePreviewBtn').onclick=()=>speak(`${characterDefs[state.character].name}이 길안내를 시작합니다. 안전운전하세요.`);}catch(e){console.warn('UI bind section 7 failed',e)}
-  try{$('menuBtn').onclick=openHamburgerMenu;$('myBtn').onclick=openMy;$('routeBackBtn').onclick=()=>{cancelAutoStart();setView('home')};$('routeFavoriteBtn').onclick=toggleFavorite;$('startBtn').onclick=startNavigation;if($('postDriveFavoriteAddBtn'))$('postDriveFavoriteAddBtn').onclick=confirmPostDriveFavorite;if($('postDriveFavoriteSkipBtn'))$('postDriveFavoriteSkipBtn').onclick=closePostDriveFavoritePrompt;if($('postDriveFavoriteModal'))$('postDriveFavoriteModal').addEventListener('click',e=>{if(e.target===$('postDriveFavoriteModal'))closePostDriveFavoritePrompt()});$('routeOriginBtn').onclick=openOriginModal;if($('routeSwapEndpointsBtn'))$('routeSwapEndpointsBtn').onclick=swapRouteEndpoints;if($('routeAddWaypointBtn'))$('routeAddWaypointBtn').onclick=openWaypointSearch;}catch(e){console.warn('UI bind section 8 failed',e)}
+  try{$('menuBtn').onclick=openHamburgerMenu;$('myBtn').onclick=openMy;$('routeBackBtn').onclick=()=>{cancelAutoStart();setView('home')};$('routeFavoriteBtn').onclick=toggleFavorite;$('startBtn').onclick=startNavigation;if($('postDriveFavoriteAddBtn'))$('postDriveFavoriteAddBtn').onclick=confirmPostDriveFavorite;if($('postDriveFavoriteSkipBtn'))$('postDriveFavoriteSkipBtn').onclick=closePostDriveFavoritePrompt;if($('postDriveFavoriteModal'))$('postDriveFavoriteModal').addEventListener('click',e=>{if(e.target===$('postDriveFavoriteModal'))closePostDriveFavoritePrompt()});$('routeOriginBtn').onclick=openOriginModal;}catch(e){console.warn('UI bind section 8 failed',e)}
+  
+  try{
+    document.addEventListener('click',e=>{
+      const btn=e.target.closest?.('#routeSwapEndpointsBtn,#routeAddWaypointBtn');
+      if(!btn)return;
+      e.preventDefault();e.stopPropagation();
+      if(btn.id==='routeSwapEndpointsBtn')swapRouteEndpoints();
+      if(btn.id==='routeAddWaypointBtn')openWaypointSearch();
+    },true);
+  }catch(e){console.warn('route endpoint action bind failed',e)}
+
   try{$('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=recenterDriveMap;$('map3dBtn').onclick=e=>{e.stopPropagation();state.map3D=!state.map3D;applyDriveMapMode();toggleMapControls(true)};$('mapZoomInBtn').onclick=e=>{e.stopPropagation();state.map?.zoomIn({duration:180});toggleMapControls(true)};$('mapZoomOutBtn').onclick=e=>{e.stopPropagation();state.map?.zoomOut({duration:180});toggleMapControls(true)};$('driveView').addEventListener('click',e=>{if(e.target.closest('button,input,.maneuver-stack,.drive-bottom-card,.safety-alert,.traffic-status,.vms-banner'))return;toggleMapControls()});$('driveVoiceBtn').onclick=startVoiceCommand;$('arOpenBtn').onclick=startAR;$('driveArBtn').onclick=startAR;$('routeInfoBtn').onclick=openRouteInfo;$('driveSearchBtn').onclick=openDriveSearch;$('routeInfoClose').onclick=closeRouteInfo;$('routeInfoModal').addEventListener('click',e=>{if(e.target===$('routeInfoModal'))closeRouteInfo()});$('driveSearchClose').onclick=closeDriveSearch;$('driveSearchSubmit').onclick=()=>searchDriveDestinations($('driveSearchInput').value);$('driveSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchDriveDestinations(e.target.value)});$('driveSearchModal').addEventListener('click',e=>{if(e.target===$('driveSearchModal'))closeDriveSearch()});document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{closeDriveMenu();stopWatch();setView('route');loadRouteOptions()};$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;}catch(e){console.warn('UI bind section 9 failed',e)}
   try{$('guideVolume').oninput=e=>changeVolume(e.target.value);$('myGuideVolume').oninput=e=>changeVolume(e.target.value);$('myCloseBtn').onclick=closeMy;$('myModal').addEventListener('click',e=>{if(e.target===$('myModal'))closeMy()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;$('myFavoritesBtn').onclick=openFavoritesList;$('tripHistoryBtn').onclick=openTripHistory;$('noticeBtn').onclick=openNotices;if($('appPrivacyBtn'))$('appPrivacyBtn').onclick=openAppPrivacy;if($('permissionSettingBtn'))$('permissionSettingBtn').onclick=()=>toggleSettingPanel('permissionSettingBtn','permissionSettingPanel');if($('locationConsentToggle'))$('locationConsentToggle').onchange=e=>setPermissionPreference('location',e.target.checked);if($('cameraConsentToggle'))$('cameraConsentToggle').onchange=e=>setPermissionPreference('camera',e.target.checked);$('infoModalClose').onclick=closeInfoModal;$('infoModal').addEventListener('click',e=>{if(e.target===$('infoModal'))closeInfoModal()});}catch(e){console.warn('UI bind section 10 failed',e)}
   try{if($('hamburgerCloseBtn'))$('hamburgerCloseBtn').onclick=closeHamburgerMenu;if($('hamburgerMenuModal'))$('hamburgerMenuModal').addEventListener('click',e=>{if(e.target===$('hamburgerMenuModal'))closeHamburgerMenu()});}catch(e){console.warn('UI bind section 11 failed',e)}

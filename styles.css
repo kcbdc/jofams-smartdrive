@@ -537,3 +537,59 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 }
 
 .ar-character-car>.ar-motion-ribbon{display:block!important}
+
+
+/* === 7.5.8.4 hotfix === */
+.route-point-row{position:relative!important}
+.route-swap-endpoints-btn,.route-add-waypoint-btn{
+  position:relative!important;z-index:8!important;pointer-events:auto!important;
+  touch-action:manipulation!important;cursor:pointer!important;-webkit-tap-highlight-color:transparent!important;
+}
+#drivePlaceChoiceModal{z-index:10080!important}
+#driveSearchModal{z-index:10050!important}
+
+/* 가로모드: 지도 마커 루트는 건드리지 않고 이미지 Y 위치만 제한속도 원 중심에 동적 정렬 */
+@media (orientation:landscape){
+  .character-car-marker.rear-version{opacity:1!important;visibility:visible!important;display:block!important}
+  .character-car-marker.rear-version img{
+    transform:translateY(var(--drive-car-offset-y,0px))!important;
+    opacity:1!important;visibility:visible!important;display:block!important;
+  }
+  .character-car-marker.rear-version.jofams-car-moving img{
+    animation:jofamsDriveBobRearLandscape7584 .72s ease-in-out infinite alternate!important;
+  }
+  @keyframes jofamsDriveBobRearLandscape7584{
+    0%{transform:translateY(var(--drive-car-offset-y,0px)) scale(1)}
+    100%{transform:translateY(calc(var(--drive-car-offset-y,0px) - 3px)) scale(1.012)}
+  }
+}
+
+/* AR 리본: 위에서 아래로 반복해서 흐르는 러닝머신 효과 */
+.ar-character-car .ar-motion-ribbon{
+  display:block!important;overflow:hidden!important;
+  background:linear-gradient(180deg,rgba(40,150,255,.07),rgba(25,120,255,.22),rgba(40,150,255,.03))!important;
+  animation:none!important;
+}
+.ar-character-car .ar-motion-ribbon::before,
+.ar-character-car .ar-motion-ribbon::after{
+  content:"";position:absolute;left:14%;right:14%;height:82px;top:-86px;border-radius:10px;
+  background:repeating-linear-gradient(
+    180deg,
+    rgba(255,255,255,.96) 0 7px,
+    rgba(87,185,255,.16) 7px 16px,
+    transparent 16px 28px
+  );
+  filter:drop-shadow(0 0 5px rgba(69,169,255,.58));
+  animation:jofamsArTreadmillDown7584 1.05s linear infinite!important;
+}
+.ar-character-car .ar-motion-ribbon::after{animation-delay:-.525s!important}
+@keyframes jofamsArTreadmillDown7584{
+  0%{transform:translateY(-12px);opacity:.25}
+  12%{opacity:.92}
+  88%{opacity:.92}
+  100%{transform:translateY(190px);opacity:.16}
+}
+@media(orientation:landscape){
+  .ar-character-car .ar-motion-ribbon::before,
+  .ar-character-car .ar-motion-ribbon::after{animation-duration:.9s!important}
+}
