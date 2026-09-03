@@ -3,3 +3,12 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: geolocation=(self), camera=(self), microphone=(self)
   Cross-Origin-Opener-Policy: same-origin-allow-popups
+
+/index.html
+  Cache-Control: no-store, max-age=0
+/app.js
+  Cache-Control: no-store, max-age=0
+/config.js
+  Cache-Control: no-store, max-age=0
+/sw.js
+  Cache-Control: no-store, max-age=0
