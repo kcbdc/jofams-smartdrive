@@ -8,7 +8,7 @@
   <title>조팸스 내비</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.5.8.1" />
+  <link rel="stylesheet" href="/styles.css?v=7.5.8.2" />
 </head>
 <body>
   <main id="app">
@@ -65,9 +65,16 @@
         <button id="routeFavoriteBtn" class="circle-btn"><span data-icon="star-outline"></span></button>
       </header>
       <div class="route-sheet">
+        
         <div class="route-addresses">
-          <button id="routeOriginBtn" class="route-address-row" type="button"><span class="point start"></span><small>출발</small><b id="routeAddressOrigin">내 위치</b><i data-icon="chevron"></i></button>
-          <div class="route-destination-row"><span class="point end"></span><small>도착</small><b id="routeAddressDest">목적지</b><button id="routeAddWaypointBtn" class="route-add-waypoint-btn" type="button" aria-label="경유지 추가">+</button></div>
+          <div class="route-point-row route-origin-row">
+            <span class="point start"></span><small>출발</small><b id="routeAddressOrigin">내 위치</b>
+            <button id="routeAddWaypointFromOriginBtn" class="route-add-waypoint-btn" type="button" aria-label="출발지 뒤에 경유지 추가">+</button>
+          </div>
+          <div class="route-point-row route-destination-row">
+            <span class="point end"></span><small>도착</small><b id="routeAddressDest">목적지</b>
+            <button id="routeAddWaypointBtn" class="route-add-waypoint-btn" type="button" aria-label="목적지 앞에 경유지 추가">+</button>
+          </div>
         </div>
         <div id="routeSelectedWaypoints" class="route-selected-waypoints hidden"></div>
         <div id="routePlanEta" class="route-plan-eta">출발지를 선택하면 예상 도착시간을 안내합니다.</div>
@@ -258,8 +265,7 @@
           <div id="permissionSettingPanel" class="setting-expand permission-setting-panel hidden">
             <label class="setting-toggle-row"><span><b>위치정보 조회 동의</b><small id="locationConsentState">동의 · 시스템 권한 확인 중</small></span><input id="locationConsentToggle" type="checkbox" checked><i></i></label>
             <label class="setting-toggle-row"><span><b>카메라 조회 동의</b><small id="cameraConsentState">동의 · 시스템 권한 확인 중</small></span><input id="cameraConsentToggle" type="checkbox" checked><i></i></label>
-            <button id="permissionPrivacyDetailBtn" type="button" class="permission-privacy-detail"><span data-icon="document"></span><span><b>개인정보 처리 안내</b><small>수집·이용 항목 및 처리방침 보기</small></span><i data-icon="chevron"></i></button>
-          </div>
+</div>
           <button id="futureDepartureBtn"><span data-icon="clock"></span><span><b>다른시간 출발</b><small>출발시간별 예상 소요시간</small></span><i data-icon="chevron"></i></button>
           <button id="voiceGuideSettingBtn" aria-expanded="false"><span data-icon="volume"></span><span><b>음성 가이드 / 캐릭터</b><small id="voiceCharacterLabel">다임 보이스</small></span><i data-icon="chevron"></i></button>
           <div id="voiceGuidePanel" class="setting-expand hidden">
@@ -366,8 +372,8 @@
     <!-- DRIVE SEARCH PLACE TYPE CHOICE -->
     <div id="drivePlaceChoiceModal" class="modal hidden place-choice-modal">
       <section class="simple-sheet place-choice-sheet">
-        <header><b>장소를 어떻게 사용할까요?</b><button id="drivePlaceChoiceClose" class="circle-btn"><span data-icon="close"></span></button></header>
-        <p><b id="drivePlaceChoiceName">선택한 장소</b>를 경유지로 추가하거나 최종 목적지로 변경할 수 있습니다.</p>
+        <header><b>이 장소를 어떻게 설정할까요?</b><button id="drivePlaceChoiceClose" class="circle-btn"><span data-icon="close"></span></button></header>
+        <p><b id="drivePlaceChoiceName">선택한 장소</b>를 경유지로 추가할지, 최종 목적지로 변경할지 선택해 주세요.</p>
         <div class="place-choice-actions">
           <button id="drivePlaceAsWaypoint" type="button"><span data-icon="routes"></span><span><b>경유지로 추가</b><small>현재 목적지는 그대로 유지</small></span></button>
           <button id="drivePlaceAsDestination" type="button"><span data-icon="location"></span><span><b>최종 목적지로 변경</b><small>기존 경유지는 초기화</small></span></button>
@@ -487,6 +493,6 @@
   </main>
 
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.5.8.1"></script>
+  <script type="module" src="/app.js?v=7.5.8.2"></script>
 </body>
 </html>
