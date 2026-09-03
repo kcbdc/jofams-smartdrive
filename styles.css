@@ -409,3 +409,9 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 @keyframes jofamsArDriveBob{0%{transform:translateY(0) scale(1)}100%{transform:translateY(-5px) scale(1.018)}}
 @media (orientation:landscape){.drive-ar-character{bottom:96px;width:88px;height:68px}}
 @media (prefers-reduced-motion:reduce){.drive-ar-character.moving img{animation:none}}
+
+/* 7.5.7.2 AR HUD/ribbon restoration */
+.ar-character-car{--ar-car-y:-3vh!important}
+.ar-character-car.moving img{animation:jofamsArHudBob .72s ease-in-out infinite alternate}
+@keyframes jofamsArHudBob{0%{translate:0 0}100%{translate:0 -4px}}
+@media (prefers-reduced-motion:reduce){.ar-character-car.moving img{animation:none}}

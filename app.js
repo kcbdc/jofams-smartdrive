@@ -245,7 +245,7 @@ function makeDestMarker(){const el=document.createElement('div');el.className='d
 function updateUserMarkerMotion(){
   const moving=Boolean(state.tripStartedAt)&&Math.max(0,Number(state.user?.speed)||0)>.35;
   const el=state.userMarker?.getElement();if(el)el.classList.toggle('jofams-car-moving',moving);
-  const ar=$('driveArCharacter');if(ar)ar.classList.toggle('moving',moving&&state.arCameraMode);
+  const ar=$('driveArCharacter');if(ar)ar.classList.toggle('moving',moving&&state.arCameraMode);const arMarker=$('arCharacterMarker');if(arMarker)arMarker.classList.toggle('moving',moving&&state.arRunning);
   const img=$('driveArCharacterImg');if(img)img.src=characterDefs[state.character].rear||characterDefs[state.character].marker;
 }
 function ensureUserMarker(){if(!state.user||!state.map)return;if(!state.userMarker)state.userMarker=makeCarMarker().setLngLat([state.user.lng,state.user.lat]).addTo(state.map);else state.userMarker.setLngLat([state.user.lng,state.user.lat]);updateUserMarkerMotion()}
@@ -539,44 +539,96 @@ async function searchOrigins(q){
 }
 
 async function startAR(){
-  if(state.arCameraMode){stopAR();return}
+  if(state.arRunning)return;
   if(!state.route||!state.destination){toast('먼저 길안내를 시작해 주세요.');return}
   if(!navigator.mediaDevices?.getUserMedia){toast('이 기기에서는 AR 카메라를 지원하지 않습니다.');return}
   try{
-    state.arStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
-    const video=$('driveArCamera');video.srcObject=state.arStream;await video.play().catch(()=>{});
-    state.arCameraMode=true;state.arRunning=true;$('driveView').classList.add('ar-camera-active');updateUserMarkerMotion();
-    const b=$('arOpenBtn');if(b)b.textContent='지도';const m=$('driveArBtn');if(m){const label=m.querySelector('b');if(label)label.textContent='지도 보기'}
-    updateUserMarkerMotion();toast('AR 카메라 안내로 전환했습니다.',1200);
+    state.arStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
+    $('arVideo').srcObject=state.arStream;state.arRunning=true;$('arView').classList.remove('hidden');$('bottomNav').classList.add('hidden');$('driveMenu').classList.add('hidden');
+    $('arCharacterCar').src=characterDefs[state.character].marker;updateAROverlay();drawARScene();
   }catch(e){console.warn(e);toast('카메라 권한을 허용해 주세요.',3000)}
 }
 function stopAR(){
-  state.arRunning=false;state.arCameraMode=false;$('driveView')?.classList.remove('ar-camera-active');
-  const video=$('driveArCamera');if(video){try{video.pause()}catch{}video.srcObject=null}
+  if(state.arFrame)cancelAnimationFrame(state.arFrame);state.arFrame=0;state.arRunning=false;$('arView')?.classList.add('hidden');
   if(state.arStream){state.arStream.getTracks().forEach(t=>t.stop());state.arStream=null}
-  const b=$('arOpenBtn');if(b)b.textContent='AR';const m=$('driveArBtn');if(m){const label=m.querySelector('b');if(label)label.textContent='AR 안내'}
+  if(!$('driveView')?.classList.contains('hidden'))$('bottomNav')?.classList.add('hidden');
 }
-function updateAROverlay(){updateUserMarkerMotion()}
-function drawARScene(){/* 7.5.7: 별도 AR HUD/리본 제거. 일반 안내 UI 위에 후면 카메라만 표시한다. */}
+function updateAROverlay(){
+  if(!state.route||!state.user)return;const idx=state.currentRouteIndex||0,total=state.routeCumulative.at(-1)||state.route.distance||1,done=state.routeCumulative[idx]||0,remain=Math.max(0,total-done),ratio=Math.max(0,Math.min(1,remain/total)),remainSec=(state.route.duration||0)*ratio;
+  const guides=(state.route.guides||[]).filter(x=>Number(x.routeIndex)>idx+1),g=guides[0];
+  if(g){const d=distanceAlong(idx,g.routeIndex);$('arTurnIcon').innerHTML=turnSvg(g.type);$('arTurnDistance').textContent=km(d);$('arCenterDistance').textContent=km(d);$('arTurnRoad').textContent=g.name||g.guidance||'다음 안내'}
+  else{$('arTurnIcon').innerHTML=turnSvg(0);$('arTurnDistance').textContent=km(remain);$('arCenterDistance').textContent=km(remain);$('arTurnRoad').textContent='목적지까지 직진'}
+  $('arSpeed').textContent=Math.max(0,Math.round((state.user.speed||0)*3.6));$('arEta').textContent=eta(remainSec);$('arRemain').textContent=km(remain);$('arCharacterCar').src=characterDefs[state.character].rear||characterDefs[state.character].marker;updateUserMarkerMotion();
+  const marker=$('arCharacterMarker');if(marker){const near=g?Math.max(0,Math.min(1,1-distanceAlong(idx,g.routeIndex)/650)):0;marker.classList.add('rear-facing');marker.style.setProperty('--ar-car-x','0px');marker.style.setProperty('--ar-car-y','-3vh')}
+}
+function drawARScene(){
+  if(!state.arRunning)return;
+  const canvas=$('arCanvas'),rect=canvas.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1);
+  const w=Math.max(1,Math.round(rect.width*dpr)),h=Math.max(1,Math.round(rect.height*dpr));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}
+  const ctx=canvas.getContext('2d');ctx.clearRect(0,0,w,h);ctx.save();ctx.scale(dpr,dpr);
+  const W=rect.width,H=rect.height;
+  // MVP 7.5: AR 화살표는 완전히 제거하고, 샘플처럼 반짝이는 파란 주행 리본이 전방으로 길게 뻗어가도록 구성한다.
+  // 소실점은 화면 52% 부근으로 내려 기존보다 더 낮고 안정적인 시야각을 만든다.
+  const horizon=H*.685,bottom=H*.985;
+  const idx=state.currentRouteIndex||0;
+  // MVP 7.5 AR 정렬 보정: 회전 안내와 무관하게 유도 리본 중심축은 항상 화면 정중앙을 유지한다.
+  // 유도 구역 전체 폭은 화면 폭의 1/3을 넘지 않도록 제한한다.
+  const centerX=()=>W/2;
+  const maxHalfWidth=W/6; // 전체 폭 최대 W/3
+  const base=new Path2D(),topHalf=Math.max(6,W*.014),bottomHalf=Math.min(W*.145,maxHalfWidth);
+  base.moveTo(centerX()-topHalf,horizon);
+  base.lineTo(centerX()+topHalf,horizon);
+  base.lineTo(centerX()+bottomHalf,bottom);
+  base.lineTo(centerX()-bottomHalf,bottom);
+  base.closePath();
+  const baseGrad=ctx.createLinearGradient(0,horizon,0,bottom);
+  baseGrad.addColorStop(0,'rgba(82,220,255,.10)');
+  baseGrad.addColorStop(.35,'rgba(54,193,255,.22)');
+  baseGrad.addColorStop(.74,'rgba(36,151,255,.32)');
+  baseGrad.addColorStop(1,'rgba(22,112,255,.42)');
+  ctx.save();ctx.shadowColor='rgba(26,173,255,.28)';ctx.shadowBlur=28;ctx.fillStyle=baseGrad;ctx.fill(base);ctx.restore();
 
-/* ---------- DRIVE ---------- */
-function saveTripHistory(){try{localStorage.setItem(TRIP_HISTORY,JSON.stringify(state.tripHistory.slice(0,50)))}catch{}}
-function addTripHistory(entry){state.tripHistory=[entry,...state.tripHistory].slice(0,50);saveTripHistory();updateTripHistorySummary()}
-function updateTripHistorySummary(){if($('tripHistorySummary'))$('tripHistorySummary').textContent=state.tripHistory.length?`최근 ${state.tripHistory.length}건 저장`:'주행 기록이 없습니다.'}
-function openInfoModal(title,html){$('infoModalTitle').textContent=title;$('infoModalBody').innerHTML=html;$('infoModal').classList.remove('hidden');applyIcons($('infoModalBody'))}
-function closeInfoModal(){$('infoModal').classList.add('hidden')}
+  const core=new Path2D(),topCore=Math.max(4,W*.007),bottomCore=Math.min(W*.072,maxHalfWidth*.52);
+  core.moveTo(centerX()-topCore,horizon);
+  core.lineTo(centerX()+topCore,horizon);
+  core.lineTo(centerX()+bottomCore,bottom);
+  core.lineTo(centerX()-bottomCore,bottom);
+  core.closePath();
+  const coreGrad=ctx.createLinearGradient(0,horizon,0,bottom);
+  coreGrad.addColorStop(0,'rgba(180,245,255,.24)');
+  coreGrad.addColorStop(.4,'rgba(108,226,255,.28)');
+  coreGrad.addColorStop(.82,'rgba(56,186,255,.32)');
+  coreGrad.addColorStop(1,'rgba(34,146,255,.38)');
+  ctx.fillStyle=coreGrad;ctx.fill(core);
 
-/* ---------- OTHER DEPARTURE TIME / AI ETA ---------- */
-function toLocalDateInput(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`}
-function setFutureDefaultTime(){
-  const d=new Date(Date.now()+30*60*1000),rounded=Math.ceil(d.getMinutes()/10)*10;
-  if(rounded>=60){d.setHours(d.getHours()+1);d.setMinutes(0)}else d.setMinutes(rounded);
-  const h=d.getHours(),ampm=h>=12?'PM':'AM',h12=h%12||12;
-  state.futureAmPm=ampm;
-  if($('futureHour'))$('futureHour').value=String(h12);
-  if($('futureMinute'))$('futureMinute').value=String(Math.floor(d.getMinutes()/10)*10);
-  document.querySelectorAll('[data-future-ampm]').forEach(b=>b.classList.toggle('active',b.dataset.futureAmpm===ampm));
-  if($('futureDateInput')){$('futureDateInput').min=toLocalDateInput(new Date());$('futureDateInput').value=toLocalDateInput(d)}
+  const shine=new Path2D(),shineTop=Math.max(2,W*.0032),shineBottom=Math.min(W*.020,maxHalfWidth*.18);
+  shine.moveTo(centerX()-shineTop,horizon);
+  shine.lineTo(centerX()+shineTop,horizon);
+  shine.lineTo(centerX()+shineBottom,bottom);
+  shine.lineTo(centerX()-shineBottom,bottom);
+  shine.closePath();
+  const shineGrad=ctx.createLinearGradient(0,horizon,0,bottom);
+  shineGrad.addColorStop(0,'rgba(255,255,255,.36)');
+  shineGrad.addColorStop(.42,'rgba(209,248,255,.22)');
+  shineGrad.addColorStop(1,'rgba(255,255,255,.08)');
+  ctx.fillStyle=shineGrad;ctx.fill(shine);
+
+  const blocks=14;
+  for(let i=0;i<blocks;i++){
+    const t0=i/blocks,t1=Math.min(1,t0+.78/blocks);
+    const y0=horizon+(bottom-horizon)*Math.pow(t0,.88),y1=horizon+(bottom-horizon)*Math.pow(t1,.88);
+    const x0=centerX(),x1=centerX();
+    const w0=Math.max(6,topHalf+(bottomHalf-topHalf)*t0),w1=Math.max(8,topHalf+(bottomHalf-topHalf)*t1);
+    const p=new Path2D();
+    p.moveTo(x0-w0*.92,y0);p.lineTo(x0+w0*.92,y0);p.lineTo(x1+w1*.86,y1);p.lineTo(x1-w1*.86,y1);p.closePath();
+    const alpha=.02+.055*Math.pow(t1,1.15);
+    const g=ctx.createLinearGradient(0,y0,0,y1);
+    g.addColorStop(0,`rgba(255,255,255,${alpha*.55})`);
+    g.addColorStop(1,`rgba(113,236,255,${alpha})`);
+    ctx.fillStyle=g;ctx.fill(p);
+  }
+
+  ctx.restore();state.arFrame=requestAnimationFrame(drawARScene)
 }
 function openFutureDeparture(){
   closeMy();
@@ -1123,9 +1175,23 @@ async function requestCameraPermission(){
 }
 async function showPermissionGate(){
   const gate=$('permissionGate');if(!gate)return;
-  const loc=await permissionStatus('geolocation'),cam=await permissionStatus('camera');
-  state.permissionLocationGranted=loc==='granted';state.permissionCameraGranted=cam==='granted';permissionButtonState('location',state.permissionLocationGranted);permissionButtonState('camera',state.permissionCameraGranted);
-  if(state.permissionLocationGranted&&state.permissionCameraGranted){gate.classList.add('hidden');return}
+  let locGranted=false,camGranted=false;
+  try{
+    if(window.JofamsPermissionBridge?.isNativePermissionBridgeAvailable?.()){
+      locGranted=Boolean(window.JofamsPermissionBridge.hasLocationPermission());
+      camGranted=Boolean(window.JofamsPermissionBridge.hasCameraPermission());
+    }else{
+      const [loc,cam]=await Promise.all([permissionStatus('geolocation'),permissionStatus('camera')]);
+      locGranted=loc==='granted';camGranted=cam==='granted';
+    }
+  }catch{
+    const [loc,cam]=await Promise.all([permissionStatus('geolocation'),permissionStatus('camera')]);
+    locGranted=loc==='granted';camGranted=cam==='granted';
+  }
+  state.permissionLocationGranted=locGranted;state.permissionCameraGranted=camGranted;
+  permissionButtonState('location',locGranted);permissionButtonState('camera',camGranted);
+  // 이미 두 권한이 허용된 사용자는 이후 접속에서 권한 게이트를 다시 노출하지 않는다.
+  if(locGranted&&camGranted){gate.classList.add('hidden');return}
   gate.classList.remove('hidden');
 }
 function closePermissionGate(){$('permissionGate')?.classList.add('hidden')}
