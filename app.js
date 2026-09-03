@@ -1170,6 +1170,30 @@ async function loginGoogle(){
     state.firebase.user=result.user;state.loginPending=false;renderProfile();await hydrateAuthenticatedUser();toast('로그인되었습니다.');
   }catch(e){state.loginPending=false;if(e.code==='auth/popup-blocked'||e.message==='timeout')toast('로그인 창을 다시 열어 주세요.');else toast('Google 로그인에 실패했습니다.');resetLoginButton()}
 }
+async function logout(){
+  if(!state.firebase.ready){state.firebase.user=null;renderProfile();return}
+  try{await state.firebase.mods.authMod.signOut(state.firebase.auth)}catch(e){console.warn('Firebase logout failed',e)}
+  state.firebase.user=null;state.loginPending=false;resetLoginButton();renderProfile();
+}
+function renderProfile(){
+  const u=state.firebase.user,wrap=$('profilePhoto')?.closest('.profile-photo');
+  const loginBtn=$('googleLoginBtn'),logoutBtn=$('logoutBtn'),name=$('profileName'),email=$('profileEmail'),photo=$('profilePhoto');
+  if(loginBtn)loginBtn.classList.toggle('hidden',!!u);
+  if(logoutBtn)logoutBtn.classList.toggle('hidden',!u);
+  if(u){
+    if(name)name.textContent=u.displayName||'사용자';
+    if(email)email.textContent=u.email||'';
+    if(photo)photo.src=u.photoURL||characterDefs[state.character].avatar;
+    wrap?.classList.toggle('google-photo',Boolean(u.photoURL));
+  }else{
+    if(name)name.textContent='조팸스 드라이버';
+    if(email)email.textContent='Google 로그인으로 동기화할 수 있어요.';
+    if(photo)photo.src=characterDefs[state.character].avatar;
+    wrap?.classList.remove('google-photo');
+  }
+  updateAdminUI();
+}
+
 async function saveCloudPrefs(){if(!state.firebase.user)return;try{const {fsMod}=state.firebase.mods;await fsMod.setDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'),{character:state.character,voiceVolume:state.voiceVolume,home:state.savedPlaces.home,work:state.savedPlaces.work,updatedAt:fsMod.serverTimestamp()},{merge:true})}catch{}}
 async function loadCloudPrefs(){if(!state.firebase.user)return;try{const {fsMod}=state.firebase.mods,s=await fsMod.getDoc(fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','preferences'));if(s.exists()){const p=s.data();if(p.character&&characterDefs[p.character])state.character=p.character;if(Number.isFinite(Number(p.voiceVolume)))state.voiceVolume=Number(p.voiceVolume);state.savedPlaces.home=p.home||state.savedPlaces.home;state.savedPlaces.work=p.work||state.savedPlaces.work;syncCharacterUI();updateVolumeUI();updateSavedLabels();saveLocalSettings()}}catch{}}
 async function saveCloudFavorites(){if(!state.firebase.user)return;try{const {fsMod}=state.firebase.mods,ref=fsMod.doc(state.firebase.db,'users',state.firebase.user.uid,'settings','favorites');await fsMod.setDoc(ref,{items:state.favorites,updatedAt:fsMod.serverTimestamp()},{merge:true})}catch{}}
@@ -1286,4 +1310,19 @@ function bindUI(){
 
 window.addEventListener('orientationchange',()=>setTimeout(tryLandscapeFullscreen,180));window.addEventListener('resize',()=>{applyNightMode();if(state.map)setTimeout(()=>state.map.resize(),80)});document.addEventListener('visibilitychange',()=>{if(!document.hidden){applyNightMode();if(state.tripStartedAt)liveRouteRefresh()}});
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
-applyIcons();loadLocal();bindUI();applyNightMode();initMap();if(!firebaseConfigured()){loadLocalUserSettings();Promise.all([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents(),loadUserSettings()]);}initFirebase();renderProfile();updateOriginUI();updateTripHistorySummary();setView('home');if('speechSynthesis'in window){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices()}setTimeout(showPermissionGate,180);
+function bootstrapApp(){
+  try{applyIcons()}catch(e){console.warn('applyIcons failed',e)}
+  try{loadLocal()}catch(e){console.warn('loadLocal failed',e)}
+  try{bindUI()}catch(e){console.error('UI binding failed',e);toast('화면 초기화 오류가 복구되었습니다. 새로고침해 주세요.',3500)}
+  try{applyNightMode()}catch(e){console.warn('night mode failed',e)}
+  Promise.resolve().then(()=>initMap()).catch(e=>console.warn('map init failed',e));
+  if(!firebaseConfigured()){
+    try{loadLocalUserSettings()}catch{}
+    Promise.allSettled([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents(),loadUserSettings()]);
+  }
+  Promise.resolve().then(()=>initFirebase()).catch(e=>console.warn('firebase init failed',e));
+  try{renderProfile();updateOriginUI();updateTripHistorySummary();setView('home')}catch(e){console.error('initial render failed',e)}
+  if('speechSynthesis'in window){try{speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices()}catch{}}
+  setTimeout(showPermissionGate,180);
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootstrapApp,{once:true});else bootstrapApp();

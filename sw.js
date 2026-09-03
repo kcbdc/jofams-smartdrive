@@ -1,6 +1,6 @@
-const CACHE='jofams-navi-7-5-7-20260903';
+const CACHE='jofams-navi-7-5-7-1-20260903';
 const STATIC=[
-  '/','/index.html','/styles.css','/app.js','/manifest.webmanifest',
+  '/manifest.webmanifest',
   '/assets/daim.png','/assets/sunsik.png','/assets/hunmin.png',
   '/assets/daim_car.png','/assets/sunsik_car.png','/assets/hunmin_car.png',
   '/assets/daim_car_marker.png','/assets/sunsik_car_marker.png','/assets/hunmin_car_marker.png',
