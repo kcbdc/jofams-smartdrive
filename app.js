@@ -870,6 +870,16 @@ function effectiveSpeedLimit(idx,seg){
     }
     if(camBest)return Number(camBest.maxspeed)||0;
   }
+  // 현재 경로에 스냅된 전방 단속카메라가 이미 안내 중이면 그 제한속도를 보조값으로 표시한다.
+  let routeCam=null,routeCamGap=Infinity;
+  for(const e of (state.safetyEvents||[])){
+    if(!['speed_camera','signal_speed_camera','traffic_camera','mobile_camera'].includes(e.type)||!(Number(e.maxspeed)>0))continue;
+    const ri=Number(e.routeIndex);if(!Number.isFinite(ri))continue;
+    const gap=ri-idx;if(gap<-3||gap>80)continue;
+    if(state.user&&Number.isFinite(Number(e.lat))&&Number.isFinite(Number(e.lng))){const d=hav(state.user.lat,state.user.lng,Number(e.lat),Number(e.lng));if(d>1200)continue}
+    if(Math.abs(gap)<routeCamGap){routeCam=e;routeCamGap=Math.abs(gap)}
+  }
+  if(routeCam)return Number(routeCam.maxspeed)||0;
   return 0;
 }
 function updateProgressUI(idx){
@@ -1168,7 +1178,8 @@ async function removeFavoriteAt(index){
 function recentId(p){return favoriteId(p)}
 async function dbRecentRequest(method,place=null){
   const u=new URL('/api/recents',location.origin);u.searchParams.set('owner',placeOwnerKey());
-  const opt={method,headers:{'content-type':'application/json'}};if(place)opt.body=JSON.stringify({owner:placeOwnerKey(),recentId:recentId(place),place});
+  if(method==='DELETE'&&place)u.searchParams.set('recentId',recentId(place));
+  const opt={method,headers:{'content-type':'application/json'}};if(place&&method!=='DELETE')opt.body=JSON.stringify({owner:placeOwnerKey(),recentId:recentId(place),place});
   const r=await fetch(u,opt);const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`recents DB HTTP ${r.status}`);return d
 }
 async function saveRecentDestination(place){
@@ -1181,7 +1192,17 @@ async function loadDbRecents(){
 function renderRecentDestinations(){
   const box=$('recentDestinationList');if(!box)return;
   const items=(state.recentDestinations||[]).slice(0,6);if(!items.length){box.innerHTML='<div class="recent-empty">최근 목적지가 없습니다.</div>';return}
-  box.innerHTML=items.map((x,i)=>`<button class="recent-item" data-recent-index="${i}"><span class="recent-dot ${i?'blue':''}"></span><span><b>${escapeHtml(x.name||'목적지')}</b><small>${escapeHtml(x.address||'')}</small></span><i data-icon="chevron"></i></button>`).join('');applyIcons(box);box.querySelectorAll('[data-recent-index]').forEach(b=>b.onclick=()=>chooseDestination(items[Number(b.dataset.recentIndex)]));
+  box.innerHTML=items.map((x,i)=>`<div class="recent-row"><button class="recent-item" data-recent-index="${i}"><span class="recent-dot ${i?'blue':''}"></span><span><b>${escapeHtml(x.name||'목적지')}</b><small>${escapeHtml(x.address||'')}</small></span><i data-icon="chevron"></i></button><button type="button" class="recent-delete-btn" data-recent-delete="${i}" aria-label="최근 목적지 삭제">삭제</button></div>`).join('');applyIcons(box);box.querySelectorAll('[data-recent-index]').forEach(b=>b.onclick=()=>chooseDestination(items[Number(b.dataset.recentIndex)]));box.querySelectorAll('[data-recent-delete]').forEach(b=>b.onclick=e=>{e.stopPropagation();deleteRecentDestinationAt(Number(b.dataset.recentDelete),items)});
+}
+async function deleteRecentDestinationAt(index,items=state.recentDestinations){
+  const p=items?.[index];if(!p)return;const id=p.id||recentId(p);state.recentDestinations=(state.recentDestinations||[]).filter(x=>(x.id||recentId(x))!==id);saveLocalRecents();renderRecentDestinations();
+  try{await dbRecentRequest('DELETE',p)}catch(e){console.warn('recent DB delete failed',e);toast('기기에서는 삭제했습니다. 서버 삭제는 다시 시도해주세요.',2600);return}
+  toast('최근 목적지를 삭제했습니다.');
+}
+async function clearRecentDestinations(){
+  if(!(state.recentDestinations||[]).length)return;if(!confirm('최근 목적지를 모두 삭제할까요?'))return;state.recentDestinations=[];saveLocalRecents();renderRecentDestinations();
+  try{await dbRecentRequest('DELETE')}catch(e){console.warn('recent DB clear failed',e);toast('기기에서는 전체 삭제했습니다. 서버 삭제는 다시 시도해주세요.',2600);return}
+  openRecentDestinationAll();toast('최근 목적지를 모두 삭제했습니다.');
 }
 async function persistCurrentUserDataIfDbEmpty(placeResult,favResult,recentResult){
   if(placeResult?.ok&&placeResult.count===0){for(const kind of ['home','work'])if(pointValid(state.savedPlaces[kind]))await savePlaceToDb(kind,state.savedPlaces[kind]).catch(()=>{})}
@@ -1432,7 +1453,7 @@ function openDestinationManager(){
   closeHamburgerMenu();openInfoModal('집·회사 위치 관리',`<div class="menu-choice-grid"><button id="manageHomeFromMenu"><b>집 위치 관리</b><small>${escapeHtml(state.savedPlaces.home?.name||'등록된 집 없음')}</small></button><button id="manageWorkFromMenu"><b>회사 위치 관리</b><small>${escapeHtml(state.savedPlaces.work?.name||'등록된 회사 없음')}</small></button></div>`);
   $('manageHomeFromMenu').onclick=()=>{closeInfoModal();openPlaceModal('home')};$('manageWorkFromMenu').onclick=()=>{closeInfoModal();openPlaceModal('work')};
 }
-function openRecentDestinationAll(){closeHamburgerMenu();const items=state.recentDestinations||[];openInfoModal('최근 목적지 전체보기',items.length?`<div class="favorite-list">${items.map((x,i)=>`<article class="favorite-list-item"><div><b>${escapeHtml(x.name||'목적지')}</b><small>${escapeHtml(x.address||'')}</small></div><div class="favorite-item-actions"><button data-recent-go="${i}">길찾기</button></div></article>`).join('')}</div>`:'<div class="empty-info">최근 목적지가 없습니다.</div>');document.querySelectorAll('[data-recent-go]').forEach(b=>b.onclick=()=>{const p=items[Number(b.dataset.recentGo)];closeInfoModal();if(p)chooseDestination(p)})}
+function openRecentDestinationAll(){closeHamburgerMenu();const items=state.recentDestinations||[];const html=items.length?`<div class="recent-all-toolbar"><span>총 ${items.length}건</span><button type="button" id="clearRecentDestinationsBtn" class="danger-text-btn">전체 삭제</button></div><div class="favorite-list">${items.map((x,i)=>`<article class="favorite-list-item"><div><b>${escapeHtml(x.name||'목적지')}</b><small>${escapeHtml(x.address||'')}</small></div><div class="favorite-item-actions"><button data-recent-go="${i}">길찾기</button><button data-recent-delete-all="${i}" class="danger">삭제</button></div></article>`).join('')}</div>`:'<div class="empty-info">최근 목적지가 없습니다.</div>';openInfoModal('최근 목적지 전체보기',html);document.querySelectorAll('[data-recent-go]').forEach(b=>b.onclick=()=>{const p=items[Number(b.dataset.recentGo)];closeInfoModal();if(p)chooseDestination(p)});document.querySelectorAll('[data-recent-delete-all]').forEach(b=>b.onclick=async()=>{await deleteRecentDestinationAt(Number(b.dataset.recentDeleteAll),items);openRecentDestinationAll()});const clear=$('clearRecentDestinationsBtn');if(clear)clear.onclick=clearRecentDestinations}
 function openTrafficDetail(){closeHamburgerMenu();const seg=(state.route?.roadSegments||[]).find(s=>state.currentRouteIndex>=Number(s.startIndex||0)&&state.currentRouteIndex<=Number(s.endIndex||0));const info=trafficClassFromValues(seg?.trafficSpeed,seg?.trafficState);openInfoModal('실시간 교통정보 상세',`<div class="info-card"><h3>${escapeHtml(info.label)}</h3><p>${seg?.name?`현재 구간: <b>${escapeHtml(seg.name)}</b>`:'주행 중 경로를 선택하면 현재 구간 교통상태가 표시됩니다.'}</p><p>${Number(seg?.trafficSpeed)>0?`평균 통행속도 약 <b>${Math.round(Number(seg.trafficSpeed))}km/h</b>`:'현재 제공되는 평균속도 정보가 없습니다.'}</p></div>`)}
 function openRoutePrioritySettings(){closeHamburgerMenu();renderUserSettingsUI();$('routePriorityModal')?.classList.remove('hidden')}
 function openCameraAlertSettings(){closeHamburgerMenu();renderUserSettingsUI();$('cameraAlertModal')?.classList.remove('hidden')}
