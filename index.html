@@ -8,7 +8,7 @@
   <title>조팸스 내비</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.5.7.8" />
+  <link rel="stylesheet" href="/styles.css?v=7.5.8.1" />
 </head>
 <body>
   <main id="app">
@@ -67,12 +67,13 @@
       <div class="route-sheet">
         <div class="route-addresses">
           <button id="routeOriginBtn" class="route-address-row" type="button"><span class="point start"></span><small>출발</small><b id="routeAddressOrigin">내 위치</b><i data-icon="chevron"></i></button>
-          <div><span class="point end"></span><small>도착</small><b id="routeAddressDest">목적지</b></div>
+          <div class="route-destination-row"><span class="point end"></span><small>도착</small><b id="routeAddressDest">목적지</b><button id="routeAddWaypointBtn" class="route-add-waypoint-btn" type="button" aria-label="경유지 추가">+</button></div>
         </div>
+        <div id="routeSelectedWaypoints" class="route-selected-waypoints hidden"></div>
         <div id="routePlanEta" class="route-plan-eta">출발지를 선택하면 예상 도착시간을 안내합니다.</div>
         <div id="routeCards" class="route-cards"></div>
         <button id="startBtn" class="primary-btn">안내 시작</button>
-        <div id="autoStartHint" class="auto-start-hint">3초 후 자동으로 안내를 시작합니다.</div>
+        <div id="autoStartHint" class="auto-start-hint">5초 후 자동으로 안내를 시작합니다.</div>
       </div>
     </section>
 
@@ -253,10 +254,11 @@
         <div class="setting-list my-reference-menu">
           <button id="myFavoritesBtn"><span data-icon="star-outline"></span><span><b>즐겨찾기</b><small id="myFavoriteCount">0곳 저장</small></span><i data-icon="chevron"></i></button>
           <button id="tripHistoryBtn"><span data-icon="routes"></span><span><b>주행기록</b><small id="tripHistorySummary">최근 주행 내역</small></span><i data-icon="chevron"></i></button>
-          <div class="my-permission-card">
-            <div class="my-permission-title"><span data-icon="document"></span><span><b>앱 권한 / 개인정보</b><small>위치·카메라 조회 동의 상태</small></span></div>
+          <button id="permissionSettingBtn" aria-expanded="false"><span data-icon="document"></span><span><b>앱 권한 / 개인정보</b><small>위치·카메라 조회 동의 상태</small></span><i data-icon="chevron"></i></button>
+          <div id="permissionSettingPanel" class="setting-expand permission-setting-panel hidden">
             <label class="setting-toggle-row"><span><b>위치정보 조회 동의</b><small id="locationConsentState">동의 · 시스템 권한 확인 중</small></span><input id="locationConsentToggle" type="checkbox" checked><i></i></label>
             <label class="setting-toggle-row"><span><b>카메라 조회 동의</b><small id="cameraConsentState">동의 · 시스템 권한 확인 중</small></span><input id="cameraConsentToggle" type="checkbox" checked><i></i></label>
+            <button id="permissionPrivacyDetailBtn" type="button" class="permission-privacy-detail"><span data-icon="document"></span><span><b>개인정보 처리 안내</b><small>수집·이용 항목 및 처리방침 보기</small></span><i data-icon="chevron"></i></button>
           </div>
           <button id="futureDepartureBtn"><span data-icon="clock"></span><span><b>다른시간 출발</b><small>출발시간별 예상 소요시간</small></span><i data-icon="chevron"></i></button>
           <button id="voiceGuideSettingBtn" aria-expanded="false"><span data-icon="volume"></span><span><b>음성 가이드 / 캐릭터</b><small id="voiceCharacterLabel">다임 보이스</small></span><i data-icon="chevron"></i></button>
@@ -348,6 +350,28 @@
         </div>
         <button id="futurePredictBtn" class="primary-btn future-predict-btn" type="button">AI 소요시간 예측</button>
         <div id="futurePredictionResult" class="future-prediction-result hidden" aria-live="polite"></div>
+      </section>
+    </div>
+
+
+    <!-- WAYPOINT SEARCH -->
+    <div id="waypointSearchModal" class="modal hidden">
+      <section class="simple-sheet waypoint-search-sheet">
+        <header><div><b>경유지 추가</b><small>자동 안내 시작을 잠시 멈췄습니다.</small></div><button id="waypointSearchClose" class="circle-btn"><span data-icon="close"></span></button></header>
+        <div class="search-box compact"><span data-icon="search"></span><input id="waypointSearchInput" placeholder="경유할 장소 또는 주소"><button id="waypointSearchSubmit" type="button"><span data-icon="arrow-right"></span></button></div>
+        <div id="waypointSearchResults" class="search-results"></div>
+      </section>
+    </div>
+
+    <!-- DRIVE SEARCH PLACE TYPE CHOICE -->
+    <div id="drivePlaceChoiceModal" class="modal hidden place-choice-modal">
+      <section class="simple-sheet place-choice-sheet">
+        <header><b>장소를 어떻게 사용할까요?</b><button id="drivePlaceChoiceClose" class="circle-btn"><span data-icon="close"></span></button></header>
+        <p><b id="drivePlaceChoiceName">선택한 장소</b>를 경유지로 추가하거나 최종 목적지로 변경할 수 있습니다.</p>
+        <div class="place-choice-actions">
+          <button id="drivePlaceAsWaypoint" type="button"><span data-icon="routes"></span><span><b>경유지로 추가</b><small>현재 목적지는 그대로 유지</small></span></button>
+          <button id="drivePlaceAsDestination" type="button"><span data-icon="location"></span><span><b>최종 목적지로 변경</b><small>기존 경유지는 초기화</small></span></button>
+        </div>
       </section>
     </div>
 
@@ -463,6 +487,6 @@
   </main>
 
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.5.7.8"></script>
+  <script type="module" src="/app.js?v=7.5.8.1"></script>
 </body>
 </html>

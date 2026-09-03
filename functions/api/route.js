@@ -1,6 +1,7 @@
 export async function onRequestPost({ request, env }) {
   const body = await request.json().catch(()=>({}));
   const origin = body.origin, destination = body.destination;
+  body.waypoints = Array.isArray(body.waypoints) ? body.waypoints.filter(validPoint).slice(0,5) : [];
   if (!validPoint(origin) || !validPoint(destination)) return json({ error:'origin and destination are required' },400);
 
   if (env.KAKAO_REST_API_KEY) {
@@ -25,6 +26,7 @@ async function routeWithKakao(origin,destination,body,env){
     const originValue = Number.isFinite(heading) ? `${origin.lng},${origin.lat},angle=${Math.round((heading+360)%360)}` : `${origin.lng},${origin.lat}`;
     u.searchParams.set('origin', originValue);
     u.searchParams.set('destination', `${destination.lng},${destination.lat}`);
+    if(body.waypoints?.length)u.searchParams.set('waypoints',body.waypoints.map(p=>`${p.lng},${p.lat}`).join('|'));
     const priority = ['RECOMMEND','TIME','DISTANCE','MAIN_ROAD','NO_TRAFFIC_INFO'].includes(body.priority) ? body.priority : 'RECOMMEND';
     u.searchParams.set('priority', priority);
     if (body.avoid) {
@@ -91,7 +93,8 @@ function stripNestedAlternatives(r){const x={...r};delete x.alternatives;return 
 
 async function routeWithOsrm(origin,destination,body){
   try{
-    const url = `https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson&steps=true&alternatives=3`;
+    const via=(body.waypoints||[]).map(p=>`${p.lng},${p.lat}`).join(';'),coords=[`${origin.lng},${origin.lat}`,via,`${destination.lng},${destination.lat}`].filter(Boolean).join(';');
+    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true&alternatives=${body.waypoints?.length?0:3}`;
     const r = await fetch(url,{headers:{'User-Agent':'JofamsSmartDrive/6.0'}});
     if(!r.ok)return {ok:false,error:`OSRM HTTP ${r.status}`};
     const d=await r.json();const parsed=(d.routes||[]).map((route,i)=>parseOsrmRoute(route,i));if(!parsed.length)return {ok:false,error:'route not found'};

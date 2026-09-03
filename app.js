@@ -17,7 +17,7 @@ const state = {
   map:null,mapReady:false,pendingRouteDraw:null,mapFallbackTried:false,mapWatchdog:0,user:null, destination:null, routeOptions:[], route:null, selectedRoute:0,
   userMarker:null,destMarker:null,originMarker:null,watchId:null,character:'daim',voiceVolume:.8,sound:true,
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
-  savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,
+  savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
   tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,
@@ -369,7 +369,7 @@ async function searchPlaces(q,target='searchResults'){
   try{const u=new URL('/api/search',location.origin);u.searchParams.set('q',q.trim());if(state.user){u.searchParams.set('lng',state.user.lng);u.searchParams.set('lat',state.user.lat)}const r=await fetch(u);if(!r.ok)throw new Error('검색 오류');const d=await r.json();const items=d.items||[];box.innerHTML='';if(!items.length){box.innerHTML='<button class="search-result"><b>검색 결과가 없습니다.</b></button>';return}items.slice(0,8).forEach(x=>{const b=document.createElement('button');b.className='search-result';b.innerHTML=`<b>${escapeHtml(x.name)}</b><small>${escapeHtml(x.address||x.category||'')}${x.distance!==null&&x.distance!==undefined&&x.distance!==''&&Number.isFinite(Number(x.distance))?` · ${km(Number(x.distance))}`:''}</small>`;b.onclick=()=>target==='placeSearchResults'?selectPlaceCandidate(x):chooseDestination(x);box.appendChild(b)})}catch(e){box.innerHTML='<button class="search-result"><b>검색 서버 연결을 확인해 주세요.</b></button>'}
 }
 async function chooseDestination(item){
-  state.destination=normalizedPlace(item);
+  state.waypoints=[];renderRouteWaypoints();state.destination=normalizedPlace(item);
   if(pointValid(state.destination))saveRecentDestination(state.destination).catch(e=>console.warn('recent destination save failed',e));
   setDestinationMarker();
   $('searchResults').classList.add('hidden');
@@ -517,7 +517,7 @@ function updateCameraAlertSetting(kind,value){if(!['speed','signal'].includes(ki
 
 /* ---------- ROUTES ---------- */
 async function routeRequest(priority='RECOMMEND',avoid=null){
-  const o=state.originMode==='current'?(state.user||state.origin):(state.origin||state.user);const body={origin:{lng:o.lng,lat:o.lat,heading:state.originMode==='current'?state.user?.heading:null},destination:{lng:state.destination.lng,lat:state.destination.lat},priority,alternatives:false};if(avoid)body.avoid=avoid;
+  const o=state.originMode==='current'?(state.user||state.origin):(state.origin||state.user);const body={origin:{lng:o.lng,lat:o.lat,heading:state.originMode==='current'?state.user?.heading:null},destination:{lng:state.destination.lng,lat:state.destination.lat},waypoints:(state.waypoints||[]).filter(pointValid).map(x=>({lng:x.lng,lat:x.lat,name:x.name||'경유지'})),priority,alternatives:false};if(avoid)body.avoid=avoid;
   const r=await fetch('/api/route',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error('경로 조회 실패');return r.json();
 }
 async function loadRouteOptions(){
@@ -533,9 +533,36 @@ function renderRouteCards(){
   const box=$('routeCards');box.innerHTML='';state.routeOptions.forEach((r,i)=>{const c=characterDefs[r._character],b=document.createElement('button');b.className=`route-card ${i===state.selectedRoute?'selected':''}`;const fare=r.fare?.toll||0;b.innerHTML=`<div class="route-meta"><span class="route-tag ${r._class}">${r._label}</span><strong>${mins(r.duration)}</strong><small>${km(r.distance)} · ${fare?`${fare.toLocaleString()}원`:'통행료 0원'}</small><em>예상 도착 ${eta(r.duration)}</em></div><img src="${c.car}" alt="${c.name} 자동차">`;b.onclick=()=>{selectRoute(i,true);renderRouteCards();scheduleAutoStart()};box.appendChild(b)})
 }
 function selectRoute(index,fit=true){state.selectedRoute=index;state.route=state.routeOptions[index];syncCharacterUI();drawRoute(state.route,{fit});state.routeCumulative=buildCumulative(state.route);state.currentRouteIndex=0;updateRoutePlanEta();loadSafetyEvents(state.route)}
-function scheduleAutoStart(){cancelAutoStart();state.autoStartSeconds=3;updateAutoHint();state.autoStartTimer=setInterval(()=>{state.autoStartSeconds--;if(state.autoStartSeconds<=0){cancelAutoStart();startNavigation()}else updateAutoHint()},1000)}
+function scheduleAutoStart(){cancelAutoStart();state.autoStartSeconds=5;updateAutoHint();state.autoStartTimer=setInterval(()=>{state.autoStartSeconds--;if(state.autoStartSeconds<=0){cancelAutoStart();startNavigation()}else updateAutoHint()},1000)}
 function cancelAutoStart(){if(state.autoStartTimer){clearInterval(state.autoStartTimer);state.autoStartTimer=null}}
 function updateAutoHint(){$('autoStartHint').textContent=state.autoStartSeconds>0?`${state.autoStartSeconds}초 후 자동으로 안내를 시작합니다.`:''}
+
+function renderRouteWaypoints(){
+  const box=$('routeSelectedWaypoints');if(!box)return;
+  const items=(state.waypoints||[]).filter(pointValid);
+  box.classList.toggle('hidden',!items.length);
+  box.innerHTML=items.map((x,i)=>`<div class="selected-waypoint"><span class="point via"></span><small>경유 ${i+1}</small><b>${escapeHtml(x.name||'경유지')}</b><button type="button" data-route-waypoint-remove="${i}" aria-label="경유지 삭제">×</button></div>`).join('');
+  box.querySelectorAll('[data-route-waypoint-remove]').forEach(btn=>btn.onclick=async()=>{cancelAutoStart();state.waypoints.splice(Number(btn.dataset.routeWaypointRemove),1);renderRouteWaypoints();await loadRouteOptions()});
+}
+function openWaypointSearch(){
+  cancelAutoStart();
+  $('waypointSearchInput').value='';$('waypointSearchResults').innerHTML='';$('waypointSearchModal').classList.remove('hidden');
+  setTimeout(()=>$('waypointSearchInput').focus(),80);
+}
+function closeWaypointSearch(resume=true){
+  $('waypointSearchModal').classList.add('hidden');
+  if(resume&&state.route&&!state.tripStartedAt)scheduleAutoStart();
+}
+async function searchWaypointPlaces(q){
+  const box=$('waypointSearchResults');if(!q?.trim())return;
+  box.innerHTML='<button class="search-result"><b>검색 중...</b></button>';if(!state.user)await locate(false);
+  try{
+    const u=new URL('/api/search',location.origin);u.searchParams.set('q',q.trim());if(state.user){u.searchParams.set('lng',state.user.lng);u.searchParams.set('lat',state.user.lat)}
+    const res=await fetch(u);if(!res.ok)throw new Error();const d=await res.json(),items=d.items||[];box.innerHTML='';
+    if(!items.length){box.innerHTML='<button class="search-result"><b>검색 결과가 없습니다.</b></button>';return}
+    items.slice(0,8).forEach(x=>{const b=document.createElement('button');b.className='search-result';b.innerHTML=`<b>${escapeHtml(x.name)}</b><small>${escapeHtml(x.address||x.category||'')}</small>`;b.onclick=async()=>{const p=normalizedPlace(x);if(!pointValid(p))return;state.waypoints=[...(state.waypoints||[]),p].slice(0,5);closeWaypointSearch(false);renderRouteWaypoints();toast(`${p.name}을 경유지로 추가했습니다.`);await loadRouteOptions()};box.appendChild(b)})
+  }catch{box.innerHTML='<button class="search-result"><b>검색 서버 연결을 확인해 주세요.</b></button>'}
+}
 
 
 function updateOriginUI(){
@@ -744,7 +771,7 @@ function bindFutureDepartureUI(){
 
 function openTripHistory(){
   const items=state.tripHistory||[];
-  const html=items.length?`<div class="history-toolbar"><span>총 ${items.length}건</span><button type="button" id="clearTripHistoryBtn" class="danger-text-btn">전체 삭제</button></div><div class="history-list">${items.map((x,i)=>`<article><div><b>${escapeHtml(x.destination||'목적지')}</b><small>${escapeHtml(x.date||'')} · ${km(Number(x.distance)||0)} · ${mins(Number(x.duration)||0)}</small><em>${escapeHtml(characterDefs[x.character]?.name||'')}</em></div><button type="button" class="history-delete-btn" data-trip-delete="${i}" aria-label="주행기록 삭제">삭제</button></article>`).join('')}</div>`:'<div class="empty-info">저장된 주행 기록이 없습니다.</div>';
+  const html=items.length?`<div class="history-toolbar"><span>총 ${items.length}건</span><button type="button" id="clearTripHistoryBtn" class="danger-text-btn">전체 삭제</button></div><div class="history-list">${items.map((x,i)=>`<article><div class="history-copy"><b>${escapeHtml(x.destination||'목적지')}</b><small>${escapeHtml(x.date||'')} · ${km(Number(x.distance)||0)} · ${mins(Number(x.duration)||0)}</small></div><div class="history-actions"><em>${escapeHtml(characterDefs[x.character]?.name||'')}</em><button type="button" class="history-delete-btn" data-trip-delete="${i}" aria-label="주행기록 삭제">삭제</button></div></article>`).join('')}</div>`:'<div class="empty-info">저장된 주행 기록이 없습니다.</div>';
   openInfoModal('주행기록',html);
   const box=$('infoModalBody');
   box?.querySelectorAll('[data-trip-delete]').forEach(btn=>btn.onclick=()=>deleteTripHistoryAt(Number(btn.dataset.tripDelete)));
@@ -821,7 +848,7 @@ function stopNavigation(){
   state.tripStartedAt=0;
   for(const fn of [stopDestinationCycle,stopLiveRouteRefresh,stopAR,stopWatch,cancelAutoStart,clearRouteLayer,clearSafetyMarkers,hideSafetyAlert]){try{fn?.()}catch(e){console.warn('navigation cleanup failed',e)}}
   try{$('driveMenu')?.classList.add('hidden')}catch{}
-  state.safetyEvents=[];state.route=null;state.routeOptions=[];
+  state.safetyEvents=[];state.route=null;state.routeOptions=[];state.waypoints=[];renderRouteWaypoints();
   try{if(state.destMarker){state.destMarker.remove();state.destMarker=null}}catch{state.destMarker=null}
   try{if(state.originMarker){state.originMarker.remove();state.originMarker=null}}catch{state.originMarker=null}
   state.destination=null;state.origin=null;state.originMode='current';
@@ -830,10 +857,15 @@ function stopNavigation(){
   toast('안내를 종료했습니다.');
   if(finishedDestination&&!isFavoritePlace(finishedDestination))setTimeout(()=>{try{openPostDriveFavoritePrompt(finishedDestination)}catch(e){console.warn('favorite prompt failed',e)}},350)
 }
+
+function driveCameraPadding(){
+  const h=Math.max(520,window.innerHeight||720);
+  return {top:Math.round(h*.56),bottom:90,left:0,right:0};
+}
 function updateDriving(force=false){
   if(!state.user||!state.route?.geometry?.length)return;const g=state.route.geometry,idx=nearestIndex(state.user.lng,state.user.lat,g);state.currentRouteIndex=idx;ensureUserMarker();
   const nextPoint=g[Math.min(g.length-1,idx+3)],heading=Number.isFinite(state.user.heading)?state.user.heading:(nextPoint?bearing(state.user.lat,state.user.lng,nextPoint[1],nextPoint[0]):0);
-  state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?55:0,bearing:heading,duration:force?0:650,padding:{top:120,bottom:170,left:0,right:0}});
+  state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?55:0,bearing:heading,duration:force?0:650,padding:driveCameraPadding()});
   updateProgressUI(idx);if(state.arRunning)updateAROverlay();checkOffRoute(idx);
 }
 function hideDestinationBottom(){clearTimeout(state.destinationHideTimer);$('driveBottomDestination')?.classList.add('hidden');$('driveBottomNormal')?.classList.remove('hidden')}
@@ -912,7 +944,7 @@ function recenterDriveMap(){
   if(!state.user)return toast('현재 위치를 확인할 수 없습니다.');
   const g=state.route?.geometry||[],idx=state.currentRouteIndex||0,next=g[Math.min(g.length-1,idx+3)];
   const heading=Number.isFinite(state.user.heading)?state.user.heading:(next?bearing(state.user.lat,state.user.lng,next[1],next[0]):0);
-  state.map?.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?55:0,bearing:heading,duration:350,padding:{top:120,bottom:170,left:0,right:0}});
+  state.map?.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?55:0,bearing:heading,duration:350,padding:driveCameraPadding()});
   toast('현재 위치로 지도를 맞췄습니다.',1200);
 }
 async function reroute(){if(!state.user||!state.destination)return;state.lastRerouteAt=Date.now();toast('경로를 다시 탐색합니다.');speak('경로를 다시 탐색합니다.');try{const spec=routePreferenceSpec(),r=await routeRequest(spec.priority,spec.avoid);state.route={...r,_label:`재탐색 · ${spec.label}`,_character:state.character};state.routeCumulative=buildCumulative(state.route);drawRoute(state.route,{fit:false});loadSafetyEvents(state.route);updateDriving(true)}catch{toast('재탐색에 실패했습니다.') }}
@@ -1054,8 +1086,25 @@ async function searchDriveDestinations(q){
     const u=new URL('/api/search',location.origin);u.searchParams.set('q',q.trim());if(state.user){u.searchParams.set('lng',state.user.lng);u.searchParams.set('lat',state.user.lat)}
     const r=await fetch(u);if(!r.ok)throw new Error('검색 오류');const d=await r.json(),items=d.items||[];box.innerHTML='';
     if(!items.length){box.innerHTML='<button class="search-result"><b>검색 결과가 없습니다.</b></button>';return}
-    items.slice(0,8).forEach(x=>{const b=document.createElement('button');b.className='search-result';b.innerHTML=`<b>${escapeHtml(x.name)}</b><small>${escapeHtml(x.address||x.category||'')}${x.distance!==null&&x.distance!==undefined&&x.distance!==''&&Number.isFinite(Number(x.distance))?` · ${km(Number(x.distance))}`:''}</small>`;b.onclick=()=>changeDestinationWhileDriving(x);box.appendChild(b)})
+    items.slice(0,8).forEach(x=>{const b=document.createElement('button');b.className='search-result';b.innerHTML=`<b>${escapeHtml(x.name)}</b><small>${escapeHtml(x.address||x.category||'')}${x.distance!==null&&x.distance!==undefined&&x.distance!==''&&Number.isFinite(Number(x.distance))?` · ${km(Number(x.distance))}`:''}</small>`;b.onclick=()=>openDrivePlaceChoice(x);box.appendChild(b)})
   }catch(e){box.innerHTML='<button class="search-result"><b>검색 서버 연결을 확인해 주세요.</b></button>'}
+}
+
+function openDrivePlaceChoice(item){
+  const p=normalizedPlace(item);if(!pointValid(p))return;
+  state.pendingDriveSearchPlace=p;$('drivePlaceChoiceName').textContent=p.name||'선택한 장소';$('drivePlaceChoiceModal').classList.remove('hidden');
+}
+function closeDrivePlaceChoice(){state.pendingDriveSearchPlace=null;$('drivePlaceChoiceModal').classList.add('hidden')}
+async function applyDrivePlaceChoice(mode){
+  const p=state.pendingDriveSearchPlace;if(!p)return closeDrivePlaceChoice();
+  state.pendingDriveSearchPlace=null;$('drivePlaceChoiceModal').classList.add('hidden');
+  if(mode==='waypoint'){
+    state.waypoints=[...(state.waypoints||[]),p].slice(0,5);closeDriveSearch();toast(`${p.name}을 경유지로 추가합니다.`);speak('경유지를 추가했습니다. 새로운 경로를 탐색합니다.');
+    state.origin={...state.user,name:'내 위치',address:'현재 GPS 위치'};state.originMode='current';state.lastRerouteAt=Date.now();
+    try{const spec=routePreferenceSpec(),nr=await routeRequest(spec.priority,spec.avoid);state.route={...nr,_label:`경유지 추가 · ${spec.label}`,_character:state.character};state.routeOptions=[state.route];state.routeCumulative=buildCumulative(state.route);state.currentRouteIndex=0;drawRoute(state.route,{fit:false});await loadSafetyEvents(state.route);renderTrafficRouteRail(0);updateDriving(true)}catch(e){toast('경유지 경로를 가져오지 못했습니다.',3000)}
+  }else{
+    state.waypoints=[];await changeDestinationWhileDriving(p);
+  }
 }
 async function changeDestinationWhileDriving(item){
   if(!state.user)return toast('현재 위치를 확인할 수 없습니다.');
@@ -1192,7 +1241,7 @@ async function loadDbRecents(){
 function renderRecentDestinations(){
   const box=$('recentDestinationList');if(!box)return;
   const items=(state.recentDestinations||[]).slice(0,6);if(!items.length){box.innerHTML='<div class="recent-empty">최근 목적지가 없습니다.</div>';return}
-  box.innerHTML=items.map((x,i)=>`<div class="recent-row"><button class="recent-item" data-recent-index="${i}"><span class="recent-dot ${i?'blue':''}"></span><span><b>${escapeHtml(x.name||'목적지')}</b><small>${escapeHtml(x.address||'')}</small></span><i data-icon="chevron"></i></button><button type="button" class="recent-delete-btn" data-recent-delete="${i}" aria-label="최근 목적지 삭제">삭제</button></div>`).join('');applyIcons(box);box.querySelectorAll('[data-recent-index]').forEach(b=>b.onclick=()=>chooseDestination(items[Number(b.dataset.recentIndex)]));box.querySelectorAll('[data-recent-delete]').forEach(b=>b.onclick=e=>{e.stopPropagation();deleteRecentDestinationAt(Number(b.dataset.recentDelete),items)});
+  box.innerHTML=items.map((x,i)=>`<div class="recent-row main-recent-row"><button class="recent-item" data-recent-index="${i}"><span class="recent-dot ${i?'blue':''}"></span><span><b>${escapeHtml(x.name||'목적지')}</b><small>${escapeHtml(x.address||'')}</small></span><i data-icon="chevron"></i></button></div>`).join('');applyIcons(box);box.querySelectorAll('[data-recent-index]').forEach(b=>b.onclick=()=>chooseDestination(items[Number(b.dataset.recentIndex)]));
 }
 async function deleteRecentDestinationAt(index,items=state.recentDestinations){
   const p=items?.[index];if(!p)return;const id=p.id||recentId(p);state.recentDestinations=(state.recentDestinations||[]).filter(x=>(x.id||recentId(x))!==id);saveLocalRecents();renderRecentDestinations();
@@ -1490,15 +1539,16 @@ function bindUI(){
   try{document.querySelectorAll('[data-my-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.myCharacter);syncCharacterUI();toast(`${characterDefs[state.character].name} 가이드로 변경했습니다.`)});}catch(e){console.warn('UI bind section 5 failed',e)}
   try{document.querySelectorAll('[data-voice-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.voiceCharacter);syncCharacterUI();speak(`${characterDefs[state.character].name} 음성 안내입니다.`)});}catch(e){console.warn('UI bind section 6 failed',e)}
   try{$('voiceGuideSettingBtn').onclick=()=>{const opening=$('voiceGuidePanel').classList.contains('hidden');$('voiceGuidePanel').classList.toggle('hidden',!opening);$('characterSettingPanel').classList.toggle('hidden',!opening);$('voiceGuideSettingBtn').setAttribute('aria-expanded',String(opening))};$('voicePreviewBtn').onclick=()=>speak(`${characterDefs[state.character].name}이 길안내를 시작합니다. 안전운전하세요.`);}catch(e){console.warn('UI bind section 7 failed',e)}
-  try{$('menuBtn').onclick=openHamburgerMenu;$('myBtn').onclick=openMy;$('routeBackBtn').onclick=()=>{cancelAutoStart();setView('home')};$('routeFavoriteBtn').onclick=toggleFavorite;$('startBtn').onclick=startNavigation;if($('postDriveFavoriteAddBtn'))$('postDriveFavoriteAddBtn').onclick=confirmPostDriveFavorite;if($('postDriveFavoriteSkipBtn'))$('postDriveFavoriteSkipBtn').onclick=closePostDriveFavoritePrompt;if($('postDriveFavoriteModal'))$('postDriveFavoriteModal').addEventListener('click',e=>{if(e.target===$('postDriveFavoriteModal'))closePostDriveFavoritePrompt()});$('routeOriginBtn').onclick=openOriginModal;}catch(e){console.warn('UI bind section 8 failed',e)}
+  try{$('menuBtn').onclick=openHamburgerMenu;$('myBtn').onclick=openMy;$('routeBackBtn').onclick=()=>{cancelAutoStart();setView('home')};$('routeFavoriteBtn').onclick=toggleFavorite;$('startBtn').onclick=startNavigation;if($('postDriveFavoriteAddBtn'))$('postDriveFavoriteAddBtn').onclick=confirmPostDriveFavorite;if($('postDriveFavoriteSkipBtn'))$('postDriveFavoriteSkipBtn').onclick=closePostDriveFavoritePrompt;if($('postDriveFavoriteModal'))$('postDriveFavoriteModal').addEventListener('click',e=>{if(e.target===$('postDriveFavoriteModal'))closePostDriveFavoritePrompt()});$('routeOriginBtn').onclick=openOriginModal;if($('routeAddWaypointBtn'))$('routeAddWaypointBtn').onclick=openWaypointSearch;}catch(e){console.warn('UI bind section 8 failed',e)}
   try{$('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=recenterDriveMap;$('map3dBtn').onclick=e=>{e.stopPropagation();state.map3D=!state.map3D;applyDriveMapMode();toggleMapControls(true)};$('mapZoomInBtn').onclick=e=>{e.stopPropagation();state.map?.zoomIn({duration:180});toggleMapControls(true)};$('mapZoomOutBtn').onclick=e=>{e.stopPropagation();state.map?.zoomOut({duration:180});toggleMapControls(true)};$('driveView').addEventListener('click',e=>{if(e.target.closest('button,input,.maneuver-stack,.drive-bottom-card,.safety-alert,.traffic-status,.vms-banner'))return;toggleMapControls()});$('driveVoiceBtn').onclick=startVoiceCommand;$('arOpenBtn').onclick=startAR;$('driveArBtn').onclick=startAR;$('routeInfoBtn').onclick=openRouteInfo;$('driveSearchBtn').onclick=openDriveSearch;$('routeInfoClose').onclick=closeRouteInfo;$('routeInfoModal').addEventListener('click',e=>{if(e.target===$('routeInfoModal'))closeRouteInfo()});$('driveSearchClose').onclick=closeDriveSearch;$('driveSearchSubmit').onclick=()=>searchDriveDestinations($('driveSearchInput').value);$('driveSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchDriveDestinations(e.target.value)});$('driveSearchModal').addEventListener('click',e=>{if(e.target===$('driveSearchModal'))closeDriveSearch()});document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{closeDriveMenu();stopWatch();setView('route');loadRouteOptions()};$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;}catch(e){console.warn('UI bind section 9 failed',e)}
-  try{$('guideVolume').oninput=e=>changeVolume(e.target.value);$('myGuideVolume').oninput=e=>changeVolume(e.target.value);$('myCloseBtn').onclick=closeMy;$('myModal').addEventListener('click',e=>{if(e.target===$('myModal'))closeMy()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;$('myFavoritesBtn').onclick=openFavoritesList;$('tripHistoryBtn').onclick=openTripHistory;$('noticeBtn').onclick=openNotices;if($('appPrivacyBtn'))$('appPrivacyBtn').onclick=openAppPrivacy;if($('locationConsentToggle'))$('locationConsentToggle').onchange=e=>setPermissionPreference('location',e.target.checked);if($('cameraConsentToggle'))$('cameraConsentToggle').onchange=e=>setPermissionPreference('camera',e.target.checked);$('infoModalClose').onclick=closeInfoModal;$('infoModal').addEventListener('click',e=>{if(e.target===$('infoModal'))closeInfoModal()});}catch(e){console.warn('UI bind section 10 failed',e)}
+  try{$('guideVolume').oninput=e=>changeVolume(e.target.value);$('myGuideVolume').oninput=e=>changeVolume(e.target.value);$('myCloseBtn').onclick=closeMy;$('myModal').addEventListener('click',e=>{if(e.target===$('myModal'))closeMy()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;$('myFavoritesBtn').onclick=openFavoritesList;$('tripHistoryBtn').onclick=openTripHistory;$('noticeBtn').onclick=openNotices;if($('appPrivacyBtn'))$('appPrivacyBtn').onclick=openAppPrivacy;if($('permissionSettingBtn'))$('permissionSettingBtn').onclick=()=>toggleSettingPanel('permissionSettingBtn','permissionSettingPanel');if($('locationConsentToggle'))$('locationConsentToggle').onchange=e=>setPermissionPreference('location',e.target.checked);if($('cameraConsentToggle'))$('cameraConsentToggle').onchange=e=>setPermissionPreference('camera',e.target.checked);$('infoModalClose').onclick=closeInfoModal;$('infoModal').addEventListener('click',e=>{if(e.target===$('infoModal'))closeInfoModal()});}catch(e){console.warn('UI bind section 10 failed',e)}
   try{if($('hamburgerCloseBtn'))$('hamburgerCloseBtn').onclick=closeHamburgerMenu;if($('hamburgerMenuModal'))$('hamburgerMenuModal').addEventListener('click',e=>{if(e.target===$('hamburgerMenuModal'))closeHamburgerMenu()});}catch(e){console.warn('UI bind section 11 failed',e)}
   try{if($('hambPlaceManageBtn'))$('hambPlaceManageBtn').onclick=openDestinationManager;if($('hambRecentBtn'))$('hambRecentBtn').onclick=openRecentDestinationAll;if($('hambWaypointBtn'))$('hambWaypointBtn').onclick=openWaypointSaved;if($('hambTrafficBtn'))$('hambTrafficBtn').onclick=openTrafficDetail;if($('hambRoutePriorityBtn'))$('hambRoutePriorityBtn').onclick=openRoutePrioritySettings;if($('hambCameraSettingsBtn'))$('hambCameraSettingsBtn').onclick=openCameraAlertSettings;if($('hambSupportBtn'))$('hambSupportBtn').onclick=openSupportTerms;}catch(e){console.warn('UI bind section 12 failed',e)}
   try{if($('routePriorityClose'))$('routePriorityClose').onclick=()=>$('routePriorityModal').classList.add('hidden');document.querySelectorAll('[data-route-pref]').forEach(b=>b.onclick=()=>chooseRoutePreference(b.dataset.routePref));}catch(e){console.warn('UI bind section 13 failed',e)}
   try{if($('cameraAlertClose'))$('cameraAlertClose').onclick=()=>$('cameraAlertModal').classList.add('hidden');if($('speedCameraAlertToggle'))$('speedCameraAlertToggle').onchange=e=>updateCameraAlertSetting('speed',e.target.checked);if($('signalCameraAlertToggle'))$('signalCameraAlertToggle').onchange=e=>updateCameraAlertSetting('signal',e.target.checked);}catch(e){console.warn('UI bind section 14 failed',e)}
   try{if($('inquiryCloseBtn'))$('inquiryCloseBtn').onclick=closeInquiryModal;if($('newInquiryBtn'))$('newInquiryBtn').onclick=startInquiryCompose;if($('inquiryComposeBack'))$('inquiryComposeBack').onclick=backInquiryList;if($('inquirySubmitBtn'))$('inquirySubmitBtn').onclick=submitInquiry;}catch(e){console.warn('UI bind section 15 failed',e)}
   try{if($('adminModeBtn'))$('adminModeBtn').onclick=openAdminMode;if($('adminCloseBtn'))$('adminCloseBtn').onclick=closeAdminMode;document.querySelectorAll('[data-admin-tab]').forEach(b=>b.onclick=()=>switchAdminTab(b.dataset.adminTab));if($('adminNoticeSaveBtn'))$('adminNoticeSaveBtn').onclick=saveAdminNotice;if($('adminContentSaveBtn'))$('adminContentSaveBtn').onclick=saveAdminContent;}catch(e){console.warn('UI bind section 16 failed',e)}
+  try{if($('waypointSearchClose'))$('waypointSearchClose').onclick=()=>closeWaypointSearch(true);if($('waypointSearchSubmit'))$('waypointSearchSubmit').onclick=()=>searchWaypointPlaces($('waypointSearchInput').value);if($('waypointSearchInput'))$('waypointSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchWaypointPlaces(e.target.value)});if($('waypointSearchModal'))$('waypointSearchModal').addEventListener('click',e=>{if(e.target===$('waypointSearchModal'))closeWaypointSearch(true)});if($('drivePlaceChoiceClose'))$('drivePlaceChoiceClose').onclick=closeDrivePlaceChoice;if($('drivePlaceAsWaypoint'))$('drivePlaceAsWaypoint').onclick=()=>applyDrivePlaceChoice('waypoint');if($('drivePlaceAsDestination'))$('drivePlaceAsDestination').onclick=()=>applyDrivePlaceChoice('destination');if($('drivePlaceChoiceModal'))$('drivePlaceChoiceModal').addEventListener('click',e=>{if(e.target===$('drivePlaceChoiceModal'))closeDrivePlaceChoice()});if($('permissionPrivacyDetailBtn'))$('permissionPrivacyDetailBtn').onclick=openAppPrivacy;}catch(e){console.warn('UI bind section waypoint/permission failed',e)}
   try{$('originModalClose').onclick=closeOriginModal;$('useCurrentOriginBtn').onclick=useCurrentOrigin;$('originSearchBtn').onclick=()=>searchOrigins($('originSearchInput').value);$('originSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchOrigins(e.target.value)});$('originModal').addEventListener('click',e=>{if(e.target===$('originModal'))closeOriginModal()});$('arCloseBtn').onclick=stopAR;document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.bottomNav;if(nav==='home'){cancelAutoStart();setView('home')}else if(nav==='route'){if(state.destination){setView('route');refreshMapLayout({fitRoute:true})}else{setView('home');$('destinationInput').focus();toast('목적지를 검색해 주세요.')}}else if(nav==='realtime'){if(state.route&&state.destination){if(state.tripStartedAt)setView('drive');else startNavigation()}else toast('먼저 길찾기를 완료해 주세요.')}else if(nav==='my')openMy()});$('placeModalClose').onclick=()=>$('placeModal').classList.add('hidden');if($('useCurrentPlaceBtn'))$('useCurrentPlaceBtn').onclick=saveCurrentLocationAsPlace;if($('placeSaveBtn'))$('placeSaveBtn').onclick=confirmRegisteredPlace;if($('placeDeleteBtn'))$('placeDeleteBtn').onclick=deleteRegisteredPlace;$('placeSearchBtn').onclick=()=>searchPlaces($('placeSearchInput').value,'placeSearchResults');$('placeSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value,'placeSearchResults')});$('placeModal').addEventListener('click',e=>{if(e.target===$('placeModal'))$('placeModal').classList.add('hidden')});}catch(e){console.warn('UI bind section 17 failed',e)}
 }
 
@@ -1519,7 +1569,7 @@ function bootstrapApp(){
     Promise.allSettled([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents(),loadUserSettings()]);
   }
   Promise.resolve().then(()=>initFirebase()).catch(e=>console.warn('firebase init failed',e));
-  try{renderProfile();updateOriginUI();updateTripHistorySummary();setView('home')}catch(e){console.error('initial render failed',e)}
+  try{renderProfile();updateOriginUI();renderRouteWaypoints();updateTripHistorySummary();setView('home')}catch(e){console.error('initial render failed',e)}
   if('speechSynthesis'in window){try{speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices()}catch{}}
   setTimeout(()=>refreshPermissionState().catch(()=>{}),180);
 }

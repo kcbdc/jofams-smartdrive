@@ -16,7 +16,10 @@ export async function onRequest({request,env}){
     return json({ok:true,stored:true});
   }
   if(method==='DELETE'){
-    if(!owner)return json({ok:false,error:'owner is required'},400);await env.DB.prepare(`DELETE FROM recent_destinations WHERE owner_key=?`).bind(owner).run();return json({ok:true,deleted:true});
+    if(!owner)return json({ok:false,error:'owner is required'},400);
+    const recentId=clean(url.searchParams.get('recentId'),180);
+    if(recentId){await env.DB.prepare(`DELETE FROM recent_destinations WHERE owner_key=? AND recent_id=?`).bind(owner,recentId).run();return json({ok:true,deleted:true,recentId})}
+    await env.DB.prepare(`DELETE FROM recent_destinations WHERE owner_key=?`).bind(owner).run();return json({ok:true,deleted:true,all:true});
   }
   return json({ok:false,error:'method not allowed'},405);
 }
