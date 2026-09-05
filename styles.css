@@ -810,3 +810,18 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   background:#244f86!important;
   color:#fff!important;
 }
+
+
+/* === 7.5.9.1 home waypoint delete spacing === */
+#homeSavedWaypointCourses{
+  padding-right:14px!important;
+}
+#homeSavedWaypointCourses .saved-course-row{
+  grid-template-columns:minmax(0,1fr) 50px!important;
+  column-gap:10px!important;
+  padding-right:4px!important;
+}
+#homeSavedWaypointCourses .saved-course-delete{
+  justify-self:end!important;
+  margin-right:2px!important;
+}

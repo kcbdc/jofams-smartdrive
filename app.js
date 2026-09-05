@@ -622,8 +622,10 @@ function destinationSearchAnchor(sortMode){
       const center=state.map.getCenter();
       if(Number.isFinite(Number(center?.lng))&&Number.isFinite(Number(center?.lat)))return {lng:Number(center.lng),lat:Number(center.lat)};
     }catch{}
+    if(pointValid(state.user))return {lng:Number(state.user.lng),lat:Number(state.user.lat)};
   }
-  return pointValid(state.user)?{lng:Number(state.user.lng),lat:Number(state.user.lat)}:null;
+  // 정확도순은 좌표를 보내지 않는다. 검색어 일치도 기반 정렬이 거리값의 영향을 받지 않도록 분리한다.
+  return null;
 }
 function renderDestinationSearchToolbar(box){
   if(!box)return;
