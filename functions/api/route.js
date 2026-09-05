@@ -66,7 +66,7 @@ function parseKakaoRoute(route,transId,priority,routeNo,affiliate){
     });
     (section.guides||[]).forEach((g,guideIndex)=>{
       const seg=Number(g.road_index)>=0 ? (sectionRoadSegments[g.road_index] || sectionRoadSegments[Math.max(0,g.road_index-1)] || null) : (sectionRoadSegments.at(-1) || null);
-      rawGuides.push({id:`k_${routeNo}_${sectionIndex}_${guideIndex}`,sectionIndex,guideIndex,name:g.name||'',x:Number(g.x),y:Number(g.y),distance:Number(g.distance)||0,duration:Number(g.duration)||0,type:Number(g.type),guidance:g.guidance||guideTypeLabel(Number(g.type)),roadIndex:Number(g.road_index),roadName:seg?.name||'',lanes:g.lanes??g.lane_info??g.laneInfo??g.lane??null});
+      rawGuides.push({id:`k_${routeNo}_${sectionIndex}_${guideIndex}`,sectionIndex,guideIndex,name:g.name||'',x:Number(g.x),y:Number(g.y),distance:Number(g.distance)||0,duration:Number(g.duration)||0,type:Number(g.type),guidance:g.guidance||guideTypeLabel(Number(g.type)),roadIndex:Number(g.road_index),roadName:seg?.name||'',lanes:normalizeGuideLanePayload(g.lanes??g.lane_info??g.laneInfo??g.lane??null)});
     });
   });
   const guides=rawGuides.map(g=>({...g,routeIndex:nearestGeometryIndex(g.x,g.y,geometry)}));
@@ -78,6 +78,22 @@ function parseKakaoRoute(route,transId,priority,routeNo,affiliate){
   };
 }
 
+
+function normalizeGuideLanePayload(raw){
+  if(raw==null)return null;
+  if(Array.isArray(raw))return raw.map(x=>x&&typeof x==='object'?compactObject(x):x);
+  if(typeof raw==='object'){
+    const out={};
+    for(const [k,v] of Object.entries(raw)){
+      if(Array.isArray(v))out[k]=v.map(x=>x&&typeof x==='object'?compactObject(x):x);
+      else if(v&&typeof v==='object')out[k]=compactObject(v);
+      else out[k]=v;
+    }
+    return out;
+  }
+  return raw;
+}
+
 function normalizeRoadExtra(road){
   const rawSafety=road.safety ?? road.safeties ?? road.safety_info ?? road.safetyInfo ?? [];
   const rawEvents=road.roadevent ?? road.road_event ?? road.road_events ?? road.roadEvents ?? [];
@@ -85,7 +101,8 @@ function normalizeRoadExtra(road){
   const roadEvents=Array.isArray(rawEvents)?rawEvents:(rawEvents&&typeof rawEvents==='object'?[rawEvents]:[]);
   const detail=road.road_detail||road.roadDetail||road.detail||{};
   const speedLimit=firstFinite(road.speed_limit,road.speedLimit,road.limit_speed,road.limitSpeed,road.max_speed,road.maxSpeed,road.regulation_speed,road.regulationSpeed,detail.speed_limit,detail.speedLimit,detail.limit_speed,detail.maxspeed,...safeties.map(x=>x?.speed_limit??x?.speedLimit??x?.limit_speed??x?.maxspeed));
-  return {speedLimit:speedLimit||0,safeties:safeties.map(compactObject),roadEvents:roadEvents.map(compactObject)};
+  const laneCount=firstFinite(road.lane_count,road.laneCount,road.lanes,detail.lane_count,detail.laneCount,detail.lanes);
+  return {speedLimit:speedLimit||0,laneCount:laneCount||0,safeties:safeties.map(compactObject),roadEvents:roadEvents.map(compactObject)};
 }
 function compactObject(x){if(!x||typeof x!=='object')return {value:String(x??'')};const o={};for(const [k,v] of Object.entries(x)){if(['string','number','boolean'].includes(typeof v)||v===null)o[k]=v}return o}
 function firstFinite(...xs){for(const x of xs){const n=Number(x);if(Number.isFinite(n)&&n>0)return n}return 0}
