@@ -691,7 +691,7 @@ function loadSavedWaypointCourses(){
   try{state.savedWaypointCourses=JSON.parse(localStorage.getItem('jofams_waypoint_courses_v1')||'[]')||[]}catch{state.savedWaypointCourses=[]}
 }
 function persistSavedWaypointCourses(){
-  try{localStorage.setItem('jofams_waypoint_courses_v1',JSON.stringify((state.savedWaypointCourses||[]).slice(0,20)))}catch{}
+  try{const rows=(state.savedWaypointCourses||[]).slice(0,20);localStorage.setItem('jofams_waypoint_courses_v1',JSON.stringify(rows));state.savedWaypointCourses=rows;return true}catch(e){console.warn('waypoint course save failed',e);toast('경유지 코스를 저장하지 못했습니다.');return false}
 }
 function saveCurrentWaypointCourse(){
   const points=(state.waypoints||[]).filter(pointValid);
@@ -699,10 +699,10 @@ function saveCurrentWaypointCourse(){
   const key=[...points,state.destination].map(p=>`${Number(p.lat).toFixed(5)},${Number(p.lng).toFixed(5)}`).join('|');
   const item={id:'wc_'+Date.now(),key,name:`${points.map(p=>p.name||'경유지').join(' → ')} → ${state.destination.name||'목적지'}`,destination:{...state.destination},waypoints:points.map(p=>({...p})),savedAt:Date.now()};
   state.savedWaypointCourses=[item,...(state.savedWaypointCourses||[]).filter(x=>x.key!==key)].slice(0,20);
-  persistSavedWaypointCourses();renderSavedWaypointCourses();
+  if(persistSavedWaypointCourses()){renderSavedWaypointCourses();toast('경유지 코스를 저장했습니다.',1400)}
 }
 function deleteSavedWaypointCourse(id){
-  state.savedWaypointCourses=(state.savedWaypointCourses||[]).filter(x=>x.id!==id);persistSavedWaypointCourses();renderSavedWaypointCourses();
+  state.savedWaypointCourses=(state.savedWaypointCourses||[]).filter(x=>x.id!==id);if(persistSavedWaypointCourses()){renderSavedWaypointCourses();toast('저장 코스를 삭제했습니다.',1200)}
 }
 async function useSavedWaypointCourse(id){
   const item=(state.savedWaypointCourses||[]).find(x=>x.id===id);if(!item)return;
@@ -1037,7 +1037,7 @@ function setView(view){
   $('bottomNav').classList.toggle('hidden',view==='drive'||state.arRunning);
   document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.classList.toggle('active',b.dataset.bottomNav===view||(view==='drive'&&b.dataset.bottomNav==='realtime')));
   if(state.map){if(view==='home'){state.map3D=false;enforce2DMap();state.map.easeTo({pitch:0,bearing:0})}else if(view==='drive')applyDriveMapMode()}
-  applyNightMode();if(view==='drive')setTimeout(tryLandscapeFullscreen,80)
+  applyNightMode();if(view==='route')renderSavedWaypointCourses();if(view==='drive')setTimeout(tryLandscapeFullscreen,80)
   refreshMapLayout({fitRoute:view==='route'&&Boolean(state.route)});
 }
 function startNavigation(){
@@ -1190,6 +1190,12 @@ function sampleRoutePoints(geometry,max=28){
   const g=geometry||[];if(!g.length)return[];if(g.length<=max)return g.map(p=>({lng:p[0],lat:p[1]}));
   return Array.from({length:max},(_,i)=>{const p=g[Math.round(i*(g.length-1)/(max-1))];return{lng:p[0],lat:p[1]}})
 }
+function buildTrafficSafetySamples(route,max=20){
+  const g=route?.geometry||[],rows=(route?.roadSegments||[]).filter(x=>Number(x?.trafficState)>0||Number(x?.trafficSpeed)>0);if(!g.length||!rows.length)return[];
+  const stride=Math.max(1,Math.ceil(rows.length/max)),out=[];
+  for(let i=0;i<rows.length;i+=stride){const x=rows[i],a=Math.max(0,Number(x.startIndex)||0),b=Math.min(g.length-1,Number(x.endIndex)||a),p=g[Math.round((a+b)/2)];if(!p)continue;out.push({lng:p[0],lat:p[1],roadName:x.name||'',trafficState:Number(x.trafficState)||0,trafficSpeed:Number(x.trafficSpeed)||0})}
+  return out.slice(0,max);
+}
 function eventPoint(x,route){
   let lng=Number(x?.lng??x?.lon??x?.x??x?.longitude),lat=Number(x?.lat??x?.y??x?.latitude);
   let routeIndex=Number(x?.routeIndex);
@@ -1218,7 +1224,7 @@ async function loadSafetyEvents(route){
   const official=await loadStaticCameraEvents(route).catch(e=>{console.warn('static camera merge failed',e);return []});
   let supplemental=[];
   try{
-    const r=await fetch('/api/safety',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({points:sampleRoutePoints(route.geometry)})});
+    const r=await fetch('/api/safety',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({points:sampleRoutePoints(route.geometry),trafficSamples:buildTrafficSafetySamples(route)})});
     const d=await r.json().catch(()=>({events:[]}));if(seq!==state.safetyRequestSeq)return;
     supplemental=Array.isArray(d?.events)?d.events:[];
   }catch(e){if(seq!==state.safetyRequestSeq)return;console.warn('supplemental safety fetch failed',e)}
@@ -1241,6 +1247,11 @@ function renderSafetyMarkers(){
       :e.type==='disabled_zone'?['silver','보','장애인 보호구역']
       :e.type==='accident'?['incident','!','교통사고']
       :e.type==='construction'?['construction','공','도로 공사']
+      :e.type==='fog_zone'?['weather','안','안개 구간']
+      :e.type==='heavy_rain_zone'?['weather','비','강우 주의']
+      :e.type==='snow_ice_zone'?['weather','눈','눈·결빙 주의']
+      :e.type==='chronic_congestion'?['stat','정','상습정체 구간']
+      :e.type==='accident_hotspot'?['stat','다','사고다발지역']
       :e.type==='mobile_camera'?['mobile','M','이동식 단속카메라']
       :e.type==='crosswalk'?['warn','횡','횡단보도']
       :e.type==='railway_crossing'?['warn','건','철길 건널목']
@@ -1282,7 +1293,13 @@ function safetyLabel(e){
   if(e.type==='height_limit')return{kind:'truck',icon:'높이',title:'높이제한 구간',text:e.limitValue?`통과높이 ${e.limitValue}m 제한 구간입니다`:'통과높이 제한 구간입니다'};
   if(e.type==='weight_limit')return{kind:'truck',icon:'중량',title:'중량제한 구간',text:e.limitValue?`총중량 ${e.limitValue}톤 제한 구간입니다`:'중량 제한 구간입니다'};
   if(e.type==='width_limit')return{kind:'truck',icon:'폭',title:'폭 제한 구간',text:e.limitValue?`통과폭 ${e.limitValue}m 제한 구간입니다`:'폭 제한 구간입니다'};
-  // 6) 단속·인프라 안내(기존)
+  // 6) 기상·통계 기반 안전 안내
+  if(e.type==='fog_zone')return{kind:'weather',icon:'안개',title:'전방 안개 구간',text:e.visibility?`가시거리 약 ${Math.max(100,Math.round(e.visibility/100)*100)}m · 감속하고 차간거리를 늘리세요`:'시야 확보가 어려운 구간입니다. 감속하세요'};
+  if(e.type==='heavy_rain_zone')return{kind:'weather',icon:'강우',title:'강한 비 주의',text:e.precipitation?`시간 강수량 약 ${Number(e.precipitation).toFixed(1)}mm · 미끄럼에 주의하세요`:'노면이 미끄러울 수 있습니다. 감속하세요'};
+  if(e.type==='snow_ice_zone')return{kind:'weather',icon:'결빙',title:'눈·결빙 주의',text:'노면 결빙 가능성이 있습니다. 급가속·급제동을 피하세요'};
+  if(e.type==='chronic_congestion')return{kind:'stat',icon:'정체',title:'상습정체 구간',text:e.sampleCount?`${e.name||'전방 도로'} · 누적 교통표본 ${e.sampleCount}회 기준 혼잡 빈도가 높은 구간입니다`:(e.name||'혼잡 빈도가 높은 구간입니다')};
+  if(e.type==='accident_hotspot')return{kind:'stat',icon:'사고',title:'사고다발지역',text:e.accidentCount?`${e.name||'전방 구간'} · 통계 사고 ${e.accidentCount}건`:(e.name||'교통사고가 반복 발생한 통계 구간입니다')};
+  // 7) 단속·인프라 안내(기존)
   if(e.type==='accident')return{kind:'incident',icon:'사고',title:'전방 사고 정보',text:e.name||'사고 구간입니다. 차간거리를 확보하고 주의하세요'};
   if(e.type==='construction')return{kind:'construction',icon:'공사',title:'전방 공사 구간',text:e.name||'차로 변경 및 작업 차량에 주의하세요'};
   if(e.type==='mobile_camera')return{kind:'mobile',icon:'이동',title:'이동식 단속 카메라',text:e.maxspeed?`제한속도 ${e.maxspeed}km/h · 속도를 확인하세요`:'제한속도를 확인하세요'};
@@ -1315,8 +1332,8 @@ function detectCurveAhead(idx){
 function hideSafetyAlert(){const el=$('safetyAlert');if(el)el.classList.add('hidden');state.activeSafetyId=null}
 /* 실데이터(state.safetyEvents) + 경로 geometry 기반 합성 커브 이벤트를 합쳐 우선순위 정렬된 후보 목록을 만든다.
    safety-alert 배너와 좌측 표지판 배지가 동일한 후보 목록을 공유한다. */
-const SAFETY_PRIORITY={accident:0,school_zone:1,school_nearby:1,silver_zone:1,disabled_zone:1,double_curve:1,
-  construction:2,curve_left:2,curve_right:2,railway_crossing:2,height_limit:2,weight_limit:2,width_limit:2,no_entry:2,
+const SAFETY_PRIORITY={accident:0,accident_hotspot:1,fog_zone:1,heavy_rain_zone:1,snow_ice_zone:1,school_zone:1,school_nearby:1,silver_zone:1,disabled_zone:1,double_curve:1,
+  chronic_congestion:2,construction:2,curve_left:2,curve_right:2,railway_crossing:2,height_limit:2,weight_limit:2,width_limit:2,no_entry:2,
   crosswalk:3,no_overtaking:3,truck_prohibited:3,roundabout:3,mobile_camera:4,signal_speed_camera:5,signal_camera:5,
   speed_camera:6,traffic_camera:6,motorway:8,speed_limit:9,tunnel:9};
 function computeSafetyCandidates(idx){
@@ -1354,6 +1371,11 @@ function updateSafetyUI(idx,candidates){
     else if(e.type==='no_entry')speak(`${meters}미터 앞 진입금지 구간이 있습니다.`);
     else if(e.type==='no_overtaking')speak(`${meters}미터 앞부터 추월금지 구간입니다.`);
     else if(e.type==='truck_prohibited')speak(`${meters}미터 앞부터 화물차 통행금지 구간입니다.`);
+    else if(e.type==='fog_zone')speak(`${meters}미터 앞 안개 구간입니다. 속도를 줄이고 안전거리를 늘리세요.`);
+    else if(e.type==='heavy_rain_zone')speak(`${meters}미터 앞 강한 비가 예상됩니다. 감속하고 미끄럼에 주의하세요.`);
+    else if(e.type==='snow_ice_zone')speak(`${meters}미터 앞 눈 또는 결빙 주의 구간입니다. 급제동을 피하세요.`);
+    else if(e.type==='chronic_congestion')speak(`${meters}미터 앞 상습정체 구간입니다. 차간거리를 유지하세요.`);
+    else if(e.type==='accident_hotspot')speak(`${meters}미터 앞 사고다발지역입니다. 주변 차량과 보행자를 주의하세요.`);
     else if(e.type==='accident')speak(`${meters}미터 앞 사고 구간이 있습니다. 속도를 줄이고 안전거리를 확보하세요.`);
     else if(e.type==='construction')speak(`${meters}미터 앞 도로 공사 구간이 있습니다. 차로와 작업 차량에 주의하세요.`);
     else if(e.type==='mobile_camera')speak(`${meters}미터 앞 이동식 단속 카메라가 있습니다.`);

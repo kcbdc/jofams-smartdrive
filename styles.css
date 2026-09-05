@@ -600,3 +600,26 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   .ar-character-car .ar-motion-ribbon::before,
   .ar-character-car .ar-motion-ribbon::after{animation-duration:.9s!important}
 }
+
+
+/* === 2026-09 safety UI refinement: dark navigation + yellow hazard accent === */
+.safety-alert.warn,.safety-alert.weather,.safety-alert.stat{
+  background:rgba(25,28,34,.97)!important;color:#fff!important;border:1px solid rgba(255,208,0,.34)!important;
+  box-shadow:0 10px 26px rgba(0,0,0,.30)!important;border-radius:14px!important;
+}
+.safety-alert.warn .safety-alert-icon,.safety-alert.weather .safety-alert-icon,.safety-alert.stat .safety-alert-icon{
+  background:#ffd400!important;color:#181b20!important;border-radius:11px!important;box-shadow:none!important;
+}
+.safety-alert.warn .safety-alert-copy span,.safety-alert.weather .safety-alert-copy span,.safety-alert.stat .safety-alert-copy span{color:#d7dbe3!important;opacity:1!important}
+.safety-alert.warn>strong,.safety-alert.weather>strong,.safety-alert.stat>strong{color:#ffd400!important}
+.road-sign-badge{
+  position:relative!important;width:60px!important;height:60px!important;border-radius:15px!important;background:#20242b!important;color:#fff!important;
+  border:2px solid var(--sign-accent,#ffd400)!important;box-shadow:0 5px 14px rgba(0,0,0,.27)!important;overflow:hidden!important;
+}
+.road-sign-badge::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--sign-accent,#ffd400)}
+.road-sign-badge b{font-size:13px!important;color:var(--sign-accent,#ffd400)!important;letter-spacing:-.04em}.road-sign-badge small{font-size:9px!important;color:#fff!important;opacity:.92!important}
+.road-sign-badge.warn,.road-sign-badge.weather,.road-sign-badge.stat{--sign-accent:#ffd400}.road-sign-badge.camera{--sign-accent:#ff4b55}.road-sign-badge.school{--sign-accent:#ffcf00}.road-sign-badge.reg{--sign-accent:#ff4b55}.road-sign-badge.ins{--sign-accent:#51a5ff}.road-sign-badge.silver{--sign-accent:#ff8a33}.road-sign-badge.truck{--sign-accent:#f2a544}.road-sign-badge.incident{--sign-accent:#ff4b55}.road-sign-badge.construction{--sign-accent:#ff9d2e}.road-sign-badge.mobile{--sign-accent:#a98cff}
+.safety-map-marker.weather,.safety-map-marker.stat{background:#20242b!important;color:#ffd400!important;border-color:#ffd400!important}
+.saved-waypoint-courses{display:block;margin:10px 0 12px;padding:11px;border:1px solid #e2e8f1;border-radius:15px;background:#f7f9fc}
+.saved-waypoint-courses.hidden{display:none!important}.saved-course-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;padding:0 2px}.saved-course-title b{font-size:12px}.saved-course-title small{font-size:9px;color:#7a8494}
+.saved-course-row{display:grid;grid-template-columns:minmax(0,1fr) 32px;gap:7px;align-items:center;margin-top:7px}.saved-course-row>button:first-child{min-width:0;display:grid;grid-template-columns:24px minmax(0,1fr);gap:8px;align-items:center;padding:9px 10px;border:1px solid #e5eaf1;border-radius:12px;background:#fff;text-align:left}.saved-course-row>button:first-child b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.saved-course-row>button:first-child small{display:block;margin-top:2px;font-size:9px;color:#7b8492}.saved-course-delete{width:30px;height:30px;border:1px solid #ffd6d9;border-radius:50%;background:#fff2f3;color:#d8333f;font-size:18px;font-weight:800}
