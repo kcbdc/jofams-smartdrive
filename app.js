@@ -17,7 +17,7 @@ const state = {
   map:null,mapReady:false,pendingRouteDraw:null,mapFallbackTried:false,mapWatchdog:0,user:null, destination:null, routeOptions:[], route:null, selectedRoute:0,
   userMarker:null,destMarker:null,originMarker:null,watchId:null,character:'daim',voiceVolume:.8,sound:true,
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
-  savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],
+  savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:'B027',fuelData:null,fuelFetchedAt:0,fuelLoading:false,
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
   tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,
@@ -511,6 +511,91 @@ function startDeadReckoning(){clearInterval(state.deadReckoningTimer);state.dead
 function stopDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningTimer=0;state.gpsEstimated=false;state.deadReckoningDistance=null;state.deadReckoningLastAt=0}
 function startWatch(){if(state.permissionPrefs?.location===false)return;if(state.watchId!=null)return;state.watchId=navigator.geolocation.watchPosition(p=>applyGps(p,false),()=>{}, {enableHighAccuracy:true,maximumAge:0,timeout:7000});startDeadReckoning()}
 function stopWatch(){if(state.watchId!=null){navigator.geolocation.clearWatch(state.watchId);state.watchId=null}stopDeadReckoning()}
+
+
+/* ---------- LIVE FUEL PRICE / OPINET ---------- */
+const FUEL_PRODUCT_NAMES={B027:'휘발유',D047:'경유',B034:'고급휘발유',K015:'LPG'};
+function fuelWon(v){const n=Number(v);return Number.isFinite(n)&&n>0?`${Math.round(n).toLocaleString('ko-KR')}원`:'가격없음'}
+function fuelBrandName(code){
+  return ({SKE:'SK',GSC:'GS칼텍스',HDO:'HD현대오일뱅크',SOL:'S-OIL',RTE:'알뜰',RTX:'고속도로알뜰',NHO:'농협알뜰',ETC:'자가상표',E1G:'E1',SKG:'SK가스'})[code]||code||'';
+}
+function fuelFreshEnough(){return state.fuelData&&Date.now()-Number(state.fuelFetchedAt||0)<5*60*1000}
+async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false}={}){
+  state.fuelProduct=product||'B027';
+  syncFuelTabs();
+  if(!state.user)await locate(false);
+  if(!state.user){
+    renderFuelError('현재 위치를 확인할 수 없습니다.');
+    return;
+  }
+  if(!force&&fuelFreshEnough()&&state.fuelData?.product===state.fuelProduct){
+    renderFuelData(state.fuelData);return;
+  }
+  if(state.fuelLoading)return;
+  state.fuelLoading=true;
+  renderFuelLoading();
+  try{
+    const u=new URL('/api/fuel',location.origin);
+    u.searchParams.set('lat',state.user.lat);u.searchParams.set('lng',state.user.lng);
+    u.searchParams.set('prodcd',state.fuelProduct);u.searchParams.set('cnt','8');
+    const res=await fetch(u,{headers:{accept:'application/json'}});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(d?.error||`유가 조회 실패 (${res.status})`);
+    state.fuelData=d;state.fuelFetchedAt=Date.now();
+    renderFuelData(d);
+  }catch(e){renderFuelError(e?.message||'유가 정보를 불러오지 못했습니다.')}
+  finally{state.fuelLoading=false}
+}
+function syncFuelTabs(){
+  document.querySelectorAll('[data-fuel-product],[data-fuel-modal-product]').forEach(b=>{
+    const code=b.dataset.fuelProduct||b.dataset.fuelModalProduct;
+    b.classList.toggle('active',code===state.fuelProduct);
+  });
+}
+function fuelStationRows(data){
+  const items=(data?.stations||[]).filter(x=>Number(x.price)>0);
+  if(!items.length)return '<div class="fuel-empty">표시할 주유소 가격정보가 없습니다.</div>';
+  const min=Math.min(...items.map(x=>Number(x.price)));
+  return items.map((x,i)=>`<div class="fuel-station-row">
+    <span class="fuel-rank ${i===0?'best':''}">${i===0?'최저':i+1}</span>
+    <div class="fuel-station-copy"><b>${escapeHtml(x.name||'주유소')}</b><small>${escapeHtml(fuelBrandName(x.brand))}${x.address?` · ${escapeHtml(x.address)}`:''}</small></div>
+    <div class="fuel-station-price"><b>${fuelWon(x.price)}</b><small>${Number(x.price)===min?'최저가':'L당'}</small></div>
+  </div>`).join('');
+}
+function renderFuelData(data){
+  const area=data?.areaName||'현재 지역';
+  const items=(data?.stations||[]).filter(x=>Number(x.price)>0);
+  const min=items.length?Math.min(...items.map(x=>Number(x.price))):0;
+  const avg=Number(data?.averagePrice)||0;
+  if($('fuelAreaLabel'))$('fuelAreaLabel').textContent=area;
+  if($('fuelModalArea'))$('fuelModalArea').textContent=`${area} · ${FUEL_PRODUCT_NAMES[state.fuelProduct]||''}`;
+  if($('fuelPriceSummary'))$('fuelPriceSummary').innerHTML=`<span>${escapeHtml(area)} ${escapeHtml(FUEL_PRODUCT_NAMES[state.fuelProduct]||'')}</span><b>${min?`최저 ${fuelWon(min)}`:'가격정보 없음'}${avg?` <small>평균 ${fuelWon(avg)}</small>`:''}</b>`;
+  const rows=fuelStationRows(data);
+  if($('fuelStationList'))$('fuelStationList').innerHTML=rows;
+  if($('fuelModalList'))$('fuelModalList').innerHTML=rows;
+  const chip=$('driveFuelChip');
+  if(chip&&state.tripStartedAt&&items.length){
+    $('driveFuelPrice').textContent=fuelWon(items[0].price);
+    $('driveFuelName').textContent=items[0].name||'주유소';
+    chip.classList.remove('hidden');
+  }
+}
+function renderFuelLoading(){
+  const msg='<div class="fuel-empty">오피넷 실시간 유가를 불러오는 중...</div>';
+  if($('fuelStationList'))$('fuelStationList').innerHTML=msg;
+  if($('fuelModalList'))$('fuelModalList').innerHTML=msg;
+}
+function renderFuelError(message){
+  const safe=escapeHtml(message||'유가 정보를 불러오지 못했습니다.');
+  const msg=`<div class="fuel-empty fuel-error">${safe}<br><small>OPINET_CERT_KEY 설정을 확인해 주세요.</small></div>`;
+  if($('fuelStationList'))$('fuelStationList').innerHTML=msg;
+  if($('fuelModalList'))$('fuelModalList').innerHTML=msg;
+}
+function openFuelModal(){
+  $('fuelModal').classList.remove('hidden');syncFuelTabs();
+  if(state.fuelData)renderFuelData(state.fuelData);else loadFuelPrices(state.fuelProduct,{force:false,modal:true});
+}
+function closeFuelModal(){$('fuelModal').classList.add('hidden')}
 
 /* ---------- SEARCH / SAVED PLACES ---------- */
 function isNearbySearchQuery(q=''){const n=String(q).replace(/\s+/g,'').replace(/내주변|주변|근처|가까운/g,'');return /^(주유소|충전소|전기차충전소|ev충전소|마트|대형마트|슈퍼|슈퍼마켓|편의점|주차장|공영주차장|공용주차장|소방서|119안전센터|안전센터|경찰서|파출소|지구대|공용화장실|공중화장실|화장실|공공기관|관공서)$/.test(n)}
@@ -1152,7 +1237,7 @@ function setView(view){
   $('bottomNav').classList.toggle('hidden',view==='drive'||state.arRunning);
   document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.classList.toggle('active',b.dataset.bottomNav===view||(view==='drive'&&b.dataset.bottomNav==='realtime')));
   if(state.map){if(view==='home'){state.map3D=false;enforce2DMap();state.map.easeTo({pitch:0,bearing:0})}else if(view==='drive')applyDriveMapMode()}
-  applyNightMode();if(view==='route')renderSavedWaypointCourses();if(view==='drive')setTimeout(tryLandscapeFullscreen,80)
+  applyNightMode();if(view==='home')setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),180);if(view==='route')renderSavedWaypointCourses();if(view==='drive'){setTimeout(tryLandscapeFullscreen,80);setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),500)}
   refreshMapLayout({fitRoute:view==='route'&&Boolean(state.route)});
 }
 function startNavigation(){
@@ -2022,6 +2107,14 @@ function bindUI(){
     },true);
   }catch(e){console.warn('route endpoint action bind failed',e)}
 
+  try{
+    if($('fuelRefreshBtn'))$('fuelRefreshBtn').onclick=()=>loadFuelPrices(state.fuelProduct,{force:true});
+    document.querySelectorAll('[data-fuel-product]').forEach(b=>b.onclick=()=>loadFuelPrices(b.dataset.fuelProduct,{force:true}));
+    document.querySelectorAll('[data-fuel-modal-product]').forEach(b=>b.onclick=()=>loadFuelPrices(b.dataset.fuelModalProduct,{force:true,modal:true}));
+    if($('driveFuelChip'))$('driveFuelChip').onclick=openFuelModal;
+    if($('fuelModalClose'))$('fuelModalClose').onclick=closeFuelModal;
+    if($('fuelModal'))$('fuelModal').addEventListener('click',e=>{if(e.target===$('fuelModal'))closeFuelModal()});
+  }catch(e){console.warn('fuel UI bind failed',e)}
   try{$('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=recenterDriveMap;$('mapCompassBtn').onclick=resetDriveCompass;$('map3dBtn').onclick=e=>{e.stopPropagation();state.map3D=!state.map3D;applyDriveMapMode();toggleMapControls(true)};$('mapZoomInBtn').onclick=e=>{e.stopPropagation();state.map?.zoomIn({duration:180});toggleMapControls(true)};$('mapZoomOutBtn').onclick=e=>{e.stopPropagation();state.map?.zoomOut({duration:180});toggleMapControls(true)};$('driveView').addEventListener('click',e=>{if(e.target.closest('button,input,.maneuver-stack,.drive-bottom-card,.safety-alert,.traffic-status,.vms-banner,.lane-assist-layer'))return;toggleMapControls(true)});$('driveVoiceBtn').onclick=startVoiceCommand;$('arOpenBtn').onclick=startAR;$('driveArBtn').onclick=startAR;$('routeInfoBtn').onclick=openRouteInfo;$('driveSearchBtn').onclick=openDriveSearch;$('routeInfoClose').onclick=closeRouteInfo;$('routeInfoModal').addEventListener('click',e=>{if(e.target===$('routeInfoModal'))closeRouteInfo()});$('driveSearchClose').onclick=closeDriveSearch;$('driveSearchSubmit').onclick=()=>searchDriveDestinations($('driveSearchInput').value);$('driveSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchDriveDestinations(e.target.value)});$('driveSearchModal').addEventListener('click',e=>{if(e.target===$('driveSearchModal'))closeDriveSearch()});document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{closeDriveMenu();stopWatch();setView('route');loadRouteOptions()};$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;}catch(e){console.warn('UI bind section 9 failed',e)}
   try{$('guideVolume').oninput=e=>changeVolume(e.target.value);$('myGuideVolume').oninput=e=>changeVolume(e.target.value);$('myCloseBtn').onclick=closeMy;$('myModal').addEventListener('click',e=>{if(e.target===$('myModal'))closeMy()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;$('myFavoritesBtn').onclick=openFavoritesList;$('tripHistoryBtn').onclick=openTripHistory;$('noticeBtn').onclick=openNotices;if($('appPrivacyBtn'))$('appPrivacyBtn').onclick=openAppPrivacy;if($('permissionSettingBtn'))$('permissionSettingBtn').onclick=()=>toggleSettingPanel('permissionSettingBtn','permissionSettingPanel');if($('locationConsentToggle'))$('locationConsentToggle').onchange=e=>setPermissionPreference('location',e.target.checked);if($('cameraConsentToggle'))$('cameraConsentToggle').onchange=e=>setPermissionPreference('camera',e.target.checked);$('infoModalClose').onclick=closeInfoModal;$('infoModal').addEventListener('click',e=>{if(e.target===$('infoModal'))closeInfoModal()});}catch(e){console.warn('UI bind section 10 failed',e)}
   try{if($('hamburgerCloseBtn'))$('hamburgerCloseBtn').onclick=closeHamburgerMenu;if($('hamburgerMenuModal'))$('hamburgerMenuModal').addEventListener('click',e=>{if(e.target===$('hamburgerMenuModal'))closeHamburgerMenu()});}catch(e){console.warn('UI bind section 11 failed',e)}
