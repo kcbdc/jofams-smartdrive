@@ -8,6 +8,7 @@ export async function onRequestGet({ request, env }) {
   const komscoSearch = nq.includes('한국조폐공사');
   const stationQuery = /역$/.test(nq) && nq.length >= 2;
   const lng=Number(url.searchParams.get('lng')), lat=Number(url.searchParams.get('lat'));
+  const explicitSort=url.searchParams.has('sort');
   const sortMode=(url.searchParams.get('sort')||'accuracy')==='center'?'center':'accuracy';
   const hasGps=Number.isFinite(lng)&&Number.isFinite(lat);
   const groupInfo=classifyGroupQuery(q);
@@ -31,14 +32,14 @@ export async function onRequestGet({ request, env }) {
       // 고유 지명은 정확도 우선. 역명은 보조 질의를 추가한다.
       const queries=stationQuery?[searchQ,`${searchQ} 기차역`,`${searchQ} 지하철역`]:buildExactQueries(searchQ);
       for(const query of queries){
-        merged=mergeUnique(merged,await kakaoKeywordSearch(query,env.KAKAO_REST_API_KEY,{lng,lat,sortDistance:sortMode==='center',radius:sortMode==='center'&&hasGps?30000:0}));
+        merged=mergeUnique(merged,await kakaoKeywordSearch(query,env.KAKAO_REST_API_KEY,sortMode==='center'&&hasGps?{lng,lat,sortDistance:true,radius:30000}:{sortDistance:false}));
         if(merged.length>=25)break;
       }
     }
 
     // GPS가 있으면 모든 결과에 실제 직선거리(m)를 계산한다. Kakao distance가 빈 값이어도 0m로 오인하지 않는다.
     merged=merged.map(x=>withDistance(x,lng,lat,hasGps));
-    let items = (sortMode==='center'&&hasGps)||nearbyCategory&&hasGps ? rankNearbyResults(merged,lng,lat) : rankNamedResults(merged,q,stationQuery,hasGps);
+    let items = explicitSort ? (sortMode==='center'&&hasGps ? rankNearbyResults(merged,lng,lat) : rankNamedResults(merged,q,stationQuery,false)) : (nearbyCategory&&hasGps ? rankNearbyResults(merged,lng,lat) : rankNamedResults(merged,q,stationQuery,hasGps));
     items = applyKomscoRules(items, forceKomsco, komscoSearch);
     return json({ provider:'kakao', mode:nearbyCategory?'nearby':'named', sort:sortMode, items:items.slice(0,10) });
   }
@@ -54,7 +55,7 @@ export async function onRequestGet({ request, env }) {
   if (!r.ok) return json({ items: [] }, 502);
   const d = await r.json();
   let items = d.map((x,i)=>withDistance({id:String(x.place_id||i),name:(x.name||x.display_name.split(',')[0]),address:x.display_name,category:x.type,lng:Number(x.lon),lat:Number(x.lat)},lng,lat,hasGps));
-  items = (sortMode==='center'&&hasGps)||nearbyCategory&&hasGps ? rankNearbyResults(items,lng,lat) : rankNamedResults(items,q,stationQuery,hasGps);
+  items = explicitSort ? (sortMode==='center'&&hasGps ? rankNearbyResults(items,lng,lat) : rankNamedResults(items,q,stationQuery,false)) : (nearbyCategory&&hasGps ? rankNearbyResults(items,lng,lat) : rankNamedResults(items,q,stationQuery,hasGps));
   items = applyKomscoRules(items, forceKomsco, komscoSearch);
   return json({ provider:'nominatim', mode:nearbyCategory?'nearby':'named', sort:sortMode, items:items.slice(0,10) });
 }
