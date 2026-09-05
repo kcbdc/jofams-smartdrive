@@ -102,7 +102,8 @@ function normalizeRoadExtra(road){
   const detail=road.road_detail||road.roadDetail||road.detail||{};
   const speedLimit=firstFinite(road.speed_limit,road.speedLimit,road.limit_speed,road.limitSpeed,road.max_speed,road.maxSpeed,road.regulation_speed,road.regulationSpeed,detail.speed_limit,detail.speedLimit,detail.limit_speed,detail.maxspeed,...safeties.map(x=>x?.speed_limit??x?.speedLimit??x?.limit_speed??x?.maxspeed));
   const laneCount=firstFinite(road.lane_count,road.laneCount,road.lanes,detail.lane_count,detail.laneCount,detail.lanes);
-  return {speedLimit:speedLimit||0,laneCount:laneCount||0,safeties:safeties.map(compactObject),roadEvents:roadEvents.map(compactObject)};
+  const linkId=String(road.link_id??road.linkId??road.road_id??road.roadId??detail.link_id??detail.linkId??'').trim();
+  return {speedLimit:speedLimit||0,laneCount:laneCount||0,linkId:linkId||null,safeties:safeties.map(compactObject),roadEvents:roadEvents.map(compactObject)};
 }
 function compactObject(x){if(!x||typeof x!=='object')return {value:String(x??'')};const o={};for(const [k,v] of Object.entries(x)){if(['string','number','boolean'].includes(typeof v)||v===null)o[k]=v}return o}
 function firstFinite(...xs){for(const x of xs){const n=Number(x);if(Number.isFinite(n)&&n>0)return n}return 0}
