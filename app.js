@@ -617,12 +617,15 @@ function closeFuelModal(){$('fuelModal').classList.add('hidden')}
 /* ---------- SEARCH / SAVED PLACES ---------- */
 function isNearbySearchQuery(q=''){const n=String(q).replace(/\s+/g,'').replace(/내주변|주변|근처|가까운/g,'');return /^(주유소|충전소|전기차충전소|ev충전소|마트|대형마트|슈퍼|슈퍼마켓|편의점|주차장|공영주차장|공용주차장|소방서|119안전센터|안전센터|경찰서|파출소|지구대|공용화장실|공중화장실|화장실|공공기관|관공서)$/.test(n)}
 function destinationSearchAnchor(sortMode){
-  if(sortMode==='center'&&state.map){
-    try{
-      const center=state.map.getCenter();
-      if(Number.isFinite(Number(center?.lng))&&Number.isFinite(Number(center?.lat)))return {lng:Number(center.lng),lat:Number(center.lat)};
-    }catch{}
+  if(sortMode==='center'){
+    // 지도중심 선택 시 직전에 새로고침한 현재위치를 최우선 기준으로 사용한다.
     if(pointValid(state.user))return {lng:Number(state.user.lng),lat:Number(state.user.lat)};
+    if(state.map){
+      try{
+        const center=state.map.getCenter();
+        if(Number.isFinite(Number(center?.lng))&&Number.isFinite(Number(center?.lat)))return {lng:Number(center.lng),lat:Number(center.lat)};
+      }catch{}
+    }
   }
   // 정확도순은 좌표를 보내지 않는다. 검색어 일치도 기반 정렬이 거리값의 영향을 받지 않도록 분리한다.
   return null;
@@ -636,11 +639,23 @@ function renderDestinationSearchToolbar(box){
     <button type="button" data-dest-sort="accuracy" class="${state.destinationSearchSort==='accuracy'?'active':''}">정확도순</button>
   </div>`;
   box.appendChild(bar);
-  bar.querySelectorAll('[data-dest-sort]').forEach(b=>b.onclick=e=>{
+  bar.querySelectorAll('[data-dest-sort]').forEach(b=>b.onclick=async e=>{
     e.preventDefault();e.stopPropagation();
     const mode=b.dataset.destSort;
-    if(mode===state.destinationSearchSort)return;
     state.destinationSearchSort=mode;
+
+    if(mode==='center'){
+      try{
+        await locate(true);
+        if(pointValid(state.user)&&state.map){
+          state.map.setCenter({lng:Number(state.user.lng),lat:Number(state.user.lat)});
+          setTimeout(()=>state.map?.resize(),60);
+        }
+      }catch(err){
+        console.warn('현재위치 새로고침 실패',err);
+      }
+    }
+
     searchPlaces(state.lastDestinationQuery||$('destinationInput')?.value||'', 'searchResults');
   });
 }
