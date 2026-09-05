@@ -21,7 +21,7 @@ const state = {
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
   tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,
-  compassHeading:null,compassAt:0,compassReady:false,activeLaneGuideKey:'',gpsFix:{lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false},
+  compassHeading:null,compassAt:0,compassReady:false,activeLaneGuideKey:'',nativeLocationAt:0,nativeLocationActive:false,imu:{at:0,yawRateDegS:0,accelMagnitude:0,headingDeg:null},mapMatch:{index:0,routeDistance:0,score:Infinity,confidence:0,at:0},offRouteHeadingHits:0,gpsFix:{lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false},
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
 };
 
@@ -86,6 +86,24 @@ function nearestIndex(lng,lat,geometry){let bi=0,bd=Infinity;const stride=Math.m
 function buildCumulative(route){const g=route?.geometry||[],arr=new Array(g.length).fill(0);for(let i=1;i<g.length;i++)arr[i]=arr[i-1]+hav(g[i-1][1],g[i-1][0],g[i][1],g[i][0]);return arr}
 function normalizedPlace(x){return x?{id:x.id||'',name:x.name||'목적지',address:x.address||'',lng:Number(x.lng),lat:Number(x.lat)}:null}
 
+
+/* ---------- NATIVE HIGH-PRECISION LOCATION / IMU BRIDGE ---------- */
+function nativeBridgeAvailable(){return Boolean(window.JofamsNavigationBridge&&typeof window.JofamsNavigationBridge.postMessage==='function')}
+function nativePost(type,payload={}){try{if(nativeBridgeAvailable())window.JofamsNavigationBridge.postMessage(JSON.stringify({type,payload,ts:Date.now()}))}catch(e){console.warn('native bridge post failed',e)}}
+function parseNativePacket(packet){try{return typeof packet==='string'?JSON.parse(packet):packet||{}}catch{return {}}}
+window.JofamsNative=window.JofamsNative||{};
+window.JofamsNative.onLocationUpdate=packet=>{
+  const p=parseNativePacket(packet),lat=Number(p.lat??p.latitude),lng=Number(p.lng??p.longitude);if(!Number.isFinite(lat)||!Number.isFinite(lng))return;
+  state.nativeLocationAt=Date.now();state.nativeLocationActive=true;
+  applyGps({native:true,timestamp:Number(p.timestamp)||Date.now(),coords:{latitude:lat,longitude:lng,accuracy:Number(p.accuracy)||8,speed:Number(p.speedMps??p.speed),heading:Number(p.headingDeg??p.bearing),speedAccuracy:Number(p.speedAccuracy),headingAccuracy:Number(p.bearingAccuracy)}},false);
+};
+window.JofamsNative.onMotionUpdate=packet=>{
+  const p=parseNativePacket(packet);state.imu={at:Date.now(),yawRateDegS:Number(p.yawRateDegS)||0,accelMagnitude:Number(p.accelMagnitude)||0,headingDeg:Number.isFinite(Number(p.headingDeg))?Number(p.headingDeg):state.imu.headingDeg};
+  if(Number.isFinite(state.imu.headingDeg)){state.compassHeading=state.imu.headingDeg;state.compassAt=Date.now()}
+};
+window.JofamsNative.onTunnelState=packet=>{const p=parseNativePacket(packet);if(p.active===true)state.lastRealGpsAt=Math.min(state.lastRealGpsAt||Date.now(),Date.now()-2600)};
+function setNativeNavigationActive(active){nativePost('navigationState',{active:Boolean(active),highAccuracy:true,locationIntervalMs:500,imu:true})}
+
 /* ---------- GPS FUSION (GNSS + heading/DR complementary filter + map-snap) ----------
    브라우저 환경에서는 raw GNSS 칩/멀티위성 제어가 불가능하므로, Geolocation API가
    내려주는 lat/lng/heading/accuracy/speed 값을 대상으로 다음을 적용한다:
@@ -125,6 +143,39 @@ function nearestPointOnRoute(lng,lat,geometry){
   }
   return best;
 }
+
+function angleDiff(a,b){if(!Number.isFinite(a)||!Number.isFinite(b))return 0;return Math.abs(((a-b+540)%360)-180)}
+function routeDistanceAtSegment(i,t=.5){const cum=state.routeCumulative||[];if(!cum.length)return 0;const a=cum[Math.max(0,i-1)]||0,b=cum[Math.min(cum.length-1,i)]||a;return a+(b-a)*Math.max(0,Math.min(1,t))}
+function projectPointToSegmentDetailed(lng,lat,p0,p1){
+  const kx=Math.max(.2,Math.cos(lat*Math.PI/180)),x0=p0[0]*kx,y0=p0[1],x1=p1[0]*kx,y1=p1[1],x=lng*kx,y=lat,dx=x1-x0,dy=y1-y0,len2=dx*dx+dy*dy;
+  let t=len2>0?((x-x0)*dx+(y-y0)*dy)/len2:0;t=Math.max(0,Math.min(1,t));return{lng:(x0+dx*t)/kx,lat:y0+dy*t,t};
+}
+function roadSegmentAtIndex(idx){return (state.route?.roadSegments||[]).find(x=>idx>=Number(x.startIndex)&&idx<=Number(x.endIndex))||null}
+/* Incremental HMM-like map matcher: distance + heading + expected progress + backward penalty.
+   It intentionally keeps raw GPS separately, so route deviation can still be detected. */
+function probabilisticRouteMatch(raw,now=Date.now()){
+  const g=state.route?.geometry||[];if(g.length<2)return null;
+  const prev=state.mapMatch||{},coarse=nearestIndex(raw.lng,raw.lat,g),prior=Number.isFinite(prev.index)?prev.index:coarse;
+  const candidates=new Set();
+  for(const center of [coarse,prior])for(let i=Math.max(1,center-90);i<=Math.min(g.length-1,center+130);i+=2)candidates.add(i);
+  for(let i=Math.max(1,coarse-8);i<=Math.min(g.length-1,coarse+8);i++)candidates.add(i);
+  const dt=prev.at?Math.min(5,Math.max(.1,(now-prev.at)/1000)):1,expected=(Number(prev.routeDistance)||0)+Math.max(0,Number(raw.speed)||0)*dt;
+  const sigma=Math.max(6,Math.min(35,Number(raw.accuracy)||18)),heading=Number(raw.heading),moving=Number(raw.speed)>2.2;
+  let best=null,bestScore=Infinity;
+  for(const i of candidates){
+    const p0=g[i-1],p1=g[i],proj=projectPointToSegmentDetailed(raw.lng,raw.lat,p0,p1),d=hav(raw.lat,raw.lng,proj.lat,proj.lng),segHeading=bearing(p0[1],p0[0],p1[1],p1[0]),rd=routeDistanceAtSegment(i,proj.t);
+    const emission=d/sigma,headPenalty=moving?angleDiff(heading,segHeading)/48:0,progressPenalty=prev.at?Math.min(5,Math.abs(rd-expected)/Math.max(28,Math.max(0,Number(raw.speed)||0)*dt*4)):0;
+    const backwards=prev.at&&rd<(Number(prev.routeDistance)||0)-Math.max(18,(Number(raw.speed)||0)*dt*1.8)?2.6:0;
+    const indexJump=prev.at?Math.min(2.5,Math.abs(i-prior)/90):0,seg=roadSegmentAtIndex(i),linkId=seg?.linkId||null,linkPenalty=prev.linkId&&linkId&&prev.linkId!==linkId&&Math.abs(i-prior)>18?.55:0;
+    const score=emission+headPenalty*.75+progressPenalty*.9+backwards+indexJump*.35+linkPenalty;
+    if(score<bestScore){bestScore=score;best={lng:proj.lng,lat:proj.lat,index:i,heading:segHeading,distance:d,routeDistance:rd,linkId,score}}
+  }
+  if(!best)return null;
+  best.confidence=Math.max(0,Math.min(1,1-best.score/5.2));
+  state.mapMatch={index:best.index,routeDistance:best.routeDistance,linkId:best.linkId||null,score:best.score,confidence:best.confidence,at:now};
+  return best;
+}
+
 /* 정확도(accuracy, m)를 신뢰가중치(0~1)로 변환: 정확도가 좋을수록(값이 작을수록) 1에 가깝다. */
 function accuracyWeight(accuracy){const a=Number.isFinite(accuracy)&&accuracy>0?accuracy:35;return Math.max(.12,Math.min(.9,1-a/60))}
 function initCompassFallback(){
@@ -154,40 +205,29 @@ function fuseGpsFix(raw,now){
   const fix=state.gpsFix;
   if(!Number.isFinite(fix.at)||fix.at<=0||!Number.isFinite(fix.lat)||!Number.isFinite(fix.lng)){
     fix.lat=raw.lat;fix.lng=raw.lng;fix.headingDeg=Number.isFinite(raw.heading)?raw.heading:null;fix.speedMps=raw.speed||0;fix.at=now;fix.fixCount=1;
-    return{lat:raw.lat,lng:raw.lng,heading:fix.headingDeg,mapSnapped:false};
+    const first=state.route?.geometry?.length?probabilisticRouteMatch(raw,now):null;
+    if(first&&first.distance<Math.max(16,Math.min(45,(raw.accuracy||15)*1.4)))return{lat:first.lat,lng:first.lng,heading:first.heading,mapSnapped:true,routeIndex:first.index,routeDistance:first.routeDistance,matchConfidence:first.confidence};
+    return{lat:raw.lat,lng:raw.lng,heading:fix.headingDeg,mapSnapped:false,routeIndex:null,routeDistance:null,matchConfidence:0};
   }
-  const dt=Math.min(5,Math.max(0,(now-fix.at)/1000));
-  const predicted=projectForward(fix.lat,fix.lng,fix.headingDeg,fix.speedMps,dt);
-  const jump=hav(predicted.lat,predicted.lng,raw.lat,raw.lng);
-  const plausible=Math.max(raw.accuracy*3,fix.speedMps*dt*4,40);
-  const isTeleport=jump>plausible&&raw.accuracy>18; // 정확도가 매우 좋은 fix는 실제 급회전/차선변경일 수 있어 그대로 신뢰
-  let posWeight=accuracyWeight(raw.accuracy);
-  if(isTeleport)posWeight*=.25;
-  const fusedLat=predicted.lat+(raw.lat-predicted.lat)*posWeight;
-  const fusedLng=predicted.lng+(raw.lng-predicted.lng)*posWeight;
+  const dt=Math.min(5,Math.max(0,(now-fix.at)/1000)),predicted=projectForward(fix.lat,fix.lng,fix.headingDeg,fix.speedMps,dt),jump=hav(predicted.lat,predicted.lng,raw.lat,raw.lng),plausible=Math.max((raw.accuracy||20)*3,fix.speedMps*dt*4,35),isTeleport=jump>plausible&&(raw.accuracy||99)>18;
+  let posWeight=accuracyWeight(raw.accuracy);if(isTeleport)posWeight*=.25;
+  const fusedLat=predicted.lat+(raw.lat-predicted.lat)*posWeight,fusedLng=predicted.lng+(raw.lng-predicted.lng)*posWeight;
   let fusedHeading=fix.headingDeg;
-  if(Number.isFinite(raw.heading)&&raw.speed>=1.2){
-    const hw=Math.max(.35,Math.min(.85,raw.speed/8));
-    fusedHeading=circularLerp(fix.headingDeg,raw.heading,hw);
-  }else if(Number.isFinite(state.compassHeading)&&now-state.compassAt<3000&&raw.speed<1.2){
-    fusedHeading=circularLerp(fix.headingDeg,state.compassHeading,.2);
-  }
+  if(Number.isFinite(raw.heading)&&raw.speed>=1.2)fusedHeading=circularLerp(fix.headingDeg,raw.heading,Math.max(.35,Math.min(.88,raw.speed/8)));
+  else if(Number.isFinite(state.imu?.headingDeg)&&now-state.imu.at<1500)fusedHeading=circularLerp(fix.headingDeg,state.imu.headingDeg,.28);
+  else if(Number.isFinite(state.compassHeading)&&now-state.compassAt<3000&&raw.speed<1.2)fusedHeading=circularLerp(fix.headingDeg,state.compassHeading,.2);
   fix.lat=fusedLat;fix.lng=fusedLng;fix.headingDeg=fusedHeading;fix.speedMps=raw.speed||0;fix.at=now;fix.fixCount++;
-  let outLat=fusedLat,outLng=fusedLng,mapSnapped=false;
+  let outLat=fusedLat,outLng=fusedLng,mapSnapped=false,routeIndex=null,routeDistance=null,matchConfidence=0;
   if(state.route?.geometry?.length){
-    const snap=nearestPointOnRoute(fusedLng,fusedLat,state.route.geometry);
-    if(snap){
-      const threshold=Math.max(12,Math.min(35,raw.accuracy*.9));
-      if(snap.distance<threshold){
-        const snapWeight=Math.max(.25,Math.min(.8,1-snap.distance/threshold));
-        outLat=fusedLat+(snap.lat-fusedLat)*snapWeight;
-        outLng=fusedLng+(snap.lng-fusedLng)*snapWeight;
-        mapSnapped=true;
+    const match=probabilisticRouteMatch({lng:fusedLng,lat:fusedLat,heading:fusedHeading,speed:raw.speed,accuracy:raw.accuracy},now);
+    if(match){
+      const threshold=Math.max(16,Math.min(52,(raw.accuracy||18)*1.55));routeIndex=match.index;routeDistance=match.routeDistance;matchConfidence=match.confidence;
+      if(match.distance<threshold&&match.confidence>.18){
+        const snapWeight=Math.max(.55,Math.min(.96,.58+match.confidence*.38));outLat=fusedLat+(match.lat-fusedLat)*snapWeight;outLng=fusedLng+(match.lng-fusedLng)*snapWeight;mapSnapped=true;fusedHeading=circularLerp(fusedHeading,match.heading,Math.min(.72,.25+match.confidence*.5));
       }
     }
   }
-  fix.mapSnapped=mapSnapped;
-  return{lat:outLat,lng:outLng,heading:fusedHeading,mapSnapped};
+  fix.mapSnapped=mapSnapped;return{lat:outLat,lng:outLng,heading:fusedHeading,mapSnapped,routeIndex,routeDistance,matchConfidence};
 }
 
 
@@ -445,41 +485,18 @@ async function locate(fly=true){
 }
 function applyGps(pos,fly=false){
   if(state.permissionPrefs?.location===false)return;
-  const c=pos.coords||pos,stateObj={lng:Number(c.longitude??c.lng),lat:Number(c.latitude??c.lat),speed:Number(c.speed),heading:Number(c.heading),accuracy:Number(c.accuracy)||0,estimated:false};
-  if(!pointValid(stateObj))return;
-  const now=Date.now(),sampleTime=Number(pos?.timestamp)||now;
-  // 브라우저/일부 단말이 speed를 null/0으로 주는 경우 연속 GPS 좌표의 이동거리로 실제 주행속도를 보완한다.
+  const native=Boolean(pos?.native),now=Date.now();if(!native&&state.nativeLocationAt&&now-state.nativeLocationAt<2200)return;
+  const c=pos.coords||pos,stateObj={lng:Number(c.longitude??c.lng),lat:Number(c.latitude??c.lat),speed:Number(c.speed),heading:Number(c.heading),accuracy:Number(c.accuracy)||0,estimated:false,native};
+  if(!pointValid(stateObj))return;const rawLat=stateObj.lat,rawLng=stateObj.lng,sampleTime=Number(pos?.timestamp)||now;
   const prevSpeedSample=state.lastSpeedSample;
-  if(prevSpeedSample&&sampleTime>prevSpeedSample.t){
-    const dt=(sampleTime-prevSpeedSample.t)/1000,dist=hav(prevSpeedSample.lat,prevSpeedSample.lng,stateObj.lat,stateObj.lng);
-    if(dt>=.3&&dt<=5&&Number.isFinite(dist)){
-      const jitter=Math.max(1.5,Math.min(6,((prevSpeedSample.accuracy||0)+(stateObj.accuracy||0))*.18));
-      const derived=dist>=jitter?Math.min(70,dist/dt):(dist<1.5?0:NaN);
-      if(Number.isFinite(derived)&&( !Number.isFinite(stateObj.speed)||stateObj.speed<.7&&derived>=.7))stateObj.speed=derived;
-      else if(Number.isFinite(derived)&&Number.isFinite(stateObj.speed)&&stateObj.speed>=.7)stateObj.speed=stateObj.speed*.75+derived*.25;
-    }
-  }
-  state.lastSpeedSample={lat:stateObj.lat,lng:stateObj.lng,t:sampleTime,accuracy:stateObj.accuracy};
-  // 터널에서 네이티브 위치 공급자가 오래된 마지막 좌표를 다시 전달하면 실제 GPS로 간주하지 않는다.
-  if(state.tripStartedAt&&now-sampleTime>4500)return;
-  if(Number.isFinite(stateObj.speed)&&stateObj.speed>=0)state.lastRealSpeedMps=stateObj.speed;
-  if(Number.isFinite(stateObj.heading))state.lastRealHeading=stateObj.heading;
-  state.lastRealGpsAt=now;state.lastGpsTickAt=now;state.deadReckoningLastAt=now;state.gpsEstimated=false;
-  if(!Number.isFinite(stateObj.speed))stateObj.speed=state.lastRealSpeedMps||0;
-  if(!Number.isFinite(stateObj.heading))stateObj.heading=state.lastRealHeading;
-  // GNSS/DR 상보필터 + 맵매칭 스냅: raw 좌표를 그대로 쓰지 않고 예측-보정된 좌표로 대체해 도심/터널 진입부 튀는 현상을 줄인다.
+  if(prevSpeedSample&&sampleTime>prevSpeedSample.t){const dt=(sampleTime-prevSpeedSample.t)/1000,dist=hav(prevSpeedSample.lat,prevSpeedSample.lng,stateObj.lat,stateObj.lng);if(dt>=.25&&dt<=5&&Number.isFinite(dist)){const jitter=Math.max(1.5,Math.min(6,((prevSpeedSample.accuracy||0)+(stateObj.accuracy||0))*.18)),derived=dist>=jitter?Math.min(70,dist/dt):(dist<1.5?0:NaN);if(Number.isFinite(derived)&&(!Number.isFinite(stateObj.speed)||stateObj.speed<.7&&derived>=.7))stateObj.speed=derived;else if(Number.isFinite(derived)&&Number.isFinite(stateObj.speed)&&stateObj.speed>=.7)stateObj.speed=stateObj.speed*.78+derived*.22}}
+  state.lastSpeedSample={lat:stateObj.lat,lng:stateObj.lng,t:sampleTime,accuracy:stateObj.accuracy};if(state.tripStartedAt&&now-sampleTime>4500)return;
+  if(Number.isFinite(stateObj.speed)&&stateObj.speed>=0)state.lastRealSpeedMps=stateObj.speed;if(Number.isFinite(stateObj.heading))state.lastRealHeading=stateObj.heading;
+  state.lastRealGpsAt=now;state.lastGpsTickAt=now;state.deadReckoningLastAt=now;state.gpsEstimated=false;if(!Number.isFinite(stateObj.speed))stateObj.speed=state.lastRealSpeedMps||0;if(!Number.isFinite(stateObj.heading))stateObj.heading=state.lastRealHeading;
   const fused=fuseGpsFix({lat:stateObj.lat,lng:stateObj.lng,heading:stateObj.heading,speed:stateObj.speed,accuracy:stateObj.accuracy},now);
-  stateObj.lng=fused.lng;stateObj.lat=fused.lat;
-  if(Number.isFinite(fused.heading))stateObj.heading=fused.heading;
-  stateObj.mapSnapped=fused.mapSnapped;
-  state.user=stateObj;
-  if(state.route?.geometry?.length&&state.routeCumulative?.length){
-    const idx=nearestIndex(stateObj.lng,stateObj.lat,state.route.geometry);
-    state.deadReckoningDistance=Number(state.routeCumulative[idx])||0;
-  }else state.deadReckoningDistance=null;
-  ensureUserMarker();
-  if(fly)state.map.easeTo({center:[stateObj.lng,stateObj.lat],zoom:16,duration:500});
-  if(state.route&&$('driveView')&&!$('driveView').classList.contains('hidden'))updateDriving();
+  stateObj.rawLat=rawLat;stateObj.rawLng=rawLng;stateObj.lng=fused.lng;stateObj.lat=fused.lat;if(Number.isFinite(fused.heading))stateObj.heading=fused.heading;stateObj.mapSnapped=fused.mapSnapped;stateObj.routeIndex=Number.isFinite(fused.routeIndex)?fused.routeIndex:null;stateObj.routeDistance=Number.isFinite(fused.routeDistance)?fused.routeDistance:null;stateObj.matchConfidence=Number(fused.matchConfidence)||0;state.user=stateObj;
+  if(Number.isFinite(stateObj.routeDistance))state.deadReckoningDistance=stateObj.routeDistance;else if(state.route?.geometry?.length&&state.routeCumulative?.length){const idx=nearestIndex(stateObj.lng,stateObj.lat,state.route.geometry);state.deadReckoningDistance=Number(state.routeCumulative[idx])||0}else state.deadReckoningDistance=null;
+  ensureUserMarker();if(fly)state.map.easeTo({center:[stateObj.lng,stateObj.lat],zoom:16,duration:500});if(state.route&&$('driveView')&&!$('driveView').classList.contains('hidden'))updateDriving();
 }
 function pointAtRouteDistance(target){
   const g=state.route?.geometry||[],cum=state.routeCumulative||[];if(!g.length||!cum.length)return null;
@@ -491,14 +508,14 @@ function pointAtRouteDistance(target){
 function deadReckoningTick(){
   if(!state.tripStartedAt||!state.route?.geometry?.length||!state.routeCumulative.length||!state.user)return;
   const now=Date.now(),sinceReal=now-(state.lastRealGpsAt||0);if(sinceReal<2500||sinceReal>180000)return;
-  const speed=Math.max(0,Number(state.lastRealSpeedMps)||Number(state.user.speed)||0);
+  let speed=Math.max(0,Number(state.lastRealSpeedMps)||Number(state.user.speed)||0);const imuFresh=state.imu&&now-state.imu.at<1200;if(imuFresh&&Number(state.imu.accelMagnitude)>1.8)speed=Math.max(0,Math.min(55,speed+Math.min(1.2,Number(state.imu.accelMagnitude)*.05)));
   if(speed<.35){state.deadReckoningLastAt=now;state.user.speed=0;updateUserMarkerMotion();return}
   const last=state.deadReckoningLastAt||state.lastGpsTickAt||now,dt=Math.min(2.5,Math.max(.2,(now-last)/1000));state.deadReckoningLastAt=now;state.lastGpsTickAt=now;
   if(!Number.isFinite(state.deadReckoningDistance)){
     const idx=Math.max(0,nearestIndex(state.user.lng,state.user.lat,state.route.geometry));state.deadReckoningDistance=Number(state.routeCumulative[idx])||0;
   }
   state.deadReckoningDistance=Math.min(state.routeCumulative.at(-1)||Infinity,state.deadReckoningDistance+speed*dt);
-  const p=pointAtRouteDistance(state.deadReckoningDistance);if(!p)return;
+  const p=pointAtRouteDistance(state.deadReckoningDistance);if(!p)return;if(imuFresh&&Math.abs(Number(state.imu.yawRateDegS)||0)>4)p.heading=circularLerp(p.heading,(Number(state.user.heading)||p.heading)+(Number(state.imu.yawRateDegS)||0)*dt,.18);
   state.currentRouteIndex=p.index;
   state.user={...state.user,lng:p.lng,lat:p.lat,speed,heading:p.heading,accuracy:Math.max(45,Number(state.user.accuracy)||0),estimated:true};state.gpsEstimated=true;
   // DR로 추정한 위치/헤딩을 상보필터 기준선으로 동기화해, 터널 탈출 후 실제 GPS가 복귀할 때
@@ -509,8 +526,8 @@ function deadReckoningTick(){
 }
 function startDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningLastAt=Date.now();state.deadReckoningTimer=setInterval(deadReckoningTick,500)}
 function stopDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningTimer=0;state.gpsEstimated=false;state.deadReckoningDistance=null;state.deadReckoningLastAt=0}
-function startWatch(){if(state.permissionPrefs?.location===false)return;if(state.watchId!=null)return;state.watchId=navigator.geolocation.watchPosition(p=>applyGps(p,false),()=>{}, {enableHighAccuracy:true,maximumAge:0,timeout:7000});startDeadReckoning()}
-function stopWatch(){if(state.watchId!=null){navigator.geolocation.clearWatch(state.watchId);state.watchId=null}stopDeadReckoning()}
+function startWatch(){if(state.permissionPrefs?.location===false)return;if(nativeBridgeAvailable())setNativeNavigationActive(true);if(state.watchId!=null)return;state.watchId=navigator.geolocation.watchPosition(p=>applyGps(p,false),()=>{}, {enableHighAccuracy:true,maximumAge:0,timeout:7000});startDeadReckoning()}
+function stopWatch(){if(nativeBridgeAvailable())setNativeNavigationActive(false);if(state.watchId!=null){navigator.geolocation.clearWatch(state.watchId);state.watchId=null}state.nativeLocationActive=false;stopDeadReckoning()}
 
 
 /* ---------- LIVE FUEL PRICE / OPINET ---------- */
@@ -753,8 +770,8 @@ function chooseRoutePreference(pref){if(!['recommend','fast','free'].includes(pr
 function updateCameraAlertSetting(kind,value){if(!['speed','signal'].includes(kind))return;state.cameraAlerts[kind]=Boolean(value);saveUserSettingsOptimistic();showPlaceConfirmPopup(`${kind==='speed'?'과속':'신호위반'} 카메라 알림이 ${value?'켜졌습니다.':'꺼졌습니다.'}`)}
 
 /* ---------- ROUTES ---------- */
-async function routeRequest(priority='RECOMMEND',avoid=null){
-  const o=state.originMode==='current'?(state.user||state.origin):(state.origin||state.user);const body={origin:{lng:o.lng,lat:o.lat,heading:state.originMode==='current'?state.user?.heading:null},destination:{lng:state.destination.lng,lat:state.destination.lat},waypoints:(state.waypoints||[]).filter(pointValid).map(x=>({lng:x.lng,lat:x.lat,name:x.name||'경유지'})),priority,alternatives:false};if(avoid)body.avoid=avoid;
+async function routeRequest(priority='RECOMMEND',avoid=null,waypointsOverride=null){
+  const o=state.originMode==='current'?(state.user||state.origin):(state.origin||state.user),wps=Array.isArray(waypointsOverride)?waypointsOverride:state.waypoints;const body={origin:{lng:o.lng,lat:o.lat,heading:state.originMode==='current'?state.user?.heading:null},destination:{lng:state.destination.lng,lat:state.destination.lat},waypoints:(wps||[]).filter(pointValid).map(x=>({lng:x.lng,lat:x.lat,name:x.name||'경유지'})),priority,alternatives:false};if(avoid)body.avoid=avoid;
   const r=await fetch('/api/route',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error('경로 조회 실패');return r.json();
 }
 async function loadRouteOptions(){
@@ -1157,30 +1174,13 @@ function normalizeGuideLanes(g){
   });
 }
 function laneAssistModel(idx){
-  const guides=(state.route?.guides||[]).filter(g=>Number(g.routeIndex)>idx+1);
-  const g=guides[0];if(!g)return null;
-  const d=distanceAlong(idx,g.routeIndex);
-  if(d>1000||d<18)return null;
-  const laneRows=normalizeGuideLanes(g);
-  const dir=laneDirectionInfo(g.type,g.guidance||g.name);
-  const confusing=/분기|갈림|진입|출구|램프|교차|고가|지하|IC|JC|junction|fork|merge|exit/i.test(`${g.guidance||''} ${g.name||''}`);
+  const guides=(state.route?.guides||[]).filter(g=>Number(g.routeIndex)>idx+1),g=guides[0];if(!g)return null;
+  const d=distanceAlong(idx,g.routeIndex);if(d>1000||d<18)return null;
+  const laneRows=normalizeGuideLanes(g),dir=laneDirectionInfo(g.type,g.guidance||g.name),confusing=/분기|갈림|진입|출구|램프|교차|고가|지하|IC|JC|junction|fork|merge|exit/i.test(`${g.guidance||''} ${g.name||''}`);
   if(!laneRows.length&&!confusing&&d>650)return null;
-
-  let lanes=laneRows;
-  if(!lanes.length){
-    const fallbackCount=3;
-    lanes=Array.from({length:fallbackCount},(_,i)=>({index:i+1,recommended:dir.side==='left'?i===0:dir.side==='right'?i===fallbackCount-1:i===1}));
-  }
-  let rec=lanes.filter(x=>x.recommended);
-  if(!rec.length){
-    if(dir.side==='left')rec=[lanes[0]];
-    else if(dir.side==='right')rec=[lanes[lanes.length-1]];
-    else rec=[lanes[Math.floor(lanes.length/2)]];
-    rec.forEach(x=>x.recommended=true);
-  }
-  const nums=rec.map(x=>x.index).filter(Number.isFinite).sort((a,b)=>a-b);
-  const range=nums.length===1?`${nums[0]}차로`:nums.length>1?`${nums[0]}~${nums.at(-1)}차로`:dir.label;
-  return {guide:g,d,lanes,dir,range,source:laneRows.length?'route':'direction'};
+  const rec=laneRows.filter(x=>x.recommended),nums=rec.map(x=>x.index).filter(Number.isFinite).sort((a,b)=>a-b);
+  const verified=nums.length>0,range=verified?(nums.length===1?`${nums[0]}차로`:`${nums[0]}~${nums.at(-1)}차로`):dir.label;
+  return {guide:g,d,lanes:laneRows,dir,range,source:verified?'route-lane':'direction-only',verified};
 }
 function updateLaneGuide(idx){
   const el=$('laneAssistLayer');if(!el)return;
@@ -1214,17 +1214,21 @@ function mergeFreshTraffic(current,fresh){
     if(best>=0&&bestScore<.42){used.add(best);const f=freshSegs[best];seg.trafficSpeed=Number(f.trafficSpeed)||0;seg.trafficState=Number(f.trafficState)||0;if(!seg.speedLimit&&f.speedLimit)seg.speedLimit=f.speedLimit}
   }
 }
+function remainingWaypointsForReroute(){
+  const g=state.route?.geometry||[],idx=state.currentRouteIndex||0;if(!g.length)return (state.waypoints||[]).filter(pointValid);
+  return (state.waypoints||[]).filter(pointValid).filter(w=>nearestIndex(w.lng,w.lat,g)>idx+8);
+}
 async function liveRouteRefresh(){
-  if(!state.tripStartedAt||!state.user||!state.destination||Date.now()-state.lastLiveRouteAt<115000)return;
-  state.lastLiveRouteAt=Date.now();
+  if(!state.tripStartedAt||!state.user||!state.destination||state.gpsEstimated||Date.now()-state.lastLiveRouteAt<65000)return;state.lastLiveRouteAt=Date.now();
   try{
-    const r=await routeRequest('RECOMMEND');if(!r?.geometry?.length)return;const old=state.route;if(!old)return;
+    const spec=routePreferenceSpec(),r=await routeRequest(spec.priority,spec.avoid,remainingWaypointsForReroute());if(!r?.geometry?.length||!state.route)return;
+    const old=state.route,total=state.routeCumulative.at(-1)||old.distance||1,done=state.routeCumulative[state.currentRouteIndex]||0,remainingRatio=Math.max(0,Math.min(1,(total-done)/total)),oldRemain=Number(old.duration||0)*remainingRatio,newEta=Number(r.duration||0);
     mergeFreshTraffic(old,r);drawRoute(old,{fit:false});renderTrafficRouteRail(state.currentRouteIndex);updateTrafficStatus((old.roadSegments||[]).find(x=>state.currentRouteIndex>=x.startIndex&&state.currentRouteIndex<=x.endIndex));
-    const improvement=Number(old.duration)-Number(r.duration);
-    if(improvement>=120){state.route={...r,_label:'실시간 경로',_character:state.character};state.routeCumulative=buildCumulative(state.route);drawRoute(state.route,{fit:false});await loadSafetyEvents(state.route);updateDriving(true);toast('실시간 교통을 반영해 2분 이상 빠른 경로로 변경했습니다.');speak('실시간 교통을 반영해 2분 이상 빠른 경로로 변경했습니다.')}
+    const improvement=oldRemain-newEta,relative=oldRemain>0?improvement/oldRemain:0;
+    if(improvement>=120||relative>=.10&&improvement>=60){state.route={...r,_label:'실시간 경로',_character:state.character};state.routeCumulative=buildCumulative(state.route);state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};drawRoute(state.route,{fit:false});await loadSafetyEvents(state.route);updateDriving(true);toast('실시간 교통을 반영해 더 빠른 경로로 변경했습니다.');speak('실시간 교통을 반영해 더 빠른 경로로 변경했습니다.')}
   }catch(e){console.warn('live route refresh failed',e)}
 }
-function startLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.liveRouteTimer=0 /* MVP 7.5.4: 자동 재탐색은 경로 이탈시에만 수행 */}
+function startLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.lastLiveRouteAt=0;setTimeout(liveRouteRefresh,12000);state.liveRouteTimer=setInterval(liveRouteRefresh,75000)}
 function stopLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.liveRouteTimer=0}
 
 function setView(view){
@@ -1237,9 +1241,9 @@ function setView(view){
 }
 function startNavigation(){
   if((state.waypoints||[]).filter(pointValid).length)saveCurrentWaypointCourse();if(!state.route||!state.destination)return;cancelAutoStart();state.tripStartedAt=Date.now();startDestinationCycle();logTrip('start');setView('drive');
-  state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false}; // 새 주행마다 상보필터 상태 초기화
+  state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false};state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};state.offRouteHits=0;state.offRouteHeadingHits=0; // 새 주행마다 상보필터 상태 초기화
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
-  startWatch();ensureUserMarker();updateCarMarkerImage();state.routeCumulative=buildCumulative(state.route);drawRoute(state.route,{fit:false});updateDriving(true);startLiveRouteRefresh();applyNightMode();setTimeout(tryLandscapeFullscreen,100);speak(`${characterDefs[state.character].name}이 안내를 시작합니다.`)}
+  state.routeCumulative=buildCumulative(state.route);startWatch();ensureUserMarker();updateCarMarkerImage();drawRoute(state.route,{fit:false});updateDriving(true);startLiveRouteRefresh();applyNightMode();setTimeout(tryLandscapeFullscreen,100);speak(`${characterDefs[state.character].name}이 안내를 시작합니다.`)}
 function stopNavigation(){if($('laneAssistLayer'))$('laneAssistLayer').classList.add('hidden');
   const finishedDestination=state.destination?{...state.destination}:null;
   // 안내 종료는 어떤 부가기능 오류가 발생해도 반드시 홈 화면까지 복귀해야 한다.
@@ -1263,10 +1267,8 @@ function driveCameraPadding(){
   return landscape?{top:Math.round(h*.68),bottom:42,left:0,right:0}:{top:Math.round(h*.56),bottom:90,left:0,right:0};
 }
 function updateDriving(force=false){
-  if(!state.user||!state.route?.geometry?.length)return;const g=state.route.geometry,idx=nearestIndex(state.user.lng,state.user.lat,g);state.currentRouteIndex=idx;ensureUserMarker();
-  const nextPoint=g[Math.min(g.length-1,idx+3)],heading=Number.isFinite(state.user.heading)?state.user.heading:(nextPoint?bearing(state.user.lat,state.user.lng,nextPoint[1],nextPoint[0]):0);
-  state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?55:0,bearing:heading,duration:force?0:650,padding:driveCameraPadding()});
-  updateProgressUI(idx);if(state.arRunning)updateAROverlay();checkOffRoute(idx);
+  if(!state.user||!state.route?.geometry?.length)return;const g=state.route.geometry;let idx=Number(state.user.routeIndex);if(!Number.isFinite(idx)){const match=probabilisticRouteMatch({lng:state.user.lng,lat:state.user.lat,heading:state.user.heading,speed:state.user.speed,accuracy:state.user.accuracy},Date.now());idx=match?.index??nearestIndex(state.user.lng,state.user.lat,g)}idx=Math.max(0,Math.min(g.length-1,Math.round(idx)));state.currentRouteIndex=idx;ensureUserMarker();
+  const nextPoint=g[Math.min(g.length-1,idx+3)],heading=Number.isFinite(state.user.heading)?state.user.heading:(nextPoint?bearing(state.user.lat,state.user.lng,nextPoint[1],nextPoint[0]):0);state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?55:0,bearing:heading,duration:force?0:650,padding:driveCameraPadding()});updateProgressUI(idx);if(state.arRunning)updateAROverlay();checkOffRoute(idx);
 }
 function hideDestinationBottom(){clearTimeout(state.destinationHideTimer);$('driveBottomDestination')?.classList.add('hidden');$('driveBottomNormal')?.classList.remove('hidden')}
 function showDestinationBottom(duration=10000){if(!state.tripStartedAt||!state.destination)return;clearTimeout(state.destinationHideTimer);$('driveBottomNormal')?.classList.add('hidden');$('driveBottomDestination')?.classList.remove('hidden');state.lastDestinationShownAt=Date.now();state.destinationHideTimer=setTimeout(hideDestinationBottom,duration)}
@@ -1368,16 +1370,15 @@ function recenterDriveMap(){
   state.map?.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?55:0,bearing:heading,duration:350,padding:driveCameraPadding()});
   toast('현재 위치로 지도를 맞췄습니다.',1200);
 }
-async function reroute(){if(!state.user||!state.destination)return;state.lastRerouteAt=Date.now();toast('경로를 다시 탐색합니다.');speak('경로를 다시 탐색합니다.');try{const spec=routePreferenceSpec(),r=await routeRequest(spec.priority,spec.avoid);state.route={...r,_label:`재탐색 · ${spec.label}`,_character:state.character};state.routeCumulative=buildCumulative(state.route);drawRoute(state.route,{fit:false});loadSafetyEvents(state.route);updateDriving(true)}catch{toast('재탐색에 실패했습니다.') }}
+async function reroute(){if(!state.user||!state.destination)return;state.lastRerouteAt=Date.now();toast('경로를 다시 탐색합니다.');speak('경로를 다시 탐색합니다.');try{const spec=routePreferenceSpec(),r=await routeRequest(spec.priority,spec.avoid,remainingWaypointsForReroute());state.route={...r,_label:`재탐색 · ${spec.label}`,_character:state.character};state.routeCumulative=buildCumulative(state.route);state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};drawRoute(state.route,{fit:false});loadSafetyEvents(state.route);updateDriving(true)}catch{toast('재탐색에 실패했습니다.') }}
 function checkOffRoute(idx){
-  // 터널/도심 음영에서 추정 좌표로는 절대 재탐색하지 않는다.
-  if(state.gpsEstimated||state.user?.estimated)return;
-  if(Date.now()-state.lastRerouteAt<15000)return;
-  const p=state.route.geometry[idx];if(!p)return;
-  const d=hav(state.user.lat,state.user.lng,p[1],p[0]);
-  const accuracy=Math.max(0,Number(state.user.accuracy)||0),threshold=Math.max(55,Math.min(95,accuracy*1.35));
-  if(d>threshold)state.offRouteHits=(state.offRouteHits||0)+1;else state.offRouteHits=0;
-  if(state.offRouteHits>=3){state.offRouteHits=0;reroute()}
+  if(state.gpsEstimated||state.user?.estimated||Date.now()-state.lastRerouteAt<12000)return;const p=state.route.geometry[idx];if(!p)return;
+  const lat=Number.isFinite(state.user.rawLat)?state.user.rawLat:state.user.lat,lng=Number.isFinite(state.user.rawLng)?state.user.rawLng:state.user.lng,d=hav(lat,lng,p[1],p[0]),accuracy=Math.max(0,Number(state.user.accuracy)||0);
+  if(accuracy>85){state.offRouteHits=0;state.offRouteHeadingHits=0;return}
+  const threshold=Math.max(22,Math.min(70,accuracy*1.15+12)),next=state.route.geometry[Math.min(state.route.geometry.length-1,idx+3)],routeHeading=next?bearing(p[1],p[0],next[1],next[0]):null,headingDiff=angleDiff(Number(state.user.heading),routeHeading),moving=Number(state.user.speed)>3.5;
+  state.offRouteHits=d>threshold?(state.offRouteHits||0)+1:Math.max(0,(state.offRouteHits||0)-1);
+  state.offRouteHeadingHits=moving&&d>12&&headingDiff>62?(state.offRouteHeadingHits||0)+1:0;
+  if(state.offRouteHits>=2||state.offRouteHeadingHits>=3){state.offRouteHits=0;state.offRouteHeadingHits=0;reroute()}
 }
 
 /* ---------- SAFETY GUIDANCE ---------- */
