@@ -8,7 +8,7 @@
   <title>조팸스 내비</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.5.8.7" />
+  <link rel="stylesheet" href="/styles.css?v=7.5.8.8" />
 </head>
 <body>
   <main id="app">
@@ -171,13 +171,12 @@
       </button>
 
       <div id="laneAssistLayer" class="lane-assist-layer hidden" aria-live="polite">
-        <div class="lane-assist-head">
-          <span class="lane-assist-icon" aria-hidden="true">↗</span>
-          <div><small id="laneAssistDistance">1km 전</small><b id="laneAssistTitle">차로 안내</b></div>
+        <span class="lane-assist-icon" aria-hidden="true">↗</span>
+        <div class="lane-assist-copy">
+          <small id="laneAssistDistance">1km 전</small>
+          <b id="laneAssistTitle">오른쪽 차로</b>
         </div>
-        <div id="laneAssistRoad" class="lane-assist-road">다음 갈림길</div>
-        <div id="laneAssistLanes" class="lane-assist-lanes"></div>
-        <small id="laneAssistHint" class="lane-assist-hint">미리 차로를 변경하세요.</small>
+        <span id="laneAssistRoad" class="lane-assist-road">다음 갈림길</span>
       </div>
 
       <div id="overspeedFlash" class="overspeed-flash" aria-live="assertive" aria-hidden="true"><div><b>과속 주의</b><span id="overspeedMessage">제한속도를 확인하세요</span></div></div>
@@ -558,6 +557,6 @@
   </main>
 
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.5.8.7"></script>
+  <script type="module" src="/app.js?v=7.5.8.8"></script>
 </body>
 </html>

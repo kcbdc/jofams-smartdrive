@@ -1188,18 +1188,13 @@ function updateLaneGuide(idx){
   if(!model){el.classList.add('hidden');state.activeLaneGuideKey='';return}
   const key=`${model.guide.id||model.guide.routeIndex}:${model.range}`;
   $('laneAssistDistance').textContent=model.d>=950?'1km 전':`${Math.max(50,Math.round(model.d/50)*50)}m 전`;
-  $('laneAssistTitle').textContent=`${model.range} 이용`;
+  $('laneAssistTitle').textContent=model.range||model.dir.label;
   $('laneAssistRoad').textContent=model.guide.name||model.guide.roadName||model.guide.guidance||'다음 갈림길';
-  $('laneAssistHint').textContent=model.source==='route'
-    ?'초록 차로를 따라 미리 진입하세요.'
-    :`${model.dir.label}를 미리 유지하세요.`;
-  $('.lane-assist-icon');
-  const icon=$('laneAssistLayer')?.querySelector('.lane-assist-icon');if(icon)icon.textContent=model.dir.icon;
-  $('laneAssistLanes').innerHTML=model.lanes.map(x=>`<span class="${x.recommended?'recommended':''}"><i>${x.index}</i><b>${x.recommended?'●':'│'}</b></span>`).join('');
+  const icon=el.querySelector('.lane-assist-icon');if(icon)icon.textContent=model.dir.icon;
   el.classList.remove('hidden');
   if(key!==state.activeLaneGuideKey&&model.d<=1000){
     state.activeLaneGuideKey=key;
-    speak(`${Math.max(100,Math.round(model.d/100)*100)}미터 앞 ${model.range}를 이용하세요.`);
+    speak(`${Math.max(100,Math.round(model.d/100)*100)}미터 앞 ${model.range||model.dir.label}를 이용하세요.`);
   }
 }
 
