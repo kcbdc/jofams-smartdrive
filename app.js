@@ -17,7 +17,7 @@ const state = {
   map:null,mapReady:false,pendingRouteDraw:null,mapFallbackTried:false,mapWatchdog:0,user:null, destination:null, routeOptions:[], route:null, selectedRoute:0,
   userMarker:null,destMarker:null,originMarker:null,watchId:null,character:'daim',voiceVolume:.8,sound:true,
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
-  savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:'B027',fuelData:null,fuelFetchedAt:0,fuelLoading:false,
+  savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:'B027',fuelData:null,fuelFetchedAt:0,fuelLoading:false,destinationSearchSort:'accuracy',lastDestinationQuery:'',
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
   tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,
@@ -616,11 +616,63 @@ function closeFuelModal(){$('fuelModal').classList.add('hidden')}
 
 /* ---------- SEARCH / SAVED PLACES ---------- */
 function isNearbySearchQuery(q=''){const n=String(q).replace(/\s+/g,'').replace(/내주변|주변|근처|가까운/g,'');return /^(주유소|충전소|전기차충전소|ev충전소|마트|대형마트|슈퍼|슈퍼마켓|편의점|주차장|공영주차장|공용주차장|소방서|119안전센터|안전센터|경찰서|파출소|지구대|공용화장실|공중화장실|화장실|공공기관|관공서)$/.test(n)}
+function destinationSearchAnchor(sortMode){
+  if(sortMode==='center'&&state.map){
+    try{
+      const center=state.map.getCenter();
+      if(Number.isFinite(Number(center?.lng))&&Number.isFinite(Number(center?.lat)))return {lng:Number(center.lng),lat:Number(center.lat)};
+    }catch{}
+  }
+  return pointValid(state.user)?{lng:Number(state.user.lng),lat:Number(state.user.lat)}:null;
+}
+function renderDestinationSearchToolbar(box){
+  if(!box)return;
+  const bar=document.createElement('div');
+  bar.className='destination-search-toolbar';
+  bar.innerHTML=`<span>검색결과</span><div>
+    <button type="button" data-dest-sort="center" class="${state.destinationSearchSort==='center'?'active':''}">지도중심</button>
+    <button type="button" data-dest-sort="accuracy" class="${state.destinationSearchSort==='accuracy'?'active':''}">정확도순</button>
+  </div>`;
+  box.appendChild(bar);
+  bar.querySelectorAll('[data-dest-sort]').forEach(b=>b.onclick=e=>{
+    e.preventDefault();e.stopPropagation();
+    const mode=b.dataset.destSort;
+    if(mode===state.destinationSearchSort)return;
+    state.destinationSearchSort=mode;
+    searchPlaces(state.lastDestinationQuery||$('destinationInput')?.value||'', 'searchResults');
+  });
+}
 async function searchPlaces(q,target='searchResults'){
-  const box=$(target);if(!q?.trim())return;box.classList.remove('hidden');box.innerHTML='<button class="search-result"><b>검색 중...</b></button>';
-  // 모든 장소 검색에서 현재 GPS를 확보해 결과별 실제 거리를 표시한다. 권한이 없으면 검색 자체는 계속 진행한다.
+  const box=$(target);if(!q?.trim())return;
+  const isDestination=target==='searchResults';
+  if(isDestination)state.lastDestinationQuery=q.trim();
+  box.classList.remove('hidden');
+  box.innerHTML='';
+  if(isDestination)renderDestinationSearchToolbar(box);
+  const loading=document.createElement('button');loading.className='search-result';loading.innerHTML='<b>검색 중...</b>';box.appendChild(loading);
+
   if(!state.user)await locate(false);
-  try{const u=new URL('/api/search',location.origin);u.searchParams.set('q',q.trim());if(state.user){u.searchParams.set('lng',state.user.lng);u.searchParams.set('lat',state.user.lat)}const r=await fetch(u);if(!r.ok)throw new Error('검색 오류');const d=await r.json();const items=d.items||[];box.innerHTML='';if(!items.length){box.innerHTML='<button class="search-result"><b>검색 결과가 없습니다.</b></button>';return}items.slice(0,8).forEach(x=>{const b=document.createElement('button');b.className='search-result';b.innerHTML=`<b>${escapeHtml(x.name)}</b><small>${escapeHtml(x.address||x.category||'')}${x.distance!==null&&x.distance!==undefined&&x.distance!==''&&Number.isFinite(Number(x.distance))?` · ${km(Number(x.distance))}`:''}</small>`;b.onclick=()=>target==='placeSearchResults'?selectPlaceCandidate(x):chooseDestination(x);box.appendChild(b)})}catch(e){box.innerHTML='<button class="search-result"><b>검색 서버 연결을 확인해 주세요.</b></button>'}
+  try{
+    const u=new URL('/api/search',location.origin);
+    u.searchParams.set('q',q.trim());
+    if(isDestination)u.searchParams.set('sort',state.destinationSearchSort||'accuracy');
+    const anchor=isDestination?destinationSearchAnchor(state.destinationSearchSort):(pointValid(state.user)?state.user:null);
+    if(anchor){u.searchParams.set('lng',anchor.lng);u.searchParams.set('lat',anchor.lat)}
+    const r=await fetch(u);if(!r.ok)throw new Error('검색 오류');
+    const d=await r.json();const items=d.items||[];
+    box.innerHTML='';if(isDestination)renderDestinationSearchToolbar(box);
+    if(!items.length){const empty=document.createElement('button');empty.className='search-result';empty.innerHTML='<b>검색 결과가 없습니다.</b>';box.appendChild(empty);return}
+    items.slice(0,8).forEach(x=>{
+      const b=document.createElement('button');b.className='search-result';
+      const dist=Number(x.distance);
+      b.innerHTML=`<b>${escapeHtml(x.name)}</b><small>${escapeHtml(x.address||x.category||'')}${Number.isFinite(dist)&&dist>=0?` · ${km(dist)}`:''}</small>`;
+      b.onclick=()=>target==='placeSearchResults'?selectPlaceCandidate(x):chooseDestination(x);
+      box.appendChild(b);
+    })
+  }catch(e){
+    box.innerHTML='';if(isDestination)renderDestinationSearchToolbar(box);
+    const err=document.createElement('button');err.className='search-result';err.innerHTML='<b>검색 서버 연결을 확인해 주세요.</b>';box.appendChild(err);
+  }
 }
 async function chooseDestination(item){
   state.waypoints=[];renderRouteWaypoints();state.destination=normalizedPlace(item);
@@ -1120,8 +1172,8 @@ function applyNightMode(){const h=new Date().getHours(),night=h>=19||h<6;documen
 async function tryLandscapeFullscreen(){
   const landscape=matchMedia('(orientation: landscape)').matches;
   document.body.classList.toggle('landscape-drive',landscape&&(!$('driveView')?.classList.contains('hidden')||state.arRunning));
-  if(!landscape||($('driveView')?.classList.contains('hidden')&&!state.arRunning))return;
-  try{if(!document.fullscreenElement&&document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen({navigationUI:'hide'})}catch{}
+  // 브라우저 Fullscreen API는 사용하지 않는다.
+  // 가로 회전 시 Chrome/WebView의 '전체화면 종료 방법' 안내 팝업이 뜨는 것을 방지한다.
   setTimeout(()=>state.map?.resize(),120);
 }
 
@@ -1236,7 +1288,7 @@ function setView(view){
   $('bottomNav').classList.toggle('hidden',view==='drive'||state.arRunning);
   document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.classList.toggle('active',b.dataset.bottomNav===view||(view==='drive'&&b.dataset.bottomNav==='realtime')));
   if(state.map){if(view==='home'){state.map3D=false;enforce2DMap();state.map.easeTo({pitch:0,bearing:0})}else if(view==='drive')applyDriveMapMode()}
-  applyNightMode();if(view==='home')setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),180);if(view==='route')renderSavedWaypointCourses();if(view==='drive'){setTimeout(tryLandscapeFullscreen,80);setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),500)}
+  applyNightMode();if(view==='home'){loadSavedWaypointCourses();renderSavedWaypointCourses();setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),180)}if(view==='route')renderSavedWaypointCourses();if(view==='drive'){setTimeout(tryLandscapeFullscreen,80);setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),500)}
   refreshMapLayout({fitRoute:view==='route'&&Boolean(state.route)});
 }
 function startNavigation(){
@@ -2059,7 +2111,32 @@ function openTrafficDetail(){closeHamburgerMenu();const seg=(state.route?.roadSe
 function openRoutePrioritySettings(){closeHamburgerMenu();renderUserSettingsUI();$('routePriorityModal')?.classList.remove('hidden')}
 function openCameraAlertSettings(){closeHamburgerMenu();renderUserSettingsUI();$('cameraAlertModal')?.classList.remove('hidden')}
 function openSupportTerms(){closeHamburgerMenu();openInquiryModal()}
-function openWaypointSaved(){closeHamburgerMenu();openInfoModal('경유지 코스 저장함','<div class="empty-info">저장된 경유지 코스가 없습니다.</div>')}
+function openWaypointSaved(){
+  closeHamburgerMenu();
+  loadSavedWaypointCourses();
+  const items=(state.savedWaypointCourses||[]).filter(x=>x&&x.id&&x.destination);
+  const html=items.length
+    ?`<div class="saved-waypoint-modal-list">${items.map(x=>{
+      const waypoints=(x.waypoints||[]).filter(pointValid);
+      const routeText=[...(waypoints.map(p=>p.name||'경유지')),x.destination?.name||'목적지'].join(' → ');
+      return `<div class="saved-course-row saved-course-modal-row">
+        <button type="button" data-menu-course-use="${escapeHtml(x.id)}">
+          <span data-icon="routes"></span>
+          <span><b>${escapeHtml(x.name||routeText||'저장 코스')}</b><small>${waypoints.length}개 경유 · ${escapeHtml(routeText)}</small></span>
+        </button>
+        <button type="button" class="saved-course-delete" data-menu-course-delete="${escapeHtml(x.id)}">삭제</button>
+      </div>`
+    }).join('')}</div>`
+    :'<div class="empty-info">저장된 경유지 코스가 없습니다.</div>';
+  openInfoModal('경유지 코스 저장함',html);
+  const box=$('infoModalBody');
+  box?.querySelectorAll('[data-menu-course-use]').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.menuCourseUse;closeInfoModal();await useSavedWaypointCourse(id);
+  });
+  box?.querySelectorAll('[data-menu-course-delete]').forEach(b=>b.onclick=e=>{
+    e.stopPropagation();deleteSavedWaypointCourse(b.dataset.menuCourseDelete);openWaypointSaved();
+  });
+}
 async function openAppPrivacy(){const c=await loadPublicContent();openInfoModal('앱정보 / 개인정보처리방침',`<div class="info-card privacy-copy"><h3>조팸스 내비</h3><p>${escapeHtml(c.appInfo||'앱정보가 준비 중입니다.').replace(/\n/g,'<br>')}</p><hr><p>${escapeHtml(c.privacy||'개인정보처리방침이 준비 중입니다.').replace(/\n/g,'<br>')}</p></div>`)}
 function openDriveMenu(){$('driveMenu').classList.remove('hidden')}
 function closeDriveMenu(){$('driveMenu').classList.add('hidden')}
