@@ -683,13 +683,18 @@ function updateLocalVoucherBadge(data){
   if(Number.isFinite(rate)&&rate>=0){
     $('localVoucherDiscount').textContent=detail||`할인 ${rate}%`;
   }else{
-    $('localVoucherDiscount').textContent='할인율 확인 중';
+    const st=String(data?.discountStatus||'');
+    const dd=String(data?.discountDetail||'');
+    $('localVoucherDiscount').textContent=
+      /SERVICE_KEY|등록되지 않은|인증키|ACCESS_DENIED|PERMISSION/i.test(dd)?'할인 API 인증 확인 필요':
+      st==='region-unavailable'?'지역코드 확인 중':
+      '할인율 재조회 중';
   }
   badge.classList.remove('hidden');
 }
 function readVoucherStaleCache(){
   try{
-    const raw=localStorage.getItem('jofams_local_voucher_cache_v2');
+    const raw=localStorage.getItem('jofams_local_voucher_cache_v3');
     if(!raw)return null;
     const d=JSON.parse(raw);
     if(!d?.payload||Date.now()-Number(d.savedAt||0)>6*60*60*1000)return null;
@@ -697,7 +702,7 @@ function readVoucherStaleCache(){
   }catch{return null}
 }
 function writeVoucherStaleCache(payload){
-  try{localStorage.setItem('jofams_local_voucher_cache_v2',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
+  try{localStorage.setItem('jofams_local_voucher_cache_v3',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
 }
 function scheduleVoucherReconnect(){
   clearTimeout(state.localVoucherReconnectTimer);
@@ -727,7 +732,8 @@ async function loadLocalVoucherMap({force=false}={}){
     }
   }
 
-  if(!force&&Date.now()-Number(state.localVoucherLoadedAt||0)<20000&&state.localVoucherData)return;
+  if(!force&&Date.now()-Number(state.localVoucherLoadedAt||0)<20000&&state.localVoucherData&&
+     Number.isFinite(Number(state.localVoucherData.discountRate)))return;
 
   try{
     const b=state.map.getBounds?.();
