@@ -595,7 +595,7 @@ function voucherUseFlags(item){
 function renderLocalVoucherMarkers(data){
   clearLocalVoucherMarkers();
   if(!state.map||!maplibregl?.Marker||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
-  const items=(data?.items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,500);
+  const items=(data?.items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,800);
   for(const item of items){
     const el=document.createElement('button');el.type='button';el.className='local-voucher-marker';el.title=item.name||'지역사랑상품권 가맹점';
     const uses=voucherUseFlags(item);
@@ -637,7 +637,7 @@ async function loadLocalVoucherMap({force=false}={}){
     if(!(d.items||[]).length){
       if($('localVoucherDiscount'))$('localVoucherDiscount').textContent='가맹점 0곳 · API 응답 확인';
     }else{
-      if($('localVoucherRegion'))$('localVoucherRegion').textContent=`${d.regionName||'현재 지역'} · ${(d.items||[]).length}곳`;
+      if($('localVoucherRegion'))$('localVoucherRegion').textContent=`${d.regionName||'현재 지역'} · ${(d.items||[]).length}곳 표시`;
     }
   }catch(e){console.warn('local voucher map load failed',e)}
 }
