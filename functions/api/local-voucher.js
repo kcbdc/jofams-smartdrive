@@ -1,24 +1,70 @@
 const FRANCHISE_URL='https://apis.data.go.kr/B190001/localFranchisesV2/franchiseV2';
 
+function serviceKeyCandidates(raw){
+  const src=String(raw||'').trim();
+  const out=[];
+  const add=v=>{v=String(v||'').trim();if(v&&!out.includes(v))out.push(v)};
+  add(src);
+  try{add(decodeURIComponent(src))}catch{}
+  // 일부 환경에서 공백으로 변형된 + 복구 후보
+  if(src.includes(' '))add(src.replace(/ /g,'+'));
+  return out;
+}
+
+async function fetchKomsco(url,keyCandidates){
+  let lastStatus=0,lastText='';
+  for(const key of keyCandidates){
+    const u=new URL(url.toString());
+    u.searchParams.set('serviceKey',key);
+    const r=await fetch(u,{headers:{accept:'application/json'}});
+    lastStatus=r.status;
+    const text=await r.text();
+    lastText=text;
+    if(!r.ok)continue;
+    try{
+      const data=JSON.parse(text);
+      // 공공데이터 오류 응답이 HTTP 200으로 내려오는 경우도 실패로 판단
+      const code=String(data?.resultCode??data?.response?.header?.resultCode??'').trim();
+      const msg=String(data?.resultMsg??data?.response?.header?.resultMsg??'').trim();
+      if(code&&code!=='00'&&code!=='0')continue;
+      if(/SERVICE_KEY|인증키|등록되지 않은|INVALID REQUEST PARAMETER/i.test(msg))continue;
+      return data;
+    }catch{
+      if(!/SERVICE_KEY|인증키|등록되지 않은|INVALID REQUEST PARAMETER/i.test(text))return text;
+    }
+  }
+  const e=new Error(`KOMSCO franchise API failed (${lastStatus||'network'})`);
+  e.status=lastStatus||502;e.detail=String(lastText||'').slice(0,300);
+  throw e;
+}
+
 export async function onRequestGet({request,env}){
   const url=new URL(request.url),lng=Number(url.searchParams.get('lng')),lat=Number(url.searchParams.get('lat'));
   if(!Number.isFinite(lng)||!Number.isFinite(lat))return json({error:'invalid coordinates'},400);
   const serviceKey=env.PUBLIC_DATA_SERVICE_KEY||env.DATA_GO_KR_SERVICE_KEY||'';
   if(!serviceKey)return json({error:'PUBLIC_DATA_SERVICE_KEY is not configured'},503);
+  const keyCandidates=serviceKeyCandidates(serviceKey);
 
-  const region=await resolveRegion(lng,lat,env.KAKAO_REST_API_KEY);
-  if(!region?.code)return json({error:'region code unavailable'},502);
+  // 지도 bounds 조회는 Kakao 지역코드 없이도 가능하게 하고,
+  // 지역명/할인정책용으로만 Kakao 역지오코딩을 보조 사용한다.
+  const region=await resolveRegion(lng,lat,env.KAKAO_REST_API_KEY).catch(()=>null);
 
   const bounds={
     west:Number(url.searchParams.get('west')),south:Number(url.searchParams.get('south')),
     east:Number(url.searchParams.get('east')),north:Number(url.searchParams.get('north'))
   };
 
-  const franchise=await fetchFranchises(serviceKey,region,bounds);
-  const policy=await fetchDiscountPolicy(serviceKey,region.code,env).catch(()=>null);
+  let franchise=[],providerMode='bounds';
+  try{
+    franchise=await fetchFranchises(keyCandidates,region,bounds);
+  }catch(e){
+    return json({error:'KOMSCO franchise API failed',status:e?.status||502,detail:e?.detail||''},502);
+  }
+  const policy=region?.code?await fetchDiscountPolicy(keyCandidates[0],region.code,env).catch(()=>null):null;
   return json({
     provider:'한국조폐공사_통합_가맹점기본정보',
-    regionCode:region.code,regionName:region.name,
+    providerMode,
+    regionCode:region?.code||'',regionName:region?.name||'현재 지도 영역',
     discountRate:Number.isFinite(Number(policy?.discountRate))?Number(policy.discountRate):null,
     policyStart:policy?.startDate||'',policyEnd:policy?.endDate||'',
     monthlyPurchaseLimit:policy?.monthlyPurchaseLimit??null,
@@ -42,55 +88,87 @@ async function resolveRegion(lng,lat,kakaoKey){
   }:legal.length>=5?{code:legal.slice(0,5),emdCode:'',legalCode:legal,name:[doc.region_1depth_name,doc.region_2depth_name].filter(Boolean).join(' ')}:null;
 }
 
-async function fetchFranchises(serviceKey,region,bounds){
+async function fetchFranchises(keyCandidates,region,bounds){
   const regionCode=String(region?.code||'');
   const hasBounds=[bounds.west,bounds.south,bounds.east,bounds.north].every(Number.isFinite);
-  const perPage=2000,maxPages=25,maxVisible=800;
-  const visible=[],seen=new Set();
+  const perPage=2000,maxPages=20,maxVisible=1000;
 
-  for(let page=1;page<=maxPages&&visible.length<maxVisible;page++){
-    const u=new URL(FRANCHISE_URL);
-    // 한국조폐공사 공개 예제(localpay.github.io)와 동일한 요청 규격
-    u.searchParams.set('serviceKey',serviceKey);
-    u.searchParams.set('page',String(page));
-    u.searchParams.set('perPage',String(perPage));
+  async function collect(mode,{withType=true}={}){
+    const visible=[],seen=new Map();
+    for(let page=1;page<=maxPages&&visible.length<maxVisible;page++){
+      const u=new URL(FRANCHISE_URL);
+      u.searchParams.set('page',String(page));
+      u.searchParams.set('perPage',String(perPage));
 
-    // 현재 지도 중심의 시군구 코드가 있으면 해당 지역 가맹점만 조회
-    if(regionCode)u.searchParams.set('cond[usage_rgn_cd::EQ]',regionCode);
+      // 제공 예제와 동일한 상품권 결제유형 조건.
+      if(withType)u.searchParams.set('cond[frcs_stlm_info_se::LIKE]','03');
 
-    const r=await fetch(u,{headers:{accept:'application/json'}});
-    if(!r.ok)throw new Error(`KOMSCO franchise API ${r.status}`);
-
-    const d=await parseResponse(r);
-    const found=extractRows(d);
-    if(!found.length)break;
-
-    for(const row of found){
-      const x=normalizeFranchise(row);
-      if(!Number.isFinite(x.lat)||!Number.isFinite(x.lng))continue;
-      if(hasBounds&&(x.lng<bounds.west||x.lng>bounds.east||x.lat<bounds.south||x.lat>bounds.north))continue;
-
-      // 동일 좌표/가맹점 중복 제거
-      const key=x.id||`${x.name}:${x.lat.toFixed(6)}:${x.lng.toFixed(6)}`;
-      const prev=seen.get(key);
-      if(prev){
-        prev.card=Boolean(prev.card||x.card);
-        prev.mobile=Boolean(prev.mobile||x.mobile);
-        prev.paper=Boolean(prev.paper||x.paper);
-        if(!prev.address&&x.address)prev.address=x.address;
-      }else{
-        seen.set(key,x);
-        visible.push(x);
+      if(mode==='bounds'&&hasBounds){
+        // 예제에서 공식적으로 사용하는 cond[field::GT] 규격을 이용해
+        // 현재 화면 위경도 범위를 서버에서 직접 제한한다.
+        u.searchParams.set('cond[lat::GT]',String(bounds.south));
+        u.searchParams.set('cond[lat::LT]',String(bounds.north));
+        u.searchParams.set('cond[lot::GT]',String(bounds.west));
+        u.searchParams.set('cond[lot::LT]',String(bounds.east));
+      }else if(mode==='region'&&regionCode){
+        u.searchParams.set('cond[usage_rgn_cd::EQ]',regionCode);
       }
-      if(visible.length>=maxVisible)break;
-    }
 
-    const total=extractTotalCount(d);
-    const current=Number(d?.currentCount ?? d?.data?.currentCount ?? found.length);
-    if(found.length<perPage || current<perPage || (Number.isFinite(total)&&page*perPage>=total))break;
+      const d=await fetchKomsco(u,keyCandidates);
+      const found=extractRows(d);
+      if(!found.length)break;
+
+      for(const row of found){
+        const x=normalizeFranchise(row);
+        if(!Number.isFinite(x.lat)||!Number.isFinite(x.lng))continue;
+        if(hasBounds&&(x.lng<bounds.west||x.lng>bounds.east||x.lat<bounds.south||x.lat>bounds.north))continue;
+        const key=x.id||`${x.name}:${x.lat.toFixed(6)}:${x.lng.toFixed(6)}`;
+        const prev=seen.get(key);
+        if(prev){
+          prev.card=Boolean(prev.card||x.card);
+          prev.mobile=Boolean(prev.mobile||x.mobile);
+          prev.paper=Boolean(prev.paper||x.paper);
+          if(!prev.address&&x.address)prev.address=x.address;
+        }else{
+          seen.set(key,x);visible.push(x);
+        }
+        if(visible.length>=maxVisible)break;
+      }
+
+      const total=extractTotalCount(d);
+      const current=Number(d?.currentCount ?? found.length);
+      if(found.length<perPage||current<perPage||(Number.isFinite(total)&&page*perPage>=total))break;
+    }
+    return visible.slice(0,maxVisible);
   }
 
-  return visible.slice(0,maxVisible);
+  // 1순위: 현재 지도 영역을 위경도로 직접 조회 — Kakao 지역코드 불필요
+  if(hasBounds){
+    try{
+      const rows=await collect('bounds',{withType:true});
+      if(rows.length)return rows;
+    }catch(e){
+      // 서버가 LT 조건을 지원하지 않는 등의 경우 지역코드 방식으로 계속 진행
+      console.warn?.('KOMSCO bounds query fallback',e?.message||e);
+    }
+  }
+
+  // 2순위: KOMSCO 예제의 usage_rgn_cd 조건
+  if(regionCode){
+    const rows=await collect('region',{withType:true});
+    if(rows.length)return rows;
+
+    // 3순위: 결제유형 03 조건 때문에 누락되는 배포환경/API 버전에 대비
+    const allTypeRows=await collect('region',{withType:false});
+    if(allTypeRows.length)return allTypeRows;
+  }
+
+  // 지역코드가 없지만 bounds가 있는 경우 결제유형 조건 없이 한 번 더 시도
+  if(hasBounds){
+    const rows=await collect('bounds',{withType:false});
+    if(rows.length)return rows;
+  }
+  return [];
 }
 
 async function fetchDiscountPolicy(serviceKey,regionCode,env){
