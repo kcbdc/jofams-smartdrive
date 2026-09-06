@@ -1173,3 +1173,68 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   will-change:transform;
   touch-action:manipulation;
 }
+
+
+/* === 7.6.1.0 도보 캐릭터 단일화 === */
+/* 도보에서는 별도의 거대 화면 중앙 캐릭터를 숨기고 지도상의 사용자 마커 1개만 사용 */
+.drive-view.walking-mode .drive-ar-character,
+.drive-view.walking-mode .drive-ar-character.walk-overlay-disabled{
+  display:none!important;
+  visibility:hidden!important;
+  opacity:0!important;
+  width:0!important;
+  height:0!important;
+  pointer-events:none!important;
+}
+
+/* 자동차 마커와 비슷한 화면 점유율의 보행 캐릭터 */
+.character-car-marker.walking-character-marker{
+  width:72px!important;
+  height:82px!important;
+  position:relative!important;
+  transform-origin:50% 86%!important;
+  pointer-events:none!important;
+}
+.character-car-marker.walking-character-marker::after{
+  left:17px!important;
+  right:17px!important;
+  bottom:3px!important;
+  height:9px!important;
+  background:rgba(8,22,42,.22)!important;
+  filter:blur(4px)!important;
+}
+.character-car-marker.walking-character-marker img{
+  width:100%!important;
+  height:100%!important;
+  object-fit:contain!important;
+  transform:none!important;
+  animation:jofamsWalkSingle 0.68s ease-in-out infinite alternate!important;
+  filter:drop-shadow(0 4px 5px rgba(0,0,0,.20))!important;
+}
+.character-car-marker.walking-character-marker img.walk-character-marker{
+  transform:none!important;
+}
+
+@keyframes jofamsWalkSingle{
+  0%{transform:translateY(1px) rotate(-0.8deg) scale(1)}
+  100%{transform:translateY(-4px) rotate(0.8deg) scale(1.015)}
+}
+
+@media (max-width:420px){
+  .character-car-marker.walking-character-marker{
+    width:66px!important;
+    height:76px!important;
+  }
+}
+@media (orientation:landscape){
+  .character-car-marker.walking-character-marker{
+    width:64px!important;
+    height:72px!important;
+  }
+}
+@media (prefers-reduced-motion:reduce){
+  .character-car-marker.walking-character-marker img{
+    animation:none!important;
+    transform:none!important;
+  }
+}

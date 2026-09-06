@@ -858,9 +858,11 @@ function updateCarMarkerImage(){
   if(state.userMarker?.getElement){
     const el=state.userMarker.getElement();
     const markerImg=el?.querySelector?.('img');
+    el?.classList.toggle('walking-character-marker',state.routeMode==='walk');
     if(markerImg){
       markerImg.src=state.routeMode==='walk'?currentCharacterWalkImage():characterDefs[state.character].marker;
       markerImg.classList.toggle('walk-character-marker',state.routeMode==='walk');
+      markerImg.alt=state.routeMode==='walk'?`${characterDefs[state.character].name} 도보 캐릭터`:`${characterDefs[state.character].name} 자동차`;
     }
   }
 }
@@ -1902,6 +1904,9 @@ function startNavigation(){
   if((state.waypoints||[]).filter(pointValid).length)saveCurrentWaypointCourse();if(!state.route||!state.destination)return;cancelAutoStart();state.tripStartedAt=Date.now();startDestinationCycle();logTrip('start');setView('drive');$('driveView')?.classList.toggle('walking-mode',state.routeMode==='walk');
   if(state.routeMode==='walk'){
     const wi=$('driveArCharacterImg');if(wi){wi.src=currentCharacterWalkImage();wi.alt=`${characterDefs[state.character].name} 도보 캐릭터`}
+    $('driveArCharacter')?.classList.add('walk-overlay-disabled');
+  }else{
+    $('driveArCharacter')?.classList.remove('walk-overlay-disabled');
   }
   state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false};state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};state.offRouteHits=0;state.offRouteHeadingHits=0; // 새 주행마다 상보필터 상태 초기화
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
@@ -1917,7 +1922,7 @@ function stopNavigation(){if($('laneAssistLayer'))$('laneAssistLayer').classList
   state.safetyEvents=[];resetSectionSpeedState();state.tunnelRouteLock={active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0};state.route=null;state.routeOptions=[];state.waypoints=[];renderRouteWaypoints();
   try{if(state.destMarker){state.destMarker.remove();state.destMarker=null}}catch{state.destMarker=null}
   try{if(state.originMarker){state.originMarker.remove();state.originMarker=null}}catch{state.originMarker=null}
-  state.destination=null;state.origin=null;state.originMode='current';state.routeMode='car';state.carRouteOptions=[];state.walkingRoute=null;state.routeModeDurations={car:null,walk:null};$('driveView')?.classList.remove('walking-mode');
+  state.destination=null;state.origin=null;state.originMode='current';state.routeMode='car';state.carRouteOptions=[];state.walkingRoute=null;state.routeModeDurations={car:null,walk:null};$('driveView')?.classList.remove('walking-mode');$('driveArCharacter')?.classList.remove('walk-overlay-disabled');
   try{updateOverspeed(0,0)}catch{}
   try{setView('home')}catch(e){console.error('home restore failed',e);$('homeView')?.classList.remove('hidden');$('driveView')?.classList.add('hidden')}
   toast('안내를 종료했습니다.');
