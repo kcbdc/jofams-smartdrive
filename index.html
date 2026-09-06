@@ -8,7 +8,7 @@
   <title>조팸스 내비</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.5.9.3" />
+  <link rel="stylesheet" href="/styles.css?v=7.5.9.4" />
 </head>
 <body>
   <main id="app">
@@ -22,7 +22,10 @@
         <button id="myBtn" class="circle-btn" aria-label="마이페이지"><span data-icon="user"></span></button>
       </header>
 
-      <div class="home-sheet">
+      <div class="home-sheet" id="homeSheet">
+        <button id="homeSheetToggle" class="home-sheet-toggle" type="button" aria-label="홈 메뉴 내리기" aria-expanded="true">
+          <span aria-hidden="true">⌄</span>
+        </button>
         <h1>어디로 이동할까요?</h1>
         <div class="search-box">
           <span class="search-icon" data-icon="search"></span>
@@ -81,6 +84,25 @@
         </section>
       </div>
     </section>
+
+
+    <div id="mapPlacePrompt" class="map-place-prompt hidden" role="dialog" aria-modal="false" aria-live="polite">
+      <div>
+        <small>지도에서 선택한 장소</small>
+        <b id="mapPlacePromptTitle">이 위치</b>
+        <span id="mapPlacePromptText">이 위치로 안내해 드릴까요?</span>
+      </div>
+      <div class="map-place-prompt-actions">
+        <button id="mapPlacePromptCancel" type="button">취소</button>
+        <button id="mapPlacePromptGo" type="button" class="primary">길안내</button>
+      </div>
+    </div>
+
+    <div id="localVoucherBadge" class="local-voucher-badge hidden" role="status" aria-live="polite">
+      <span>지역사랑상품권</span>
+      <b id="localVoucherRegion">지역 확인 중</b>
+      <strong id="localVoucherDiscount">할인율 --</strong>
+    </div>
 
     <!-- ROUTE SELECTION -->
     <section id="routeView" class="screen route-view hidden">
@@ -564,6 +586,6 @@
   </main>
 
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.5.9.3"></script>
+  <script type="module" src="/app.js?v=7.5.9.4"></script>
 </body>
 </html>

@@ -861,3 +861,50 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 @media (orientation:landscape){
   .section-speed-panel{top:72px;width:min(48vw,360px);min-height:48px;padding:5px 9px}
 }
+
+
+/* === 7.5.9.4 HOME MAP SHEET === */
+.home-sheet{transition:transform .24s ease,box-shadow .24s ease;will-change:transform}
+.home-sheet-toggle{
+  position:sticky;top:-14px;z-index:20;margin:-14px auto 8px;width:64px;height:28px;border:0;border-radius:0 0 14px 14px;
+  background:#eef3fa;color:#56657b;display:grid;place-items:center;box-shadow:0 4px 12px rgba(20,38,68,.08)
+}
+.home-sheet-toggle span{font-size:22px;line-height:1;transform:translateY(-2px)}
+.home-sheet.collapsed{
+  transform:translateY(calc(100% - 58px));
+  overflow:hidden;
+  box-shadow:0 -4px 18px rgba(20,38,68,.12)
+}
+.home-sheet.collapsed>*:not(.home-sheet-toggle){pointer-events:none}
+.home-sheet.collapsed .home-sheet-toggle{pointer-events:auto}
+.home-view:has(.home-sheet.collapsed){background:transparent}
+
+/* map click navigation prompt */
+.map-place-prompt{
+  position:absolute;z-index:52;left:50%;bottom:calc(18px + var(--safeB));transform:translateX(-50%);
+  width:min(calc(100% - 28px),420px);padding:13px;border-radius:18px;background:rgba(255,255,255,.98);
+  box-shadow:0 12px 34px rgba(18,34,62,.23);display:grid;gap:11px
+}
+.map-place-prompt>div:first-child{display:grid;gap:3px}
+.map-place-prompt small{font-size:9px;color:#718096}
+.map-place-prompt b{font-size:15px}
+.map-place-prompt span{font-size:11px;color:#56657b}
+.map-place-prompt-actions{display:grid;grid-template-columns:1fr 1.35fr;gap:8px}
+.map-place-prompt-actions button{height:40px;border:1px solid #dfe5ee;border-radius:12px;background:#fff;font-size:12px;font-weight:800}
+.map-place-prompt-actions button.primary{background:#244f86;border-color:#244f86;color:#fff}
+
+/* local voucher */
+.local-voucher-badge{
+  position:absolute;z-index:12;left:12px;top:calc(var(--safeT) + 72px);
+  display:flex;align-items:center;gap:7px;max-width:calc(100% - 24px);padding:7px 9px;border-radius:13px;
+  background:rgba(255,255,255,.94);box-shadow:0 6px 18px rgba(20,38,68,.14);backdrop-filter:blur(9px)
+}
+.local-voucher-badge span{font-size:8px;color:#6b7280;font-weight:800}
+.local-voucher-badge b{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.local-voucher-badge strong{font-size:10px;color:#244f86;white-space:nowrap}
+.local-voucher-marker{
+  min-width:34px;height:34px;border:1px solid rgba(36,79,134,.22);border-radius:12px;background:rgba(255,255,255,.97);
+  display:grid;grid-template-columns:auto 1fr;align-items:center;gap:4px;padding:4px 6px;box-shadow:0 4px 12px rgba(20,38,68,.18)
+}
+.local-voucher-marker b{font-size:13px;color:#244f86}
+.local-voucher-marker small{font-size:7px;color:#445066;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

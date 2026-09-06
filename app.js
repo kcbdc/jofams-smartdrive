@@ -19,7 +19,7 @@ const state = {
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
   savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:'B027',fuelData:null,fuelFetchedAt:0,fuelLoading:false,destinationSearchSort:'accuracy',lastDestinationQuery:'',
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
-  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},
+  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,
   compassHeading:null,compassAt:0,compassReady:false,activeLaneGuideKey:'',nativeLocationAt:0,nativeLocationActive:false,imu:{at:0,yawRateDegS:0,accelMagnitude:0,headingDeg:null},mapMatch:{index:0,routeDistance:0,score:Infinity,confidence:0,at:0},offRouteHeadingHits:0,gpsFix:{lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false},
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
@@ -445,9 +445,10 @@ async function initMap(){
     state.map=new maplibregl.Map({container:'map',style:COLOR_MAP_STYLE,center:[127.3847,36.3784],zoom:14,pitch:0,maxPitch:60,bearing:0,pitchWithRotate:true,dragRotate:true,touchPitch:true,attributionControl:true,fadeDuration:0,refreshExpiredTiles:false});
     state.map.on('load',()=>{
       state.mapReady=true;enforce2DMap();state.map.resize();
-      state.map.on('click',()=>{if(state.tripStartedAt)toggleMapControls(true)});
+      state.map.on('click',e=>{if(state.tripStartedAt)toggleMapControls(true);else handleHomeMapClick(e)});
       state.map.on('touchend',()=>{if(state.tripStartedAt)toggleMapControls(true)});
       state.map.on('rotate',updateDriveCompass);
+      state.map.on('moveend',()=>scheduleLocalVoucherRefresh());
       if(state.pendingRouteDraw){const p=state.pendingRouteDraw;state.pendingRouteDraw=null;drawRoute(p.route,p.options)}
       permissionStatus('geolocation').then(s=>{if(s==='granted')locate(false)});
       clearTimeout(state.mapWatchdog);
@@ -461,6 +462,108 @@ async function initMap(){
     });
   }catch(e){console.error('Map init failed',e);toast('지도를 초기화하지 못했습니다. 페이지를 새로고침해 주세요.',3500)}
 }
+
+function visibleNamedMapFeature(point){
+  if(!state.map||!point)return null;
+  try{
+    const pad=10,features=state.map.queryRenderedFeatures([[point.x-pad,point.y-pad],[point.x+pad,point.y+pad]])||[];
+    const named=features.find(f=>{
+      const p=f?.properties||{},name=p.name_ko||p['name:ko']||p.name||p.ref;
+      if(!name)return false;
+      const layer=String(f?.layer?.id||'').toLowerCase();
+      return /poi|place|label|shop|amenity|building|road|transit|station/.test(layer);
+    })||features.find(f=>{
+      const p=f?.properties||{};return Boolean(p.name_ko||p['name:ko']||p.name);
+    });
+    if(!named)return null;
+    const p=named.properties||{};
+    return {name:String(p.name_ko||p['name:ko']||p.name||p.ref||'이 위치').trim()};
+  }catch{return null}
+}
+async function resolveMapClickedPlace(e){
+  const lng=Number(e?.lngLat?.lng),lat=Number(e?.lngLat?.lat);
+  if(!Number.isFinite(lng)||!Number.isFinite(lat))return null;
+  const feature=visibleNamedMapFeature(e.point);
+  if(feature?.name){
+    try{
+      const u=new URL('/api/search',location.origin);u.searchParams.set('q',feature.name);u.searchParams.set('lng',lng);u.searchParams.set('lat',lat);u.searchParams.set('sort','center');
+      const r=await fetch(u);if(r.ok){const d=await r.json(),best=(d.items||[])[0];if(best&&pointValid(best))return normalizedPlace(best)}
+    }catch{}
+  }
+  try{
+    const u=new URL('/api/place-click',location.origin);u.searchParams.set('lng',lng);u.searchParams.set('lat',lat);
+    const r=await fetch(u);if(r.ok){const d=await r.json();if(d?.item&&pointValid(d.item))return normalizedPlace(d.item)}
+  }catch{}
+  return {name:feature?.name||'지도에서 선택한 위치',address:'지도 좌표',lng,lat};
+}
+function showMapPlacePrompt(place){
+  state.mapPlaceCandidate=place;
+  if($('mapPlacePromptTitle'))$('mapPlacePromptTitle').textContent=place?.name||'이 위치';
+  if($('mapPlacePromptText'))$('mapPlacePromptText').textContent=`${place?.name||'이 위치'}로 안내해 드릴까요?`;
+  $('mapPlacePrompt')?.classList.remove('hidden');
+}
+function closeMapPlacePrompt(){state.mapPlaceCandidate=null;$('mapPlacePrompt')?.classList.add('hidden')}
+async function handleHomeMapClick(e){
+  if($('homeView')?.classList.contains('hidden'))return;
+  if(!state.homeSheetCollapsed)return;
+  const place=await resolveMapClickedPlace(e);if(place)showMapPlacePrompt(place);
+}
+async function startMapPlaceNavigation(){
+  const p=state.mapPlaceCandidate;if(!p)return;
+  closeMapPlacePrompt();setHomeSheetCollapsed(false);await chooseDestination(p);
+}
+
+function clearLocalVoucherMarkers(){
+  for(const m of state.localVoucherMarkers||[])try{m.remove()}catch{}
+  state.localVoucherMarkers=[];
+}
+function voucherUseFlags(item){
+  const flags=[];
+  if(item.card===true)flags.push('카드');
+  if(item.mobile===true)flags.push('모바일');
+  if(item.paper===true)flags.push('지류');
+  return flags;
+}
+function renderLocalVoucherMarkers(data){
+  clearLocalVoucherMarkers();
+  if(!state.map||!maplibregl?.Marker)return;
+  const items=(data?.items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,120);
+  for(const item of items){
+    const el=document.createElement('button');el.type='button';el.className='local-voucher-marker';el.title=item.name||'지역사랑상품권 가맹점';
+    const uses=voucherUseFlags(item);el.innerHTML=`<b>₩</b><small>${escapeHtml((uses.join('·')||'가맹점'))}</small>`;
+    el.onclick=e=>{e.stopPropagation();showMapPlacePrompt({name:item.name||'지역사랑상품권 가맹점',address:item.address||'',lng:Number(item.lng),lat:Number(item.lat),voucher:item})};
+    try{state.localVoucherMarkers.push(new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([Number(item.lng),Number(item.lat)]).addTo(state.map))}catch{}
+  }
+}
+function updateLocalVoucherBadge(data){
+  const badge=$('localVoucherBadge');if(!badge)return;
+  const region=data?.regionName||'현재 지역';
+  const rate=Number(data?.discountRate);
+  $('localVoucherRegion').textContent=region;
+  $('localVoucherDiscount').textContent=Number.isFinite(rate)&&rate>=0?`할인율 ${rate}%`:'할인율 정보 없음';
+  badge.classList.remove('hidden');
+}
+async function loadLocalVoucherMap({force=false}={}){
+  if(!state.map||$('homeView')?.classList.contains('hidden'))return;
+  const zoom=Number(state.map.getZoom?.()||0);if(zoom<11.5){clearLocalVoucherMarkers();$('localVoucherBadge')?.classList.add('hidden');return}
+  const center=state.map.getCenter?.();if(!center)return;
+  if(!force&&Date.now()-Number(state.localVoucherLoadedAt||0)<30000)return;
+  try{
+    const b=state.map.getBounds?.();
+    const u=new URL('/api/local-voucher',location.origin);
+    u.searchParams.set('lng',center.lng);u.searchParams.set('lat',center.lat);
+    if(b){u.searchParams.set('west',b.getWest());u.searchParams.set('south',b.getSouth());u.searchParams.set('east',b.getEast());u.searchParams.set('north',b.getNorth())}
+    const r=await fetch(u,{headers:{accept:'application/json'}});
+    if(!r.ok){if(r.status===503){clearLocalVoucherMarkers();$('localVoucherBadge')?.classList.add('hidden')}return}
+    const d=await r.json();state.localVoucherLoadedAt=Date.now();state.localVoucherRegionCode=d.regionCode||'';
+    renderLocalVoucherMarkers(d);updateLocalVoucherBadge(d);
+  }catch(e){console.warn('local voucher map load failed',e)}
+}
+function scheduleLocalVoucherRefresh(){
+  clearTimeout(state.localVoucherLoadTimer);
+  state.localVoucherLoadTimer=setTimeout(()=>loadLocalVoucherMap(),450);
+}
+
 function refreshMapLayout({fitRoute=false}={}){
   if(!state.map)return;
   const run=()=>{try{state.map.resize();if(state.route?.geometry?.length){drawRoute(state.route,{fit:fitRoute})}else if(state.user){state.map.jumpTo({center:[state.user.lng,state.user.lat]})}}catch(e){console.warn('map resize failed',e)}};
@@ -1439,7 +1542,7 @@ function setView(view){
   $('bottomNav').classList.toggle('hidden',view==='drive'||state.arRunning);
   document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.classList.toggle('active',b.dataset.bottomNav===view||(view==='drive'&&b.dataset.bottomNav==='realtime')));
   if(state.map){if(view==='home'){state.map3D=false;enforce2DMap();state.map.easeTo({pitch:0,bearing:0})}else if(view==='drive')applyDriveMapMode()}
-  applyNightMode();if(view==='home'){loadSavedWaypointCourses();renderSavedWaypointCourses();setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),180)}if(view==='route')renderSavedWaypointCourses();if(view==='drive'){setTimeout(tryLandscapeFullscreen,80);setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),500)}
+  applyNightMode();if(view==='home'){loadSavedWaypointCourses();renderSavedWaypointCourses();setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),180);setTimeout(()=>scheduleLocalVoucherRefresh(),320)}if(view==='route')renderSavedWaypointCourses();if(view==='drive'){setTimeout(tryLandscapeFullscreen,80);setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),500)}
   refreshMapLayout({fitRoute:view==='route'&&Boolean(state.route)});
 }
 function startNavigation(){
@@ -2286,6 +2389,20 @@ async function openInquiryDetail(id){
   }catch{toast('문의 내용을 열 수 없습니다.',2200)}
 }
 
+
+function setHomeSheetCollapsed(collapsed){
+  state.homeSheetCollapsed=Boolean(collapsed);
+  const sheet=$('homeSheet'),btn=$('homeSheetToggle');
+  sheet?.classList.toggle('collapsed',state.homeSheetCollapsed);
+  if(btn){
+    btn.setAttribute('aria-expanded',String(!state.homeSheetCollapsed));
+    btn.setAttribute('aria-label',state.homeSheetCollapsed?'홈 메뉴 올리기':'홈 메뉴 내리기');
+    const span=btn.querySelector('span');if(span)span.textContent=state.homeSheetCollapsed?'⌃':'⌄';
+  }
+  if(state.map)setTimeout(()=>{try{state.map.resize()}catch{}},180);
+}
+function toggleHomeSheet(){setHomeSheetCollapsed(!state.homeSheetCollapsed)}
+
 function openHamburgerMenu(){$('hamburgerMenuModal')?.classList.remove('hidden')}
 function closeHamburgerMenu(){$('hamburgerMenuModal')?.classList.add('hidden')}
 function openDestinationManager(){
@@ -2349,7 +2466,7 @@ function bindCriticalUI(){
 function bindUI(){
   try{bindFutureDepartureUI();}catch(e){console.warn('UI bind section 1 failed',e)}
   try{$('allowLocationBtn').onclick=requestLocationPermission;$('allowCameraBtn').onclick=requestCameraPermission;$('permissionContinueBtn').onclick=closePermissionGate;}catch(e){console.warn('UI bind section 2 failed',e)}
-  try{applyIcons();$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
+  try{if($('homeSheetToggle'))$('homeSheetToggle').onclick=toggleHomeSheet;if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=closeMapPlacePrompt;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;applyIcons();$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
   try{document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>setCharacter(b.dataset.character));$('homeShortcut').onclick=()=>state.savedPlaces.home?chooseDestination(state.savedPlaces.home):openPlaceModal('home');$('workShortcut').onclick=()=>state.savedPlaces.work?chooseDestination(state.savedPlaces.work):openPlaceModal('work');$('homeManageBtn').onclick=()=>openPlaceModal('home');$('workManageBtn').onclick=()=>openPlaceModal('work');$('favoriteShortcut').onclick=openFavoritesList;}catch(e){console.warn('UI bind section 4 failed',e)}
   try{document.querySelectorAll('[data-my-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.myCharacter);syncCharacterUI();toast(`${characterDefs[state.character].name} 가이드로 변경했습니다.`)});}catch(e){console.warn('UI bind section 5 failed',e)}
   try{document.querySelectorAll('[data-voice-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.voiceCharacter);syncCharacterUI();speak(`${characterDefs[state.character].name} 음성 안내입니다.`)});}catch(e){console.warn('UI bind section 6 failed',e)}
