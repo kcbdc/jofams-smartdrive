@@ -525,7 +525,7 @@ async function handleHomeMapClick(e){
 }
 async function startMapPlaceNavigation(){
   const p=state.mapPlaceCandidate;if(!p)return;
-  closeMapPlacePrompt();setHomeSheetCollapsed(false);await chooseDestination(p);
+  closeMapPlacePrompt();setHomeSheetCollapsed(false);await chooseDestination(p,{autoGuide:true});
 }
 
 
@@ -642,35 +642,35 @@ function openVoucherBuildingList(items){
   $('voucherBuildingModal')?.classList.remove('hidden');
 }
 function renderVoucherShopMarkers(items){
-  const buildings=new Map();
-  for(const item of items){
-    const key=voucherBuildingKey(item);
-    if(!buildings.has(key))buildings.set(key,[]);
-    buildings.get(key).push(item);
-  }
-  for(const list of buildings.values()){
-    const item=list[0],el=document.createElement('button');
-    el.type='button';el.className='voucher-shop-marker';
-    el.title=list.length>1?`이 건물 가맹점 ${list.length}곳`:item.name||'지역사랑상품권 가맹점';
-    el.innerHTML=`${voucherShopSvg()}${list.length>1?`<span>${list.length}</span>`:''}`;
-    el.onclick=e=>{e.stopPropagation();openVoucherBuildingList(list)};
+  for(const item of (items||[])){
+    const lng=Number(item.lng),lat=Number(item.lat);
+    if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;
+    const el=document.createElement('button');
+    el.type='button';
+    el.className='voucher-shop-marker';
+    el.title=item.name||'지역사랑상품권 가맹점';
+    el.innerHTML=voucherShopSvg();
+    el.onclick=e=>{e.stopPropagation();openVoucherStoreInfo(item)};
     try{
       state.localVoucherMarkers.push(
         new maplibregl.Marker({element:el,anchor:'bottom'})
-          .setLngLat([Number(item.lng),Number(item.lat)]).addTo(state.map)
+          .setLngLat([lng,lat]).addTo(state.map)
       );
-    }catch{}
+    }catch(e){console.warn('voucher marker failed',e)}
   }
 }
 function renderLocalVoucherMarkers(data){
   clearLocalVoucherMarkers();
   if(!state.map||!maplibregl?.Marker||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
+  const b=state.map.getBounds?.();
   const items=(data?.items||[])
     .filter(x=>{
       const lng=Number(x.lng),lat=Number(x.lat);
-      return Number.isFinite(lng)&&Number.isFinite(lat)&&lat>=33.0&&lat<=38.75&&lng>=125.65&&lng<=131.05;
+      if(!(Number.isFinite(lng)&&Number.isFinite(lat)&&lat>=33.0&&lat<=38.75&&lng>=125.65&&lng<=131.05))return false;
+      if(!b)return true;
+      return lng>=b.getWest()-.03&&lng<=b.getEast()+.03&&lat>=b.getSouth()-.03&&lat<=b.getNorth()+.03;
     })
-    .slice(0,1800);
+    .slice(0,500);
   if(!items.length)return;
 
   // 7.6.0.4: 클러스터를 사용하지 않고 CCTV처럼 처음부터 가게 SVG 아이콘을 직접 표시.
@@ -697,7 +697,7 @@ function updateLocalVoucherBadge(data){
 }
 function readVoucherStaleCache(){
   try{
-    const raw=localStorage.getItem('jofams_local_voucher_cache_v5');
+    const raw=localStorage.getItem('jofams_local_voucher_cache_v6');
     if(!raw)return null;
     const d=JSON.parse(raw);
     if(!d?.payload||Date.now()-Number(d.savedAt||0)>6*60*60*1000)return null;
@@ -705,7 +705,7 @@ function readVoucherStaleCache(){
   }catch{return null}
 }
 function writeVoucherStaleCache(payload){
-  try{localStorage.setItem('jofams_local_voucher_cache_v5',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
+  try{localStorage.setItem('jofams_local_voucher_cache_v6',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
 }
 async function retryVoucherDiscountOnly(){
   if(!state.map||Number.isFinite(Number(state.localVoucherData?.discountRate)))return;
@@ -1229,8 +1229,10 @@ async function searchPlaces(q,target='searchResults'){
     const err=document.createElement('button');err.className='search-result';err.innerHTML='<b>검색 서버 연결을 확인해 주세요.</b>';box.appendChild(err);
   }
 }
-async function chooseDestination(item,{autoGuide=false}={}){
-  state.waypoints=[];renderRouteWaypoints();state.destination=normalizedPlace(item);
+async function chooseDestination(item,{autoGuide=true}={}){
+  const picked=normalizedPlace(item);
+  if(!pointValid(picked)){toast('선택한 장소의 위치를 확인할 수 없습니다.',2600);return}
+  state.waypoints=[];renderRouteWaypoints();state.destination=picked;
   state.routeMode='car';state.carRouteOptions=[];state.walkingRoute=null;state.routeModeDurations={car:null,walk:null};renderRouteModeSwitch();
   if(pointValid(state.destination))saveRecentDestination(state.destination).catch(e=>console.warn('recent destination save failed',e));
   setDestinationMarker();
@@ -1247,7 +1249,14 @@ async function chooseDestination(item,{autoGuide=false}={}){
   if(!state.user){$('routeCards').innerHTML='<div class="auto-start-hint">위치 권한을 허용하면 경로를 계산합니다.</div>';showPermissionGate();return}
   if(!state.origin||state.originMode==='current'){state.origin={...state.user,name:'내 위치',address:'현재 GPS 위치'};state.originMode='current'}
   updateOriginUI();
-  await loadRouteOptions();
+  try{
+    await loadRouteOptions();
+  }catch(e){
+    console.warn('direct guidance route load failed',e);
+    $('routeCards').innerHTML='<div class="auto-start-hint">경로 계산에 실패했습니다. 다시 선택해 주세요.</div>';
+    toast('경로 계산에 실패했습니다. 다시 선택해 주세요.',2600);
+    return;
+  }
   if(autoGuide){
     if(state.route&&state.destination){
       cancelAutoStart();

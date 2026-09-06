@@ -1283,3 +1283,104 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   from{transform:translate(var(--ar-car-x,0px),calc(var(--ar-car-y,-1.5vh) + 2px)) rotate(-.7deg)}
   to{transform:translate(var(--ar-car-x,0px),calc(var(--ar-car-y,-1.5vh) - 5px)) rotate(.7deg)}
 }
+
+
+/* === 7.6.1.2 안내 UI 깨짐 방지 === */
+.route-sheet,.route-header,.route-card,.route-mode-switch,.route-mode-switch button,
+.maneuver-main,.maneuver-next,.speed-panel,.speed-limit,.drive-bottom-card,
+.drive-menu-actions button,.road-sign-badge,.safety-alert-icon{
+  box-sizing:border-box!important;
+}
+.route-mode-switch button{
+  min-width:0!important;
+  padding:7px 8px!important;
+  overflow:hidden!important;
+  white-space:nowrap!important;
+}
+.route-mode-switch [data-icon]{
+  flex:0 0 22px!important;
+  overflow:visible!important;
+}
+.route-mode-switch b,.route-mode-switch strong{
+  min-width:0!important;
+  line-height:1.15!important;
+  letter-spacing:-.02em!important;
+  white-space:nowrap!important;
+}
+.route-card{
+  overflow:hidden!important;
+}
+.route-card .route-meta,.route-card strong,.route-card small{
+  min-width:0!important;
+  overflow-wrap:anywhere!important;
+  word-break:keep-all!important;
+}
+.route-card img,.route-walk-art,.route-walk-art svg{
+  max-width:100%!important;
+  flex:none!important;
+  object-fit:contain!important;
+}
+.maneuver-main,.maneuver-next{
+  overflow:visible!important;
+}
+.maneuver-main b,.maneuver-main span,.maneuver-next b,.maneuver-next small{
+  word-break:keep-all!important;
+  overflow-wrap:normal!important;
+  text-rendering:geometricPrecision;
+}
+.speed-limit{
+  width:64px!important;
+  height:64px!important;
+  min-width:64px!important;
+  min-height:64px!important;
+  overflow:visible!important;
+}
+.speed-limit b{
+  font-size:27px!important;
+  line-height:1!important;
+  min-width:0!important;
+  white-space:nowrap!important;
+}
+.speed-limit small{
+  font-size:8px!important;
+  line-height:1!important;
+  white-space:nowrap!important;
+}
+.road-sign-badge{
+  overflow:visible!important;
+}
+.road-sign-badge b,.road-sign-badge small{
+  white-space:nowrap!important;
+  line-height:1.05!important;
+}
+.drive-menu-actions button{
+  min-width:0!important;
+  overflow:visible!important;
+}
+.drive-menu-actions span,.drive-menu-actions svg{
+  flex:none!important;
+  max-width:100%!important;
+}
+.drive-menu-actions b{
+  font-size:12px!important;
+  line-height:1.2!important;
+  word-break:keep-all!important;
+  white-space:normal!important;
+  text-align:center!important;
+}
+@media(max-width:380px){
+  .route-mode-switch{gap:5px!important}
+  .route-mode-switch button{gap:4px!important;padding:6px 5px!important}
+  .route-mode-switch b{font-size:11px!important}
+  .route-mode-switch strong{font-size:12px!important}
+  .maneuver-main b{font-size:42px!important}
+  .speed-limit{width:58px!important;height:58px!important;min-width:58px!important;min-height:58px!important}
+  .speed-limit b{font-size:24px!important}
+}
+
+/* 가맹점은 숫자 묶음/리스트형이 아니라 좌표별 개별 아이콘 */
+.voucher-shop-marker>span{display:none!important}
+.voucher-shop-marker{
+  overflow:visible!important;
+  z-index:10!important;
+}
