@@ -1386,74 +1386,75 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 }
 
 
-/* === 7.6.1.3 터치/클릭 CSS 충돌 정리 === */
-/* 화면 컨테이너의 pointer-events:none 규칙과 후속 스타일 간 충돌 방지 */
-#homeView .home-header,
+/* === 7.6.1.4 기능 우선 최소 CSS === */
+/* 기존 screen 구조는 유지하고 실제 클릭 대상에만 최소 pointer-events 지정 */
 #homeView .home-sheet,
-#routeView .route-header,
-#routeView .route-sheet{
+#homeView .home-header,
+#routeView .route-sheet,
+#routeView .route-header{
   pointer-events:auto!important;
-  isolation:isolate!important;
 }
-
-#homeView .home-sheet button,
+#homeView button,
 #homeView .search-result,
 #homeView .recent-item,
 #homeView .home-facility-item,
 #homeView .fuel-station-row,
-#homeView #homeShortcut,
-#homeView #workShortcut,
-#routeView #startBtn,
-#routeView .route-card,
-#routeView .route-mode-switch button{
-  position:relative!important;
+#routeView button{
   pointer-events:auto!important;
   touch-action:manipulation!important;
-  -webkit-tap-highlight-color:rgba(40,117,245,.12);
-  z-index:4!important;
 }
 
-#routeView .route-sheet{
-  z-index:40!important;
-  overflow:auto!important;
+/* 할인율 배지는 UI에서 완전 제거 */
+#localVoucherBadge{
+  display:none!important;
 }
-#routeView #startBtn{
-  position:sticky!important;
-  bottom:0!important;
-  z-index:60!important;
-  min-height:50px!important;
+
+/* 홈의 전국 단속 CCTV는 숨김. 주행 중 안전안내 UI에는 영향 없음 */
+.home-camera-marker{
+  display:none!important;
+}
+
+/* 주행 핵심 정보는 다른 CSS가 hidden 처리하지 못하도록 표시 우선 */
+#driveView:not(.hidden) .drive-bottom-card,
+#driveView:not(.hidden) #driveBottomNormal,
+#driveView:not(.hidden) #speedPanel{
+  visibility:visible!important;
   opacity:1!important;
 }
-#routeView #startBtn:disabled{
-  pointer-events:none!important;
-  opacity:.72!important;
+#driveView:not(.hidden) .drive-bottom-card{
+  display:grid!important;
 }
-#routeView #autoStartHint{
-  pointer-events:none!important;
-  position:relative!important;
-  z-index:1!important;
+#driveView:not(.hidden) #driveBottomNormal{
+  display:block;
 }
-
-/* 실시간 유가 행 자체를 확실한 버튼으로 사용 */
-.fuel-station-row{
-  width:100%!important;
-  border:0!important;
-  border-bottom:1px solid #eef1f5!important;
-  background:transparent!important;
-  text-align:left!important;
-  cursor:pointer!important;
-  pointer-events:auto!important;
-  touch-action:manipulation!important;
-  appearance:none!important;
-  -webkit-appearance:none!important;
+#driveView:not(.hidden) #speedPanel{
+  display:block!important;
 }
-.fuel-station-row:active{
-  background:rgba(40,117,245,.07)!important;
+#driveView:not(.hidden) #speedPanel .speed-limit{
+  display:flex!important;
+}
+#remainingDistance,#remainingTime,#arrivalTime,#currentSpeed,#speedLimit{
+  visibility:visible!important;
+  opacity:1!important;
 }
 
-/* 아이콘/문자 자식이 클릭 이벤트를 가로채지 않게 버튼이 일관되게 받도록 */
-#homeView button > *,
-#routeView #startBtn > *,
-.fuel-station-row > *{
-  pointer-events:none;
+/* 핵심 숫자 영역이 잘리지 않도록 최소 크기 확보 */
+.drive-bottom-summary{
+  min-width:0!important;
+  overflow:visible!important;
+}
+.drive-bottom-summary>div{
+  min-width:0!important;
+}
+.drive-bottom-summary>div b{
+  white-space:nowrap!important;
+}
+.speed-panel{
+  overflow:visible!important;
+}
+.speed-limit{
+  overflow:visible!important;
+}
+.speed-limit b{
+  white-space:nowrap!important;
 }
