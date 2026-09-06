@@ -1051,3 +1051,31 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   display:grid!important;place-items:center!important;padding:0!important;
   box-shadow:0 3px 10px rgba(18,34,62,.18)!important;
 }
+
+
+/* === 7.6.0.0 map place confirm visibility === */
+#mapPlacePrompt{
+  position:fixed!important;
+  z-index:420!important;
+  left:50%!important;
+  right:auto!important;
+  bottom:calc(92px + var(--safeB))!important;
+  transform:translateX(-50%)!important;
+  width:min(calc(100% - 28px),420px)!important;
+  pointer-events:auto!important;
+  visibility:visible!important;
+  opacity:1!important;
+}
+#mapPlacePrompt.hidden{display:none!important}
+#mapPlacePrompt .map-place-prompt-actions{
+  display:grid!important;
+  grid-template-columns:1fr 1.45fr!important;
+  gap:8px!important;
+}
+#mapPlacePrompt .map-place-prompt-actions button{
+  display:block!important;
+  visibility:visible!important;
+  opacity:1!important;
+  pointer-events:auto!important;
+  min-height:44px!important;
+}

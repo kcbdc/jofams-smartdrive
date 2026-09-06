@@ -599,7 +599,7 @@ function renderLocalVoucherMarkers(data){
   for(const item of items){
     const el=document.createElement('button');el.type='button';el.className='local-voucher-marker';el.title=item.name||'지역사랑상품권 가맹점';
     const uses=voucherUseFlags(item);
-    el.innerHTML=`<b>₩</b><span>${escapeHtml(item.name||'가맹점')}</span><small>${escapeHtml(uses.join('·')||'사용정보')}</small>`;
+    el.innerHTML=`<b>₩</b><span>${escapeHtml(item.name||'가맹점')}</span><small>${escapeHtml(uses.join('·')||'지역사랑상품권')}</small>`;
     el.onclick=e=>{e.stopPropagation();showMapPlacePrompt({name:item.name||'지역사랑상품권 가맹점',address:item.address||'',lng:Number(item.lng),lat:Number(item.lat),voucher:item})};
     try{state.localVoucherMarkers.push(new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([Number(item.lng),Number(item.lat)]).addTo(state.map))}catch{}
   }
@@ -634,6 +634,11 @@ async function loadLocalVoucherMap({force=false}={}){
     }
     const d=await r.json();state.localVoucherLoadedAt=Date.now();state.localVoucherRegionCode=d.regionCode||'';
     renderLocalVoucherMarkers(d);updateLocalVoucherBadge(d);
+    if(!(d.items||[]).length){
+      if($('localVoucherDiscount'))$('localVoucherDiscount').textContent='가맹점 0곳 · API 응답 확인';
+    }else{
+      if($('localVoucherRegion'))$('localVoucherRegion').textContent=`${d.regionName||'현재 지역'} · ${(d.items||[]).length}곳`;
+    }
   }catch(e){console.warn('local voucher map load failed',e)}
 }
 function scheduleLocalVoucherRefresh(){
