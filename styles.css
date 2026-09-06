@@ -877,7 +877,7 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 }
 .home-sheet.collapsed>*:not(.home-sheet-toggle){pointer-events:none}
 .home-sheet.collapsed .home-sheet-toggle{pointer-events:auto}
-
+.home-view:has(.home-sheet.collapsed){background:transparent}
 
 /* map click navigation prompt */
 .map-place-prompt{
@@ -908,70 +908,3 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 }
 .local-voucher-marker b{font-size:13px;color:#244f86}
 .local-voucher-marker small{font-size:7px;color:#445066;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-
-/* === 7.5.9.5 home sheet handle / drag === */
-.home-sheet{
-  transform:translateY(var(--home-sheet-drag-y,0px));
-}
-.home-sheet:not(.dragging){transition:transform .24s ease,box-shadow .24s ease}
-.home-sheet.dragging{transition:none!important;user-select:none}
-.home-sheet.collapsed{transform:translateY(calc(100% - 58px))}
-.home-sheet.dragging.collapsed{transform:translateY(var(--home-sheet-drag-y,calc(100% - 58px)))}
-.home-sheet-toggle{
-  width:72px!important;height:30px!important;
-  border-radius:0 0 15px 15px!important;
-  touch-action:none!important;
-  cursor:ns-resize!important;
-}
-.home-sheet-toggle span{
-  font-size:24px!important;
-  font-weight:900!important;
-  line-height:1!important;
-  transform:translateY(-4px)!important;
-}
-
-/* 안내 버튼과 겹치지 않도록 주행 유가 레이어를 위로 이동 */
-.drive-fuel-chip{bottom:316px!important}
-@media(orientation:landscape){.drive-fuel-chip{bottom:190px!important}}
-
-/* 지역사랑상품권 가맹점 */
-.local-voucher-marker{
-  min-width:42px!important;height:auto!important;min-height:38px!important;
-  grid-template-columns:18px minmax(0,1fr)!important;
-  grid-template-rows:auto auto!important;
-  gap:1px 4px!important;padding:5px 7px!important;
-}
-.local-voucher-marker b{grid-row:1/3;font-size:14px!important}
-.local-voucher-marker span{font-size:8px;font-weight:800;max-width:92px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.local-voucher-marker small{font-size:7px!important;max-width:92px!important}
-
-/* 홈 지도 전국 단속카메라 — 문자 C 대신 카메라 픽토그램 */
-.home-camera-marker{
-  width:27px;height:27px;border:1px solid rgba(163,24,32,.28);border-radius:9px;
-  background:rgba(255,255,255,.96);display:grid;place-items:center;padding:0;
-  box-shadow:0 3px 10px rgba(18,34,62,.18)
-}
-.home-camera-marker span{font-size:14px;line-height:1}
-
-/* 운행 화면에서는 지역상품권 할인율/가맹점 레이어 미노출 */
-.drive-view:not(.hidden) ~ .local-voucher-badge{display:none!important}
-
-
-/* === 7.5.9.6 click recovery === */
-/* Android WebView에서 변형된 홈 시트가 보이지 않는 영역까지 터치를 가로채지 않도록 한다. */
-.home-view.map-expanded{background:transparent!important}
-.home-sheet.collapsed{pointer-events:none!important}
-.home-sheet.collapsed .home-sheet-toggle{
-  pointer-events:auto!important;
-  position:relative!important;
-  z-index:60!important;
-}
-.home-sheet.collapsed>*:not(.home-sheet-toggle){pointer-events:none!important}
-
-/* 드래그용 pointer-capture 제거 후 '-' 버튼은 단순 클릭 토글로만 동작 */
-.home-sheet-toggle{
-  touch-action:manipulation!important;
-  cursor:pointer!important;
-}
-.home-sheet.dragging{transition:transform .24s ease,box-shadow .24s ease!important}
