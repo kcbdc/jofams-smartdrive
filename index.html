@@ -8,7 +8,7 @@
   <title>조팸스 내비</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.0.4" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.0.6" />
 </head>
 <body>
   <main id="app">
@@ -47,6 +47,19 @@
         <section class="home-block">
           <div class="block-title"><b>최근 목적지</b><span>내 계정에 저장된 최근 방문 장소</span></div>
           <div id="recentDestinationList" class="recent-destination-list"><div class="recent-empty">최근 목적지가 없습니다.</div></div>
+        </section>
+        <section class="home-block home-facility-block">
+          <div class="block-title"><b>생활편의시설</b><span>현재 위치에서 가까운 순</span></div>
+          <div class="home-facility-tabs" role="tablist" aria-label="생활편의시설">
+            <button type="button" class="active" data-home-facility="주유소">주유소</button>
+            <button type="button" data-home-facility="마트">마트</button>
+            <button type="button" data-home-facility="편의점">편의점</button>
+            <button type="button" data-home-facility="주차장">주차장</button>
+            <button type="button" data-home-facility="충전소">충전소</button>
+          </div>
+          <div id="homeFacilityList" class="home-facility-list">
+            <div class="facility-empty">현재 위치를 확인하면 가까운 생활편의시설을 보여드립니다.</div>
+          </div>
         </section>
         
         <section class="home-block fuel-home-block">
@@ -123,6 +136,14 @@
         <button id="routeFavoriteBtn" class="circle-btn"><span data-icon="star-outline"></span></button>
       </header>
       <div class="route-sheet">
+        <div class="route-mode-switch" role="tablist" aria-label="이동수단 선택">
+          <button id="routeModeCar" type="button" class="active" data-route-mode="car" aria-selected="true">
+            <span data-icon="car"></span><b>자동차</b><strong id="routeModeCarTime">--분</strong>
+          </button>
+          <button id="routeModeWalk" type="button" data-route-mode="walk" aria-selected="false">
+            <span data-icon="walk"></span><b>도보</b><strong id="routeModeWalkTime">--분</strong>
+          </button>
+        </div>
         
         <div class="route-addresses">
           <div class="route-point-row route-origin-row">
@@ -597,6 +618,6 @@
   </main>
 
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.0.5"></script>
+  <script type="module" src="/app.js?v=7.6.0.6"></script>
 </body>
 </html>
