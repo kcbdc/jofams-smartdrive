@@ -623,7 +623,15 @@ async function loadLocalVoucherMap({force=false}={}){
     u.searchParams.set('lng',center.lng);u.searchParams.set('lat',center.lat);
     if(b){u.searchParams.set('west',b.getWest());u.searchParams.set('south',b.getSouth());u.searchParams.set('east',b.getEast());u.searchParams.set('north',b.getNorth())}
     const r=await fetch(u,{headers:{accept:'application/json'}});
-    if(!r.ok){if(r.status===503){clearLocalVoucherMarkers();$('localVoucherBadge')?.classList.add('hidden')}return}
+    if(!r.ok){
+      const err=await r.json().catch(()=>({}));
+      console.warn('local voucher API failed',r.status,err?.error||'');
+      clearLocalVoucherMarkers();
+      if($('localVoucherRegion'))$('localVoucherRegion').textContent='가맹점 조회 실패';
+      if($('localVoucherDiscount'))$('localVoucherDiscount').textContent=r.status===503?'공공데이터 API 키 확인':'API 연결 확인';
+      $('localVoucherBadge')?.classList.remove('hidden');
+      return;
+    }
     const d=await r.json();state.localVoucherLoadedAt=Date.now();state.localVoucherRegionCode=d.regionCode||'';
     renderLocalVoucherMarkers(d);updateLocalVoucherBadge(d);
   }catch(e){console.warn('local voucher map load failed',e)}
