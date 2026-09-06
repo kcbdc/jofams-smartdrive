@@ -1136,54 +1136,9 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .route-tag.walk{background:rgba(35,145,90,.12)}.route-walk-art{width:68px;height:68px;border-radius:22px;display:grid;place-items:center;background:rgba(35,145,90,.08)}.route-walk-art svg{width:42px;height:42px}
 .drive-view.walking-mode .speed-panel,.drive-view.walking-mode .section-speed-panel,.drive-view.walking-mode .traffic-status,.drive-view.walking-mode .traffic-route-rail,.drive-view.walking-mode .drive-fuel-chip,.drive-view.walking-mode #laneAssistLayer{display:none!important}.drive-view.walking-mode .drive-ar-character{display:none!important}
 
-/* === 7.6.1.5 안정 코어 복구: 최소 스타일 === */
+
+/* === 7.6.1.6 안정본 기반 최소 보정 === */
 #localVoucherBadge{display:none!important}
 .home-camera-marker{display:none!important}
 .voucher-shop-marker>span{display:none!important}
-
-button.fuel-station-row{
-  width:100%;
-  border:0;
-  border-bottom:1px solid #eef1f5;
-  background:transparent;
-  text-align:left;
-  font:inherit;
-  color:inherit;
-  cursor:pointer;
-  appearance:none;
-  -webkit-appearance:none;
-}
-
-/* 도보 지도 캐릭터 단일 표시 */
-.drive-view.walking-mode .drive-ar-character{display:none!important}
-.character-car-marker.walking-character-marker{
-  width:72px!important;
-  height:82px!important;
-  pointer-events:none!important;
-}
-.character-car-marker.walking-character-marker img{
-  width:100%!important;
-  height:100%!important;
-  object-fit:contain!important;
-  animation:jofamsWalkStable .68s ease-in-out infinite alternate!important;
-}
-@keyframes jofamsWalkStable{
-  from{transform:translateY(1px)}
-  to{transform:translateY(-4px)}
-}
-
-/* 도보 AR 선택 캐릭터 */
-.ar-view.walking-ar-mode #arCharacterMarker,
-#arCharacterMarker.walking-ar-character{
-  width:92px!important;
-  height:108px!important;
-}
-.ar-view.walking-ar-mode #arCharacterCar,
-#arCharacterMarker.walking-ar-character #arCharacterCar{
-  width:100%!important;
-  height:100%!important;
-  object-fit:contain!important;
-}
-
-.drive-bottom-summary{min-width:0}
 .drive-bottom-summary b,.speed-limit b{white-space:nowrap}
