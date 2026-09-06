@@ -60,12 +60,15 @@ export async function onRequestGet({request,env}){
   }catch(e){
     return json({error:'KOMSCO franchise API failed',status:e?.status||502,detail:e?.detail||''},502);
   }
-  const policy=region?.code?await fetchDiscountPolicy(keyCandidates[0],region.code,env).catch(()=>null):null;
+  const policies=region?.code?await fetchDiscountPolicies(keyCandidates,region.code,env).catch(()=>[]):[];
+  const policy=pickActiveDiscountPolicy(policies);
   return json({
     provider:'한국조폐공사_통합_가맹점기본정보',
+    discountProvider:'한국조폐공사_지역사랑상품권_지자체별_판매정책정보(15125217)',
     providerMode,
     regionCode:region?.code||'',regionName:region?.name||'현재 지도 영역',
     discountRate:Number.isFinite(Number(policy?.discountRate))?Number(policy.discountRate):null,
+    discountLabel:policy?.discountLabel||'',
     policyStart:policy?.startDate||'',policyEnd:policy?.endDate||'',
     monthlyPurchaseLimit:policy?.monthlyPurchaseLimit??null,
     items:franchise
@@ -171,23 +174,60 @@ async function fetchFranchises(keyCandidates,region,bounds){
   return [];
 }
 
-async function fetchDiscountPolicy(serviceKey,regionCode,env){
-  // 공공데이터포털의 '한국조폐공사_지역사랑상품권_지자체별_판매정책정보' API URL은
-  // 배포환경에서 KOMSCO_SALES_POLICY_API_URL 로 지정하면 바로 연계된다.
-  // (포털의 서비스 개편 시 URL만 교체 가능하도록 분리)
-  const endpoint=env.KOMSCO_SALES_POLICY_API_URL||'';
-  if(!endpoint)return null;
-  const u=new URL(endpoint);
-  u.searchParams.set('serviceKey',serviceKey);u.searchParams.set('pageNo','1');u.searchParams.set('numOfRows','100');
-  u.searchParams.set('type','json');u.searchParams.set('usageRegionCode',regionCode);
-  const r=await fetch(u);if(!r.ok)return null;
-  const d=await parseResponse(r),rows=extractRows(d),now=new Date();
-  const active=rows.map(normalizePolicy).filter(x=>{
-    if(!x.discountRate&&x.discountRate!==0)return false;
+async function fetchDiscountPolicies(keyCandidates,regionCode,env){
+  // data.go.kr 15125217 판매정책 API 활용.
+  // 실제 호출 URL은 공공데이터포털 활용신청 후 발급되는 명세 URL을 배포변수에 등록한다.
+  const endpoint=String(env.KOMSCO_SALES_POLICY_API_URL||'').trim();
+  if(!endpoint)return [];
+
+  const attempts=[
+    {page:'1',perPage:'200',regionParam:'cond[usage_rgn_cd::EQ]',style:'standard'},
+    {pageNo:'1',numOfRows:'200',regionParam:'usageRegionCode',style:'legacy'}
+  ];
+
+  for(const a of attempts){
+    for(const key of keyCandidates){
+      try{
+        const u=new URL(endpoint);
+        u.searchParams.set('serviceKey',key);
+        if(a.style==='standard'){
+          u.searchParams.set('page',a.page);u.searchParams.set('perPage',a.perPage);
+          u.searchParams.set(a.regionParam,regionCode);
+        }else{
+          u.searchParams.set('pageNo',a.pageNo);u.searchParams.set('numOfRows',a.numOfRows);
+          u.searchParams.set('type','json');u.searchParams.set(a.regionParam,regionCode);
+        }
+
+        const ctrl=new AbortController();
+        const timer=setTimeout(()=>ctrl.abort(),9000);
+        let r;
+        try{r=await fetch(u,{headers:{accept:'application/json'},signal:ctrl.signal})}
+        finally{clearTimeout(timer)}
+        if(!r.ok)continue;
+
+        const d=await parseResponse(r);
+        const rows=extractRows(d);
+        if(!rows.length)continue;
+        return rows.map(normalizePolicy).filter(x=>Number.isFinite(Number(x.discountRate)));
+      }catch{}
+    }
+  }
+  return [];
+}
+function pickActiveDiscountPolicy(rows){
+  const now=new Date();
+  const active=(rows||[]).filter(x=>{
+    if(!Number.isFinite(Number(x.discountRate)))return false;
     const start=parseDate(x.startDate),end=parseDate(x.endDate);
     return (!start||start<=now)&&(!end||now<=end);
-  }).sort((a,b)=>Number(b.discountRate)-Number(a.discountRate));
-  return active[0]||null;
+  });
+  if(!active.length)return null;
+
+  active.sort((a,b)=>Number(b.discountRate)-Number(a.discountRate));
+  const top=active[0];
+  const distinct=[...new Set(active.map(x=>Number(x.discountRate)).filter(Number.isFinite))].sort((a,b)=>b-a);
+  top.discountLabel=distinct.length>1?`할인 ${distinct.join('·')}%`:`할인 ${top.discountRate}%`;
+  return top;
 }
 
 async function parseResponse(r){
@@ -289,10 +329,23 @@ function normalizeFranchise(r){
 }
 function normalizePolicy(r){
   return {
-    discountRate:Number(pick(r,['discountRate','dscntRate','할인율'])),
-    startDate:String(pick(r,['discountPolicyStartDate','policyStartDate','할인정책적용시작일자'])||''),
-    endDate:String(pick(r,['discountPolicyEndDate','policyEndDate','할인정책적용종료일자'])||''),
-    monthlyPurchaseLimit:Number(pick(r,['monthlyPurchaseLimit','monthPurchaseLimit','월간구매제한금액']))||null
+    discountRate:Number(pick(r,[
+      'dscnt_rt','DSCNT_RT','discount_rate','discountRate','dscntRate','할인율'
+    ])),
+    startDate:String(pick(r,[
+      'dscnt_plcy_aply_bgng_ymd','DSCNT_PLCY_APLY_BGNG_YMD',
+      'discountPolicyStartDate','policyStartDate','할인정책적용시작일자'
+    ])||''),
+    endDate:String(pick(r,[
+      'dscnt_plcy_aply_end_ymd','DSCNT_PLCY_APLY_END_YMD',
+      'discountPolicyEndDate','policyEndDate','할인정책적용종료일자'
+    ])||''),
+    monthlyPurchaseLimit:Number(pick(r,[
+      'mt_prchs_lmt_amt','MT_PRCHS_LMT_AMT',
+      'monthlyPurchaseLimit','monthPurchaseLimit','월간구매제한금액'
+    ]))||null,
+    providerCode:String(pick(r,['pvsn_inst_cd','PVSN_INST_CD','providerCode','제공기관코드'])||''),
+    paymentType:String(pick(r,['frcs_stlm_info_se','FRCS_STLM_INFO_SE','paymentType','상품권유형'])||'')
   }
 }
 function parseDate(v){
