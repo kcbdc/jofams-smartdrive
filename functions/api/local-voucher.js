@@ -101,8 +101,12 @@ export async function onRequestGet({request,env}){
   }catch(e){
     return json({error:'KOMSCO franchise API failed',status:e?.status||502,detail:e?.detail||''},502);
   }
-  const policies=region?.code?await fetchDiscountPolicies(keyCandidates,region.code,env).catch(()=>[]):[];
-  const policy=pickActiveDiscountPolicy(policies);
+  let policyResult={rows:[],status:'region-unavailable',detail:''};
+  if(region?.code){
+    try{policyResult=await fetchDiscountPolicies(keyCandidates,region.code,env)}
+    catch(e){policyResult={rows:[],status:'error',detail:String(e?.message||e||'').slice(0,180)}}
+  }
+  const policy=pickActiveDiscountPolicy(policyResult.rows);
   return json({
     provider:'한국조폐공사_통합_가맹점기본정보',
     discountProvider:'한국조폐공사_지역사랑상품권_지자체별_판매정책정보(15125217)',
@@ -112,6 +116,8 @@ export async function onRequestGet({request,env}){
     discountLabel:policy?.discountLabel||'',
     policyStart:policy?.startDate||'',policyEnd:policy?.endDate||'',
     monthlyPurchaseLimit:policy?.monthlyPurchaseLimit??null,
+    discountStatus:policy? 'ok' : (policyResult.status||'no-policy'),
+    discountDetail:policy?'':String(policyResult.detail||'').slice(0,180),
     items:franchise
   },200,120);
 }
@@ -180,58 +186,164 @@ async function fetchFranchises(keyCandidates,region,bounds){
 }
 
 async function fetchDiscountPolicies(keyCandidates,regionCode,env){
-  // data.go.kr 15125217 판매정책 API 활용.
-  // 실제 호출 URL은 공공데이터포털 활용신청 후 발급되는 명세 URL을 배포변수에 등록한다.
   const endpoint=String(env.KOMSCO_SALES_POLICY_API_URL||SALES_POLICY_URL).trim();
-
   const attempts=[
-    {page:'1',perPage:'200',regionParam:'cond[usage_rgn_cd::EQ]',style:'standard'},
-    {page:'1',perPage:'200',regionParam:'usage_rgn_cd',style:'standard'},
-    {pageNo:'1',numOfRows:'200',regionParam:'usageRegionCode',style:'legacy'}
+    // 가장 호환성이 높은 최소요청부터 시도한다. 지역필터는 응답을 받은 뒤 로컬에서 적용한다.
+    {kind:'standard-all',params:{page:'1',perPage:'1000',returnType:'JSON'}},
+    {kind:'standard-all-type',params:{page:'1',perPage:'1000',type:'json'}},
+    {kind:'legacy-all',params:{pageNo:'1',numOfRows:'1000',type:'json'}},
+    // 서버측 지역조건을 지원하는 경우의 보조 시도
+    {kind:'standard-cond',params:{page:'1',perPage:'1000','cond[usage_rgn_cd::EQ]':regionCode,returnType:'JSON'}},
+    {kind:'standard-direct',params:{page:'1',perPage:'1000',usage_rgn_cd:regionCode,returnType:'JSON'}},
+    {kind:'legacy-region',params:{pageNo:'1',numOfRows:'1000',type:'json',usageRegionCode:regionCode}}
   ];
 
+  let lastDetail='',lastStatus='';
   for(const a of attempts){
     for(const key of keyCandidates){
       try{
         const u=new URL(endpoint);
+        // URLSearchParams에 디코딩 키를 넣으면 URL 인코딩은 한 번만 적용된다.
         u.searchParams.set('serviceKey',key);
-        if(a.style==='standard'){
-          u.searchParams.set('page',a.page);u.searchParams.set('perPage',a.perPage);
-          u.searchParams.set(a.regionParam,regionCode);
-        }else{
-          u.searchParams.set('pageNo',a.pageNo);u.searchParams.set('numOfRows',a.numOfRows);
-          u.searchParams.set('type','json');u.searchParams.set(a.regionParam,regionCode);
-        }
+        for(const [k,v] of Object.entries(a.params))u.searchParams.set(k,String(v));
 
         const ctrl=new AbortController();
-        const timer=setTimeout(()=>ctrl.abort(),9000);
-        let r;
-        try{r=await fetch(u,{headers:{accept:'application/json'},signal:ctrl.signal})}
-        finally{clearTimeout(timer)}
-        if(!r.ok)continue;
+        const timer=setTimeout(()=>ctrl.abort(),10000);
+        let rr,text;
+        try{
+          rr=await fetch(u,{headers:{accept:'application/json, application/xml;q=0.8, text/xml;q=0.7'},signal:ctrl.signal,cache:'no-store'});
+          text=await rr.text();
+        }finally{clearTimeout(timer)}
 
-        const d=await parseResponse(r);
-        const rows=extractRows(d);
-        if(!rows.length)continue;
-        return rows.map(normalizePolicy).filter(x=>Number.isFinite(Number(x.discountRate)));
-      }catch{}
+        lastStatus=String(rr?.status||'');
+        if(!rr?.ok){lastDetail=`HTTP ${lastStatus}`;continue}
+
+        const parsed=parsePolicyPayload(text);
+        if(parsed.error){
+          lastDetail=parsed.error;
+          // 인증키 오류라면 다음 key candidate로 넘어가고, 잘못된 파라미터면 다음 요청형식을 시도한다.
+          continue;
+        }
+
+        const rawRows=extractPolicyRows(parsed.data);
+        if(!rawRows.length){lastDetail=`${a.kind}: rows 0`;continue}
+
+        const normalized=rawRows.map(normalizePolicy)
+          .filter(x=>Number.isFinite(Number(x.discountRate)));
+
+        if(!normalized.length){lastDetail=`${a.kind}: discount field not recognized`;continue}
+
+        const exact=normalized.filter(x=>String(x.usageRegionCode||'').replace(/\D/g,'').slice(0,5)===regionCode);
+        // 응답에 지역코드 필드가 있으면 현재 지역만 사용.
+        // 지역코드 필드가 전혀 없을 때만 서버측 지역필터 응답을 신뢰한다.
+        const anyRegionField=normalized.some(x=>String(x.usageRegionCode||'').trim());
+        const rows=exact.length?exact:(!anyRegionField&&/cond|direct|region/.test(a.kind)?normalized:[]);
+        if(rows.length)return {rows,status:'ok',detail:`${a.kind}:${rows.length}`};
+
+        lastDetail=`${a.kind}: region ${regionCode} not found`;
+      }catch(e){
+        lastDetail=e?.name==='AbortError'?'policy timeout':String(e?.message||e||'policy error').slice(0,160);
+      }
+    }
+  }
+  return {rows:[],status:lastStatus?`http-${lastStatus}`:'no-policy',detail:lastDetail};
+}
+
+function parsePolicyPayload(text){
+  const src=String(text||'').trim();
+  if(!src)return {data:null,error:'empty response'};
+  try{
+    const d=JSON.parse(src);
+    const code=String(d?.resultCode??d?.response?.header?.resultCode??d?.header?.resultCode??'').trim();
+    const msg=String(d?.resultMsg??d?.response?.header?.resultMsg??d?.header?.resultMsg??'').trim();
+    if(code&&code!=='00'&&code!=='0')return {data:d,error:`${code} ${msg}`.trim()};
+    const raw=JSON.stringify(d).slice(0,500);
+    if(/SERVICE_KEY|PERMISSION_DENIED|SERVICE_ACCESS_DENIED|등록되지 않은|인증키/i.test(`${msg} ${raw}`))
+      return {data:d,error:msg||'API 인증 오류'};
+    return {data:d,error:''};
+  }catch{}
+
+  // JSON 강제 옵션을 무시하고 XML로 응답하는 경우도 처리
+  if(/^</.test(src)){
+    const errCode=xmlTag(src,'resultCode')||xmlTag(src,'returnReasonCode');
+    const errMsg=xmlTag(src,'resultMsg')||xmlTag(src,'returnAuthMsg');
+    if(errCode&&errCode!=='00'&&errCode!=='0')return {data:null,error:`${errCode} ${errMsg}`.trim()};
+    const items=[...src.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)].map(m=>xmlObject(m[1]));
+    if(items.length)return {data:{items},error:''};
+    const rows=[...src.matchAll(/<(?:data|row)\b[^>]*>([\s\S]*?)<\/(?:data|row)>/gi)].map(m=>xmlObject(m[1])).filter(x=>Object.keys(x).length);
+    if(rows.length)return {data:{items:rows},error:''};
+    return {data:null,error:errMsg||'XML rows 0'};
+  }
+  return {data:null,error:'unknown response format'};
+}
+function xmlTag(src,name){
+  const m=String(src||'').match(new RegExp(`<${name}[^>]*>([\\\\s\\\\S]*?)<\\\\/${name}>`,'i'));
+  return m?decodeXml(m[1]).trim():'';
+}
+function xmlObject(fragment){
+  const out={};
+  const re=/<([A-Za-z0-9_가-힣]+)[^>]*>([\s\S]*?)<\/\1>/g;
+  let m;while((m=re.exec(fragment)))out[m[1]]=decodeXml(String(m[2]).replace(/<[^>]+>/g,'')).trim();
+  return out;
+}
+function decodeXml(v){return String(v||'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'")}
+
+function extractPolicyRows(d){
+  if(Array.isArray(d))return d;
+  const direct=[
+    d?.data,d?.items,d?.item,
+    d?.response?.body?.items?.item,d?.response?.body?.items,d?.response?.body?.item,
+    d?.body?.items?.item,d?.body?.items,d?.body?.item,
+    d?.data?.items,d?.data?.item,d?.result?.items,d?.result?.item,d?.result
+  ];
+  for(const x of direct){
+    if(Array.isArray(x))return x;
+    if(x&&typeof x==='object'){
+      const arrays=Object.values(x).filter(v=>Array.isArray(v)&&v.length&&typeof v[0]==='object');
+      if(arrays.length)return arrays[0];
+    }
+  }
+  const queue=[d],seen=new Set();
+  while(queue.length){
+    const cur=queue.shift();
+    if(!cur||typeof cur!=='object'||seen.has(cur))continue;
+    seen.add(cur);
+    for(const v of Object.values(cur)){
+      if(Array.isArray(v)&&v.length&&typeof v[0]==='object'){
+        const keys=Object.keys(v[0]||{}).map(k=>String(k).toLowerCase());
+        if(keys.some(k=>/dscnt|discount|할인/.test(k))||
+           keys.some(k=>/usage.*rgn|usage.*region|사용처지역/.test(k)))return v;
+      }
+      if(v&&typeof v==='object'){
+        if(Array.isArray(v))for(const y of v)if(y&&typeof y==='object')queue.push(y);
+        else queue.push(v);
+      }
     }
   }
   return [];
 }
 function pickActiveDiscountPolicy(rows){
-  const now=new Date();
-  const active=(rows||[]).filter(x=>{
-    if(!Number.isFinite(Number(x.discountRate)))return false;
+  const now=new Date(),all=(rows||[]).filter(x=>Number.isFinite(Number(x.discountRate)));
+  if(!all.length)return null;
+  const active=all.filter(x=>{
     const start=parseDate(x.startDate),end=parseDate(x.endDate);
     return (!start||start<=now)&&(!end||now<=end);
   });
-  if(!active.length)return null;
-
-  active.sort((a,b)=>Number(b.discountRate)-Number(a.discountRate));
-  const top=active[0];
-  const distinct=[...new Set(active.map(x=>Number(x.discountRate)).filter(Number.isFinite))].sort((a,b)=>b-a);
-  top.discountLabel=distinct.length>1?`할인 ${distinct.join('·')}%`:`할인 ${top.discountRate}%`;
+  const candidates=active.length?active:all.filter(x=>{
+    const start=parseDate(x.startDate);return !start||start<=now;
+  });
+  if(!candidates.length)return null;
+  candidates.sort((a,b)=>{
+    const ae=parseDate(a.endDate)?.getTime()||parseDate(a.startDate)?.getTime()||0;
+    const be=parseDate(b.endDate)?.getTime()||parseDate(b.startDate)?.getTime()||0;
+    return active.length?(Number(b.discountRate)-Number(a.discountRate)):(be-ae);
+  });
+  const top=candidates[0];
+  const samePeriod=active.length?active:candidates.filter(x=>String(x.endDate||'')===String(top.endDate||''));
+  const distinct=[...new Set(samePeriod.map(x=>Number(x.discountRate)).filter(Number.isFinite))].sort((a,b)=>b-a);
+  top.discountLabel=active.length
+    ? (distinct.length>1?`할인 ${distinct.join('·')}%`:`할인 ${top.discountRate}%`)
+    : `최근 할인 ${top.discountRate}%`;
   return top;
 }
 
@@ -332,29 +444,57 @@ function normalizeFranchise(r){
     usageRegionCode:String(pick(r,['usage_rgn_cd','USAGE_RGN_CD','usageRegionCode'])||'')
   };
 }
+function numericValue(v){
+  if(v===undefined||v===null)return NaN;
+  const s=String(v).replace(/,/g,'').replace(/%/g,'').replace(/원/g,'').trim();
+  const n=Number(s);return Number.isFinite(n)?n:NaN;
+}
 function normalizePolicy(r){
+  const lower={};
+  for(const [k,v] of Object.entries(r||{}))lower[String(k).toLowerCase()]=v;
+  const fuzzy=(patterns)=>{
+    for(const [k,v] of Object.entries(r||{})){
+      const nk=String(k).toLowerCase().replace(/[_\s-]/g,'');
+      if(patterns.some(re=>re.test(nk)))return v;
+    }
+    return '';
+  };
+  const discountRaw=pick(r,[
+    'dscnt_rt','DSCNT_RT','dscnt_rate','discount_rate','discountRate','dscntRate',
+    'sale_rt','saleRate','disc_rate','discRate','할인율'
+  ]) || fuzzy([/dscnt.*rt/,/discount.*rate/,/할인율/]);
+  const regionRaw=pick(r,[
+    'usage_rgn_cd','USAGE_RGN_CD','usageRegionCode','usage_region_code',
+    'useAreaCode','useRegionCode','사용처지역코드','사용지역코드'
+  ]) || fuzzy([/usagergncd/,/usageregioncode/,/사용처지역코드/,/사용지역코드/]);
+
   return {
-    discountRate:Number(pick(r,[
-      'dscnt_rt','DSCNT_RT','dscnt_rate','discount_rate','discountRate','dscntRate',
-      'sale_rt','saleRate','할인율'
-    ])),
+    usageRegionCode:String(regionRaw||'').replace(/\D/g,'').slice(0,5),
+    discountRate:numericValue(discountRaw),
     startDate:String(pick(r,[
       'dscnt_plcy_aply_bgng_ymd','DSCNT_PLCY_APLY_BGNG_YMD',
+      'dscnt_plcy_aply_strt_ymd','DSCNT_PLCY_APLY_STRT_YMD',
       'dscnt_plcy_bgng_ymd','policy_bgng_ymd',
-      'discountPolicyStartDate','policyStartDate','할인정책적용시작일자'
-    ])||''),
+      'discountPolicyStartDate','policyStartDate','discountStartDate',
+      '할인정책적용시작일자','할인정책적용시작일'
+    ])||fuzzy([/dscnt.*(?:bgng|strt|start)/,/할인정책.*시작/])||''),
     endDate:String(pick(r,[
       'dscnt_plcy_aply_end_ymd','DSCNT_PLCY_APLY_END_YMD',
       'dscnt_plcy_end_ymd','policy_end_ymd',
-      'discountPolicyEndDate','policyEndDate','할인정책적용종료일자'
-    ])||''),
-    monthlyPurchaseLimit:Number(pick(r,[
-      'mt_prchs_lmt_amt','MT_PRCHS_LMT_AMT',
-      'mon_prchs_lmt_amt','monthlyPurchaseLimit','monthPurchaseLimit','월간구매제한금액'
-    ]))||null,
+      'discountPolicyEndDate','policyEndDate','discountEndDate',
+      '할인정책적용종료일자','할인정책적용종료일'
+    ])||fuzzy([/dscnt.*end/,/할인정책.*종료/])||''),
+    monthlyPurchaseLimit:(()=>{
+      const v=pick(r,[
+        'mt_prchs_lmt_amt','MT_PRCHS_LMT_AMT','mon_prchs_lmt_amt',
+        'monthlyPurchaseLimit','monthPurchaseLimit','monthly_limit_amt','월간구매제한금액'
+      ])||fuzzy([/prchs.*lmt.*amt/,/monthly.*limit/,/월간구매제한/]);
+      const n=numericValue(v);return Number.isFinite(n)?n:null;
+    })(),
     providerCode:String(pick(r,['pvsn_inst_cd','PVSN_INST_CD','providerCode','제공기관코드'])||''),
     paymentType:String(pick(r,[
-      'frcs_stlm_info_se','FRCS_STLM_INFO_SE','stlm_info_se','paymentType','상품권유형'
+      'frcs_stlm_info_se','FRCS_STLM_INFO_SE','stlm_info_se','paymentType',
+      'giftCardType','상품권유형','결제수단구분'
     ])||'')
   }
 }
