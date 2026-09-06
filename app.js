@@ -1595,6 +1595,10 @@ function stopLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.liveRo
 function setView(view){
   $('homeView').classList.toggle('hidden',view!=='home');$('routeView').classList.toggle('hidden',view!=='route');$('driveView').classList.toggle('hidden',view!=='drive');
   $('bottomNav').classList.toggle('hidden',view==='drive'||state.arRunning);
+  if(view==='home'){
+    $('homeView')?.classList.remove('ui-hidden');
+    const header=document.querySelector('#homeView .home-header');if(header){header.style.removeProperty('display');header.style.removeProperty('visibility');header.style.removeProperty('opacity')}
+  }
   document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.classList.toggle('active',b.dataset.bottomNav===view||(view==='drive'&&b.dataset.bottomNav==='realtime')));
   if(state.map){if(view==='home'){state.map3D=false;enforce2DMap();state.map.easeTo({pitch:0,bearing:0})}else if(view==='drive')applyDriveMapMode()}
   applyNightMode();if(view==='home'){
@@ -2467,8 +2471,6 @@ function setHomeSheetCollapsed(collapsed){
   }
   if(state.map)setTimeout(()=>{try{state.map.resize();scheduleLocalVoucherRefresh();scheduleHomeCameraRefresh()}catch{}},180);
 }
-function toggleHomeSheet(){setHomeSheetCollapsed(!state.homeSheetCollapsed)}
-
 function toggleHomeSheet(){setHomeSheetCollapsed(!state.homeSheetCollapsed)}
 
 function openHamburgerMenu(){$('hamburgerMenuModal')?.classList.remove('hidden')}
