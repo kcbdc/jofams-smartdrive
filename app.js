@@ -667,7 +667,7 @@ function renderLocalVoucherMarkers(data){
   if(!state.map||!maplibregl?.Marker||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
   const items=(data?.items||[])
     .filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat)))
-    .slice(0,1200);
+    .slice(0,1800);
   if(!items.length)return;
 
   // 7.6.0.4: 클러스터를 사용하지 않고 CCTV처럼 처음부터 가게 SVG 아이콘을 직접 표시.
@@ -712,12 +712,6 @@ function scheduleVoucherReconnect(){
 async function loadLocalVoucherMap({force=false}={}){
   if(!state.map||$('homeView')?.classList.contains('hidden'))return;
   const zoom=Number(state.map.getZoom?.()||0);
-  if(zoom<7.5){
-    clearLocalVoucherMarkers();
-    $('localVoucherBadge')?.classList.add('hidden');
-    return;
-  }
-
   const center=state.map.getCenter?.();if(!center)return;
 
   // 최근 성공 데이터가 있으면 네트워크 재호출 전에도 바로 유지 표시
@@ -733,7 +727,7 @@ async function loadLocalVoucherMap({force=false}={}){
     }
   }
 
-  if(!force&&Date.now()-Number(state.localVoucherLoadedAt||0)<45000&&state.localVoucherData)return;
+  if(!force&&Date.now()-Number(state.localVoucherLoadedAt||0)<20000&&state.localVoucherData)return;
 
   try{
     const b=state.map.getBounds?.();
@@ -798,7 +792,7 @@ async function loadLocalVoucherMap({force=false}={}){
 }
 function scheduleLocalVoucherRefresh(){
   clearTimeout(state.localVoucherLoadTimer);
-  state.localVoucherLoadTimer=setTimeout(()=>loadLocalVoucherMap(),450);
+  state.localVoucherLoadTimer=setTimeout(()=>loadLocalVoucherMap(),180);
 }
 
 function refreshMapLayout({fitRoute=false}={}){
@@ -842,14 +836,24 @@ function ensureDriveCharacterAfterViewportChange(){
 }
 
 function makeCarMarker(){const el=document.createElement('div');el.className='character-car-marker rear-version';el.innerHTML=`<img src="${characterDefs[state.character].rear||characterDefs[state.character].marker}" alt="${characterDefs[state.character].name} 자동차 후면">`;return new maplibregl.Marker({element:el,anchor:'center',rotationAlignment:'viewport'});}
-function updateCarMarkerImage(){const img=state.userMarker?.getElement()?.querySelector('img');if(img)img.src=characterDefs[state.character].rear||characterDefs[state.character].marker}
-function makeDestMarker(){const el=document.createElement('div');el.className='destination-pin';return new maplibregl.Marker({element:el,anchor:'bottom'})}
-function updateUserMarkerMotion(){
-  const moving=Boolean(state.tripStartedAt)&&Math.max(0,Number(state.user?.speed)||0)>.35;
-  const el=state.userMarker?.getElement();if(el)el.classList.toggle('jofams-car-moving',moving);
-  if(state.tripStartedAt)setTimeout(alignDriveCharacterWithSpeedLimit,0);
-  const ar=$('driveArCharacter');if(ar)ar.classList.toggle('moving',moving&&state.arCameraMode);const arMarker=$('arCharacterMarker');if(arMarker)arMarker.classList.toggle('moving',moving&&state.arRunning);
-  const img=$('driveArCharacterImg');if(img)img.src=characterDefs[state.character].rear||characterDefs[state.character].marker;
+function currentCharacterWalkImage(){
+  const ch=state.character||'daim';
+  return `/assets/${ch}.png`;
+}
+function updateCarMarkerImage(){
+  const img=$('driveArCharacterImg');
+  if(img){
+    img.src=state.routeMode==='walk'?currentCharacterWalkImage():characterDefs[state.character].rear;
+    img.alt=state.routeMode==='walk'?`${characterDefs[state.character].name} 도보 캐릭터`:`${characterDefs[state.character].name} 자동차`;
+  }
+  if(state.userMarker?.getElement){
+    const el=state.userMarker.getElement();
+    const markerImg=el?.querySelector?.('img');
+    if(markerImg){
+      markerImg.src=state.routeMode==='walk'?currentCharacterWalkImage():characterDefs[state.character].marker;
+      markerImg.classList.toggle('walk-character-marker',state.routeMode==='walk');
+    }
+  }
 }
 function ensureUserMarker(){if(!state.user||!state.map)return;if(!state.userMarker)state.userMarker=makeCarMarker().setLngLat([state.user.lng,state.user.lat]).addTo(state.map);else state.userMarker.setLngLat([state.user.lng,state.user.lat]);updateUserMarkerMotion()}
 function setDestinationMarker(){if(state.destMarker)state.destMarker.remove();if(state.destination&&state.map)state.destMarker=makeDestMarker().setLngLat([state.destination.lng,state.destination.lat]).addTo(state.map)}
@@ -1851,7 +1855,12 @@ function setView(view){
   $('bottomNav').classList.toggle('hidden',view==='drive'||state.arRunning);
   if(view==='home'){
     $('homeView')?.classList.remove('ui-hidden');
-    if(pointValid(state.user))setTimeout(()=>loadHomeFacility(state.homeFacilityCategory),120);
+    setTimeout(async()=>{
+      try{
+        if(!pointValid(state.user))await locate(false);
+        await loadHomeFacility(state.homeFacilityCategory||'주유소');
+      }catch(e){console.warn('home facility initial load failed',e)}
+    },120);
     const header=document.querySelector('#homeView .home-header');if(header){header.style.removeProperty('display');header.style.removeProperty('visibility');header.style.removeProperty('opacity')}
   }
   document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.classList.toggle('active',b.dataset.bottomNav===view||(view==='drive'&&b.dataset.bottomNav==='realtime')));
@@ -1878,6 +1887,9 @@ function setView(view){
 function startNavigation(){
   $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearHomeCameraMarkers();
   if((state.waypoints||[]).filter(pointValid).length)saveCurrentWaypointCourse();if(!state.route||!state.destination)return;cancelAutoStart();state.tripStartedAt=Date.now();startDestinationCycle();logTrip('start');setView('drive');$('driveView')?.classList.toggle('walking-mode',state.routeMode==='walk');
+  if(state.routeMode==='walk'){
+    const wi=$('driveArCharacterImg');if(wi){wi.src=currentCharacterWalkImage();wi.alt=`${characterDefs[state.character].name} 도보 캐릭터`}
+  }
   state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false};state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};state.offRouteHits=0;state.offRouteHeadingHits=0; // 새 주행마다 상보필터 상태 초기화
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
   state.routeCumulative=buildCumulative(state.route);startWatch();ensureUserMarker();updateCarMarkerImage();drawRoute(state.route,{fit:false});updateDriving(true);if(state.routeMode==='car')startLiveRouteRefresh();else stopLiveRouteRefresh();applyNightMode();setTimeout(tryLandscapeFullscreen,100);speak(state.routeMode==='walk'?'도보 안내를 시작합니다. 보행자 도로를 따라 이동하세요.':`${characterDefs[state.character].name}이 안내를 시작합니다.`)}
@@ -2801,7 +2813,20 @@ function bindCriticalUI(){
 function bindUI(){
   try{bindFutureDepartureUI();}catch(e){console.warn('UI bind section 1 failed',e)}
   try{$('allowLocationBtn').onclick=requestLocationPermission;$('allowCameraBtn').onclick=requestCameraPermission;$('permissionContinueBtn').onclick=closePermissionGate;}catch(e){console.warn('UI bind section 2 failed',e)}
-  try{if($('homeSheetToggle'))$('homeSheetToggle').onclick=toggleHomeSheet;if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=closeMapPlacePrompt;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;if($('voucherBuildingClose'))$('voucherBuildingClose').onclick=closeVoucherBuildingModal;window.addEventListener('online',()=>{state.localVoucherRetryCount=0;loadLocalVoucherMap({force:true})});if($('voucherBuildingModal'))$('voucherBuildingModal').addEventListener('click',e=>{if(e.target===$('voucherBuildingModal'))closeVoucherBuildingModal()});applyIcons();$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
+  try{if($('homeSheetToggle'))$('homeSheetToggle').onclick=toggleHomeSheet;if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=closeMapPlacePrompt;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;if($('voucherBuildingClose'))$('voucherBuildingClose').onclick=closeVoucherBuildingModal;window.addEventListener('online',()=>{state.localVoucherRetryCount=0;loadLocalVoucherMap({force:true})});
+let initialHomeFacilityLoad=false;
+window.addEventListener('load',()=>{
+  if(initialHomeFacilityLoad)return;
+  initialHomeFacilityLoad=true;
+  setTimeout(async()=>{
+    try{
+      if(!$('homeView')?.classList.contains('hidden')){
+        if(!pointValid(state.user))await locate(false);
+        await loadHomeFacility('주유소');
+      }
+    }catch(e){console.warn('initial facility load failed',e)}
+  },700);
+});if($('voucherBuildingModal'))$('voucherBuildingModal').addEventListener('click',e=>{if(e.target===$('voucherBuildingModal'))closeVoucherBuildingModal()});applyIcons();$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
   try{document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>setCharacter(b.dataset.character));$('homeShortcut').onclick=()=>state.savedPlaces.home?chooseDestination(state.savedPlaces.home):openPlaceModal('home');$('workShortcut').onclick=()=>state.savedPlaces.work?chooseDestination(state.savedPlaces.work):openPlaceModal('work');$('homeManageBtn').onclick=()=>openPlaceModal('home');$('workManageBtn').onclick=()=>openPlaceModal('work');$('favoriteShortcut').onclick=openFavoritesList;}catch(e){console.warn('UI bind section 4 failed',e)}
   try{document.querySelectorAll('[data-my-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.myCharacter);syncCharacterUI();toast(`${characterDefs[state.character].name} 가이드로 변경했습니다.`)});}catch(e){console.warn('UI bind section 5 failed',e)}
   try{document.querySelectorAll('[data-voice-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.voiceCharacter);syncCharacterUI();speak(`${characterDefs[state.character].name} 음성 안내입니다.`)});}catch(e){console.warn('UI bind section 6 failed',e)}
