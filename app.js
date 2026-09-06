@@ -668,7 +668,7 @@ function renderLocalVoucherMarkers(data){
   const items=(data?.items||[])
     .filter(x=>{
       const lng=Number(x.lng),lat=Number(x.lat);
-      return Number.isFinite(lng)&&Number.isFinite(lat)&&lat>=31.5&&lat<=39.8&&lng>=123.5&&lng<=132.5;
+      return Number.isFinite(lng)&&Number.isFinite(lat)&&lat>=33.0&&lat<=38.75&&lng>=125.65&&lng<=131.05;
     })
     .slice(0,1800);
   if(!items.length)return;
@@ -697,7 +697,7 @@ function updateLocalVoucherBadge(data){
 }
 function readVoucherStaleCache(){
   try{
-    const raw=localStorage.getItem('jofams_local_voucher_cache_v4');
+    const raw=localStorage.getItem('jofams_local_voucher_cache_v5');
     if(!raw)return null;
     const d=JSON.parse(raw);
     if(!d?.payload||Date.now()-Number(d.savedAt||0)>6*60*60*1000)return null;
@@ -705,7 +705,26 @@ function readVoucherStaleCache(){
   }catch{return null}
 }
 function writeVoucherStaleCache(payload){
-  try{localStorage.setItem('jofams_local_voucher_cache_v4',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
+  try{localStorage.setItem('jofams_local_voucher_cache_v5',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
+}
+async function retryVoucherDiscountOnly(){
+  if(!state.map||Number.isFinite(Number(state.localVoucherData?.discountRate)))return;
+  const center=state.map.getCenter?.();if(!center)return;
+  try{
+    const u=new URL('/api/local-voucher',location.origin);
+    u.searchParams.set('lng',center.lng);u.searchParams.set('lat',center.lat);
+    u.searchParams.set('policyOnly','1');
+    if(state.localVoucherRegionCode)u.searchParams.set('regionCode',state.localVoucherRegionCode);
+    const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),9000);
+    let rr;try{rr=await fetch(u,{headers:{accept:'application/json'},signal:ctrl.signal,cache:'no-store'})}finally{clearTimeout(timer)}
+    if(!rr.ok)return;
+    const d=await rr.json();
+    if(Number.isFinite(Number(d.discountRate))){
+      state.localVoucherData={...(state.localVoucherData||{}),...d,items:state.localVoucherData?.items||[]};
+      writeVoucherStaleCache(state.localVoucherData);
+      updateLocalVoucherBadge(state.localVoucherData);
+    }
+  }catch(e){console.warn('voucher discount retry failed',e)}
 }
 function scheduleVoucherReconnect(){
   clearTimeout(state.localVoucherReconnectTimer);
@@ -784,6 +803,7 @@ async function loadLocalVoucherMap({force=false}={}){
 
     renderLocalVoucherMarkers(d);
     updateLocalVoucherBadge(d);
+    if(!Number.isFinite(Number(d.discountRate)))setTimeout(retryVoucherDiscountOnly,900);
 
     if(!(d.items||[]).length){
       if($('localVoucherDiscount')&&!Number.isFinite(Number(d.discountRate)))
@@ -1228,9 +1248,13 @@ async function chooseDestination(item,{autoGuide=false}={}){
   if(!state.origin||state.originMode==='current'){state.origin={...state.user,name:'내 위치',address:'현재 GPS 위치'};state.originMode='current'}
   updateOriginUI();
   await loadRouteOptions();
-  if(autoGuide&&state.route&&state.destination){
-    cancelAutoStart();
-    startNavigation();
+  if(autoGuide){
+    if(state.route&&state.destination){
+      cancelAutoStart();
+      startNavigation();
+    }else{
+      toast('경로 계산에 실패했습니다. 다시 눌러 주세요.',2600);
+    }
   }
 }
 function placeKindLabel(kind){return kind==='home'?'집':'회사'}
@@ -1553,11 +1577,13 @@ async function startAR(){
   try{
     state.arStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
     $('arVideo').srcObject=state.arStream;state.arRunning=true;$('arView').classList.remove('hidden');$('bottomNav').classList.add('hidden');$('driveMenu').classList.add('hidden');
-    $('arCharacterCar').src=characterDefs[state.character].marker;updateAROverlay();drawARScene();
+    $('arCharacterCar').src=state.routeMode==='walk'?currentCharacterWalkImage():characterDefs[state.character].marker;
+    $('arView')?.classList.toggle('walking-ar-mode',state.routeMode==='walk');
+    updateAROverlay();drawARScene();
   }catch(e){console.warn(e);toast('카메라 권한을 허용해 주세요.',3000)}
 }
 function stopAR(){
-  if(state.arFrame)cancelAnimationFrame(state.arFrame);state.arFrame=0;state.arRunning=false;$('arView')?.classList.add('hidden');
+  if(state.arFrame)cancelAnimationFrame(state.arFrame);state.arFrame=0;state.arRunning=false;$('arView')?.classList.remove('walking-ar-mode');$('arCharacterMarker')?.classList.remove('walking-ar-character');$('arView')?.classList.add('hidden');
   if(state.arStream){state.arStream.getTracks().forEach(t=>t.stop());state.arStream=null}
   if(!$('driveView')?.classList.contains('hidden'))$('bottomNav')?.classList.add('hidden');
 }
@@ -1566,8 +1592,15 @@ function updateAROverlay(){
   const guides=(state.route.guides||[]).filter(x=>Number(x.routeIndex)>idx+1),g=guides[0];
   if(g){const d=distanceAlong(idx,g.routeIndex);$('arTurnIcon').innerHTML=turnSvg(g.type);$('arTurnDistance').textContent=km(d);$('arCenterDistance').textContent=km(d);$('arTurnRoad').textContent=g.name||g.guidance||'다음 안내'}
   else{$('arTurnIcon').innerHTML=turnSvg(0);$('arTurnDistance').textContent=km(remain);$('arCenterDistance').textContent=km(remain);$('arTurnRoad').textContent='목적지까지 직진'}
-  $('arSpeed').textContent=Math.max(0,Math.round((state.user.speed||0)*3.6));$('arEta').textContent=eta(remainSec);$('arRemain').textContent=km(remain);$('arCharacterCar').src=characterDefs[state.character].rear||characterDefs[state.character].marker;updateUserMarkerMotion();
-  const marker=$('arCharacterMarker');if(marker){const near=g?Math.max(0,Math.min(1,1-distanceAlong(idx,g.routeIndex)/650)):0;marker.classList.add('rear-facing');marker.style.setProperty('--ar-car-x','0px');marker.style.setProperty('--ar-car-y','-3vh')}
+  $('arSpeed').textContent=Math.max(0,Math.round((state.user.speed||0)*3.6));$('arEta').textContent=eta(remainSec);$('arRemain').textContent=km(remain);
+  $('arCharacterCar').src=state.routeMode==='walk'?currentCharacterWalkImage():(characterDefs[state.character].rear||characterDefs[state.character].marker);
+  updateUserMarkerMotion();
+  const marker=$('arCharacterMarker');if(marker){
+    marker.classList.toggle('rear-facing',state.routeMode!=='walk');
+    marker.classList.toggle('walking-ar-character',state.routeMode==='walk');
+    marker.style.setProperty('--ar-car-x','0px');
+    marker.style.setProperty('--ar-car-y',state.routeMode==='walk'?'-1.5vh':'-3vh');
+  }
 }
 function drawARScene(){
   if(!state.arRunning)return;
