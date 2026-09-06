@@ -43,68 +43,54 @@ async function resolveRegion(lng,lat,kakaoKey){
 }
 
 async function fetchFranchises(serviceKey,region,bounds){
-  const regionCode=region?.code||'',emdCode=region?.emdCode||'';
-  const regionParamNames=['usageRegionCode','useRegionCode','usageRegionCd','useRegionCd'];
-  const emdParamNames=['eupMyeonDongCode','emdCode','eupmyeondongCode','읍면동코드'];
-  const pageSize=1000,maxPages=20,maxVisible=500;
+  const regionCode=String(region?.code||'');
   const hasBounds=[bounds.west,bounds.south,bounds.east,bounds.north].every(Number.isFinite);
+  const perPage=2000,maxPages=25,maxVisible=800;
+  const visible=[],seen=new Set();
 
-  async function collect(extraName,extraValue){
-    const visible=[],seen=new Set();
-    for(let page=1;page<=maxPages&&visible.length<maxVisible;page++){
-      const u=new URL(FRANCHISE_URL);
-      u.searchParams.set('serviceKey',serviceKey);
-      u.searchParams.set('pageNo',String(page));
-      u.searchParams.set('numOfRows',String(pageSize));
-      u.searchParams.set('type','json');
-      if(extraName&&extraValue)u.searchParams.set(extraName,extraValue);
+  for(let page=1;page<=maxPages&&visible.length<maxVisible;page++){
+    const u=new URL(FRANCHISE_URL);
+    // 한국조폐공사 공개 예제(localpay.github.io)와 동일한 요청 규격
+    u.searchParams.set('serviceKey',serviceKey);
+    u.searchParams.set('page',String(page));
+    u.searchParams.set('perPage',String(perPage));
 
-      const r=await fetch(u);
-      if(!r.ok)break;
-      const d=await parseResponse(r),found=extractRows(d);
-      if(!found.length)break;
+    // 현재 지도 중심의 시군구 코드가 있으면 해당 지역 가맹점만 조회
+    if(regionCode)u.searchParams.set('cond[usage_rgn_cd::EQ]',regionCode);
 
-      for(const row of found){
-        const x=normalizeFranchise(row);
-        if(!Number.isFinite(x.lat)||!Number.isFinite(x.lng))continue;
-        if(hasBounds&&(x.lng<bounds.west||x.lng>bounds.east||x.lat<bounds.south||x.lat>bounds.north))continue;
-        const key=x.id||`${x.name}:${x.lat.toFixed(6)}:${x.lng.toFixed(6)}`;
-        if(seen.has(key))continue;seen.add(key);visible.push(x);
-        if(visible.length>=maxVisible)break;
-      }
+    const r=await fetch(u,{headers:{accept:'application/json'}});
+    if(!r.ok)throw new Error(`KOMSCO franchise API ${r.status}`);
 
-      const total=extractTotalCount(d);
-      if(found.length<pageSize||(Number.isFinite(total)&&page*pageSize>=total))break;
-    }
-    const merged=new Map();
-    for(const x of visible){
-      const key=x.id||`${x.name}:${Number(x.lat).toFixed(6)}:${Number(x.lng).toFixed(6)}`;
-      const prev=merged.get(key);
+    const d=await parseResponse(r);
+    const found=extractRows(d);
+    if(!found.length)break;
+
+    for(const row of found){
+      const x=normalizeFranchise(row);
+      if(!Number.isFinite(x.lat)||!Number.isFinite(x.lng))continue;
+      if(hasBounds&&(x.lng<bounds.west||x.lng>bounds.east||x.lat<bounds.south||x.lat>bounds.north))continue;
+
+      // 동일 좌표/가맹점 중복 제거
+      const key=x.id||`${x.name}:${x.lat.toFixed(6)}:${x.lng.toFixed(6)}`;
+      const prev=seen.get(key);
       if(prev){
         prev.card=Boolean(prev.card||x.card);
         prev.mobile=Boolean(prev.mobile||x.mobile);
         prev.paper=Boolean(prev.paper||x.paper);
         if(!prev.address&&x.address)prev.address=x.address;
-      }else merged.set(key,{...x});
+      }else{
+        seen.set(key,x);
+        visible.push(x);
+      }
+      if(visible.length>=maxVisible)break;
     }
-    return [...merged.values()].slice(0,maxVisible);
+
+    const total=extractTotalCount(d);
+    const current=Number(d?.currentCount ?? d?.data?.currentCount ?? found.length);
+    if(found.length<perPage || current<perPage || (Number.isFinite(total)&&page*perPage>=total))break;
   }
 
-  // 현재 읍면동(8자리) 조회가 지원되면 가장 먼저 사용해 화면 주변 가맹점을 빠르게 찾는다.
-  if(emdCode){
-    for(const field of emdParamNames){
-      const rows=await collect(field,emdCode);
-      if(rows.length)return rows;
-    }
-  }
-
-  // 읍면동 파라미터가 제공 API 버전에 없으면 시군구(5자리)를 페이지 순회한다.
-  for(const field of regionParamNames){
-    const rows=await collect(field,regionCode);
-    if(rows.length)return rows;
-  }
-
-  return [];
+  return visible.slice(0,maxVisible);
 }
 
 async function fetchDiscountPolicy(serviceKey,regionCode,env){
@@ -133,10 +119,11 @@ async function parseResponse(r){
 function extractRows(d){
   if(Array.isArray(d))return d;
   const candidates=[
+    d?.data,
     d?.items,d?.item,
     d?.response?.body?.items?.item,d?.response?.body?.items,d?.response?.body?.item,
     d?.body?.items?.item,d?.body?.items,d?.body?.item,
-    d?.data?.items,d?.data?.item,d?.data,
+    d?.data?.items,d?.data?.item,
     d?.result?.items,d?.result?.item,d?.result
   ];
   for(const x of candidates){
@@ -170,7 +157,9 @@ function extractRows(d){
 }
 function extractTotalCount(d){
   const vals=[
-    d?.matchCount,d?.totalCount,d?.response?.body?.totalCount,d?.body?.totalCount,d?.data?.matchCount,d?.data?.totalCount
+    d?.matchCount,d?.totalCount,d?.currentCount,
+    d?.response?.body?.totalCount,d?.body?.totalCount,
+    d?.data?.matchCount,d?.data?.totalCount
   ];
   for(const v of vals){const n=Number(v);if(Number.isFinite(n))return n}
   return NaN;
@@ -178,41 +167,46 @@ function extractTotalCount(d){
 function pick(o,keys){for(const k of keys){const v=o?.[k];if(v!==undefined&&v!==null&&String(v).trim()!=='')return v}return ''}
 function yn(v){const s=String(v??'').trim().toUpperCase();return ['Y','YES','1','TRUE','가능','사용'].includes(s)}
 function normalizeFranchise(r){
-  const payTypeName=String(pick(r,[
-    'FRCS_PAY_TYPE_NM','frcsPayTypeNm','payTypeName','가맹점결제유형구분명','결제유형명'
-  ])||'');
-  const payTypeCode=String(pick(r,[
-    'FRCS_PAY_TYPE','frcsPayType','payType','가맹점결제유형구분'
-  ])||'');
-  const payText=`${payTypeName} ${payTypeCode}`.toLowerCase();
+  const stlmCode=String(pick(r,[
+    'frcs_stlm_info_se','FRCS_STLM_INFO_SE','frcsStlmInfoSe',
+    'FRCS_PAY_TYPE','frcsPayType','payType'
+  ])||'').trim();
+  const stlmName=String(pick(r,[
+    'frcs_stlm_info_se_nm','FRCS_STLM_INFO_SE_NM','frcsStlmInfoSeNm',
+    'FRCS_PAY_TYPE_NM','frcsPayTypeNm','payTypeName'
+  ])||'').trim();
+  const payText=`${stlmCode} ${stlmName}`.toLowerCase();
 
-  const cardByType=/카드|card/.test(payText);
-  const mobileByType=/모바일|mobile|qr/.test(payText);
-  const paperByType=/지류|paper|voucher/.test(payText);
+  // 공개 예제 기본값 03을 포함해 명칭/코드 모두 보존
+  const card=/카드|card/.test(payText) || ['01','1'].includes(stlmCode);
+  const mobile=/모바일|mobile|qr/.test(payText) || ['02','2','03','3'].includes(stlmCode);
+  const paper=/지류|paper|voucher/.test(payText) || ['04','4'].includes(stlmCode)
+    || yn(pick(r,['ppr_frcs_aply_yn','PPR_FRCS_APLY_YN','paperUseYn','paperYn','지류사용여부','지류가맹점여부']));
+
+  const addr1=String(pick(r,[
+    'frcs_addr','FRCS_ADDR','franchiseAddress','frcsAddr','roadAddress','address','rdnmAdr','가맹점주소','주소'
+  ])||'').trim();
+  const addr2=String(pick(r,[
+    'frcs_dtl_addr','FRCS_DTL_ADDR','franchiseDetailAddress','frcsDtlAddr','가맹점상세주소'
+  ])||'').trim();
 
   return {
     id:String(pick(r,[
-      'FRCS_ID','FRCS_NO','franchiseId','franchiseNo','frcsId','가맹점구분ID','가맹점번호','가맹점ID','id'
+      'brno','BRNO','frcs_zip','FRCS_ZIP','FRCS_ID','FRCS_NO',
+      'franchiseId','franchiseNo','frcsId','가맹점번호','가맹점ID','id'
     ])||''),
     name:String(pick(r,[
-      'FRCS_NM','franchiseName','frcsNm','mrhstNm','storeName','가맹점명','상호명'
+      'frcs_nm','FRCS_NM','franchiseName','frcsNm','mrhstNm','storeName','가맹점명','상호명'
     ])||'지역사랑상품권 가맹점'),
-    address:String(pick(r,[
-      'FRCS_ADDR','FRCS_DADDR','franchiseAddress','frcsAddr','roadAddress','address','rdnmAdr','가맹점주소','가맹점상세주소','소재지도로명주소','주소','지번주소'
-    ])||''),
-    lat:Number(pick(r,[
-      'LAT','LATITUDE','latitude','lat','위도'
-    ])),
-    lng:Number(pick(r,[
-      'LOT','LON','LNG','LONGITUDE','longitude','lng','lon','경도'
-    ])),
-    card:cardByType||yn(pick(r,['cardUseYn','cardYn','카드사용여부','카드가맹점여부'])),
-    mobile:mobileByType||yn(pick(r,['mobileUseYn','mobileYn','모바일사용여부','모바일가맹점여부'])),
-    paper:paperByType||yn(pick(r,['paperUseYn','paperYn','voucherUseYn','지류사용여부','지류가맹점여부','지류가맹점신청여부'])),
+    address:[addr1,addr2].filter(Boolean).join(' '),
+    lat:Number(pick(r,['lat','LAT','latitude','LATITUDE','위도'])),
+    lng:Number(pick(r,['lot','LOT','lon','LON','lng','LNG','longitude','LONGITUDE','경도'])),
+    card,mobile,paper,
     category:String(pick(r,[
-      'KSIC_NM','KSIC_NAME','ksicName','industryName','표준산업분류코드명','업종명'
+      'frcs_reg_se_nm','FRCS_REG_SE_NM','KSIC_NM','KSIC_NAME','ksicName','industryName','업종명'
     ])||''),
-    payTypeName
+    payTypeName:stlmName,
+    usageRegionCode:String(pick(r,['usage_rgn_cd','USAGE_RGN_CD','usageRegionCode'])||'')
   };
 }
 function normalizePolicy(r){
