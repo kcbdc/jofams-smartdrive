@@ -1134,42 +1134,4 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .route-mode-switch button{min-height:48px;border:0;border-radius:13px;background:transparent;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:800}.route-mode-switch button.active{background:#fff;box-shadow:0 2px 8px rgba(18,34,62,.12)}
 .route-mode-switch [data-icon]{width:22px;height:22px;display:inline-flex}.route-mode-switch [data-icon] svg{width:100%;height:100%}.route-mode-switch b{font-size:13px}.route-mode-switch strong{font-size:14px}
 .route-tag.walk{background:rgba(35,145,90,.12)}.route-walk-art{width:68px;height:68px;border-radius:22px;display:grid;place-items:center;background:rgba(35,145,90,.08)}.route-walk-art svg{width:42px;height:42px}
-.drive-view.walking-mode .speed-panel,.drive-view.walking-mode .section-speed-panel,.drive-view.walking-mode .traffic-status,.drive-view.walking-mode .traffic-route-rail,.drive-view.walking-mode .drive-fuel-chip,.drive-view.walking-mode #laneAssistLayer{display:none!important}
-
-
-/* === 7.6.0.7 도보 캐릭터 === */
-.drive-view.walking-mode .drive-ar-character{
-  display:block!important;
-  width:96px!important;
-  height:auto!important;
-  bottom:108px!important;
-  left:50%!important;
-  transform:translateX(-50%)!important;
-  animation:jofamsWalkBob .72s ease-in-out infinite alternate;
-  pointer-events:none!important;
-}
-.drive-view.walking-mode .drive-ar-character img{
-  width:100%!important;height:auto!important;object-fit:contain!important;
-  filter:drop-shadow(0 5px 8px rgba(0,0,0,.22));
-}
-.walk-character-marker{
-  object-fit:contain!important;
-  transform-origin:center bottom;
-  animation:jofamsWalkMarker .72s ease-in-out infinite alternate;
-}
-@keyframes jofamsWalkBob{
-  from{transform:translateX(-50%) translateY(0) rotate(-1deg)}
-  to{transform:translateX(-50%) translateY(-7px) rotate(1deg)}
-}
-@keyframes jofamsWalkMarker{
-  from{transform:translateY(0) scale(1)}
-  to{transform:translateY(-3px) scale(1.03)}
-}
-
-
-/* === 7.6.0.7 지역사랑상품권 CCTV식 경량 마커 === */
-.voucher-shop-marker{
-  contain:layout paint style;
-  will-change:transform;
-  touch-action:manipulation;
-}
+.drive-view.walking-mode .speed-panel,.drive-view.walking-mode .section-speed-panel,.drive-view.walking-mode .traffic-status,.drive-view.walking-mode .traffic-route-rail,.drive-view.walking-mode .drive-fuel-chip,.drive-view.walking-mode #laneAssistLayer{display:none!important}.drive-view.walking-mode .drive-ar-character{display:none!important}
