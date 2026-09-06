@@ -81,6 +81,7 @@ export async function onRequestGet({request,env}){
   const url=new URL(request.url),lng=Number(url.searchParams.get('lng')),lat=Number(url.searchParams.get('lat'));
   if(!Number.isFinite(lng)||!Number.isFinite(lat))return json({error:'invalid coordinates'},400);
   const requestedRegionCode=String(url.searchParams.get('regionCode')||'').replace(/\D/g,'').slice(0,5);
+  const policyOnly=url.searchParams.get('policyOnly')==='1';
   const serviceKey=env.PUBLIC_DATA_SERVICE_KEY||env.DATA_GO_KR_SERVICE_KEY||'';
   if(!serviceKey)return json({error:'PUBLIC_DATA_SERVICE_KEY is not configured'},503);
   const keyCandidates=serviceKeyCandidates(serviceKey);
@@ -95,11 +96,13 @@ export async function onRequestGet({request,env}){
     east:Number(url.searchParams.get('east')),north:Number(url.searchParams.get('north'))
   };
 
-  let franchise=[],providerMode='bounds';
-  try{
-    franchise=await fetchFranchises(keyCandidates,region,bounds,env.KAKAO_REST_API_KEY);
-  }catch(e){
-    return json({error:'KOMSCO franchise API failed',status:e?.status||502,detail:e?.detail||''},502);
+  let franchise=[],providerMode=policyOnly?'policy-only':'bounds';
+  if(!policyOnly){
+    try{
+      franchise=await fetchFranchises(keyCandidates,region,bounds,env.KAKAO_REST_API_KEY);
+    }catch(e){
+      return json({error:'KOMSCO franchise API failed',status:e?.status||502,detail:e?.detail||''},502);
+    }
   }
   let policyResult={rows:[],status:'region-unavailable',detail:''};
   if(region?.code){
@@ -165,7 +168,7 @@ async function fetchFranchises(keyCandidates,region,bounds,kakaoKey){
       }
 
       // 좌표가 있는 행은 현재 지도 범위와 너무 동떨어진 잘못된 좌표를 배제.
-      if(hasBounds&&!pointNearBounds(x.lng,x.lat,bounds,0.35))continue;
+      if(hasBounds&&!pointNearBounds(x.lng,x.lat,bounds,0.02))continue;
 
       addFranchise(visible,seen,x);
       if(visible.length>=maxVisible)break;
@@ -184,7 +187,7 @@ async function fetchFranchises(keyCandidates,region,bounds,kakaoKey){
       const fixed=await Promise.all(batch.map(x=>geocodeFranchiseAddress(x,kakaoKey).catch(()=>null)));
       for(const x of fixed){
         if(!x||!validKoreaCoordinate(x.lat,x.lng))continue;
-        if(hasBounds&&!pointNearBounds(x.lng,x.lat,bounds,0.35))continue;
+        if(hasBounds&&!pointNearBounds(x.lng,x.lat,bounds,0.02))continue;
         addFranchise(visible,seen,x);
         if(visible.length>=maxVisible)break;
       }
@@ -222,7 +225,7 @@ function normalizeKoreaCoordinate(lat,lng){
   return {lat:a,lng:b};
 }
 function validKoreaCoordinate(lat,lng){
-  return Number.isFinite(lat)&&Number.isFinite(lng)&&lat>=31.5&&lat<=39.8&&lng>=123.5&&lng<=132.5;
+  return Number.isFinite(lat)&&Number.isFinite(lng)&&lat>=33.0&&lat<=38.75&&lng>=125.65&&lng<=131.05;
 }
 function pointNearBounds(lng,lat,b,margin=0.35){
   return lng>=Number(b.west)-margin&&lng<=Number(b.east)+margin&&lat>=Number(b.south)-margin&&lat<=Number(b.north)+margin;
