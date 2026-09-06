@@ -4,6 +4,14 @@ export async function onRequestPost({ request, env }) {
   body.waypoints = Array.isArray(body.waypoints) ? body.waypoints.filter(validPoint).slice(0,5) : [];
   if (!validPoint(origin) || !validPoint(destination)) return json({ error:'origin and destination are required' },400);
 
+  const mode = body.mode === 'walk' ? 'walk' : 'car';
+
+  if (mode === 'walk') {
+    const foot = await routeWithOsrmFoot(origin,destination,body);
+    if (foot.ok) return json(foot.data);
+    return json({error:foot.error||'walking routing provider unavailable'},502);
+  }
+
   if (env.KAKAO_REST_API_KEY) {
     const kakao = await routeWithKakao(origin,destination,body,env);
     if (kakao.ok) return json(kakao.data);
@@ -108,6 +116,19 @@ function normalizeRoadExtra(road){
 function compactObject(x){if(!x||typeof x!=='object')return {value:String(x??'')};const o={};for(const [k,v] of Object.entries(x)){if(['string','number','boolean'].includes(typeof v)||v===null)o[k]=v}return o}
 function firstFinite(...xs){for(const x of xs){const n=Number(x);if(Number.isFinite(n)&&n>0)return n}return 0}
 function stripNestedAlternatives(r){const x={...r};delete x.alternatives;return x}
+
+async function routeWithOsrmFoot(origin,destination,body){
+  try{
+    const via=(body.waypoints||[]).map(p=>`${p.lng},${p.lat}`).join(';');
+    const coords=[`${origin.lng},${origin.lat}`,via,`${destination.lng},${destination.lat}`].filter(Boolean).join(';');
+    const url=`https://routing.openstreetmap.de/routed-foot/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=true&alternatives=false`;
+    const rr=await fetch(url,{headers:{'User-Agent':'JofamsSmartDrive/7.6.0.6'}});
+    if(!rr.ok)return {ok:false,error:`OSM foot HTTP ${rr.status}`};
+    const d=await rr.json(),raw=d.routes?.[0];if(!raw)return {ok:false,error:'walking route not found'};
+    const parsed=parseOsrmRoute(raw,0);parsed.provider='osm-foot';parsed.meta={...(parsed.meta||{}),mode:'walk',guideSource:'OpenStreetMap.de OSRM foot profile'};
+    return {ok:true,data:parsed};
+  }catch(e){return {ok:false,error:e.message}}
+}
 
 async function routeWithOsrm(origin,destination,body){
   try{
