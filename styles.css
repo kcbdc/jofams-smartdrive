@@ -877,7 +877,7 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 }
 .home-sheet.collapsed>*:not(.home-sheet-toggle){pointer-events:none}
 .home-sheet.collapsed .home-sheet-toggle{pointer-events:auto}
-.home-view:has(.home-sheet.collapsed){background:transparent}
+
 
 /* map click navigation prompt */
 .map-place-prompt{
@@ -956,3 +956,22 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 
 /* 운행 화면에서는 지역상품권 할인율/가맹점 레이어 미노출 */
 .drive-view:not(.hidden) ~ .local-voucher-badge{display:none!important}
+
+
+/* === 7.5.9.6 click recovery === */
+/* Android WebView에서 변형된 홈 시트가 보이지 않는 영역까지 터치를 가로채지 않도록 한다. */
+.home-view.map-expanded{background:transparent!important}
+.home-sheet.collapsed{pointer-events:none!important}
+.home-sheet.collapsed .home-sheet-toggle{
+  pointer-events:auto!important;
+  position:relative!important;
+  z-index:60!important;
+}
+.home-sheet.collapsed>*:not(.home-sheet-toggle){pointer-events:none!important}
+
+/* 드래그용 pointer-capture 제거 후 '-' 버튼은 단순 클릭 토글로만 동작 */
+.home-sheet-toggle{
+  touch-action:manipulation!important;
+  cursor:pointer!important;
+}
+.home-sheet.dragging{transition:transform .24s ease,box-shadow .24s ease!important}

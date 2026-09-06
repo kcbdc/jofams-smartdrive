@@ -2456,8 +2456,9 @@ async function openInquiryDetail(id){
 
 function setHomeSheetCollapsed(collapsed){
   state.homeSheetCollapsed=Boolean(collapsed);
-  const sheet=$('homeSheet'),btn=$('homeSheetToggle');
+  const sheet=$('homeSheet'),btn=$('homeSheetToggle'),home=$('homeView');
   sheet?.classList.toggle('collapsed',state.homeSheetCollapsed);
+  home?.classList.toggle('map-expanded',state.homeSheetCollapsed);
   sheet?.style.removeProperty('--home-sheet-drag-y');
   if(btn){
     btn.setAttribute('aria-expanded',String(!state.homeSheetCollapsed));
@@ -2467,33 +2468,7 @@ function setHomeSheetCollapsed(collapsed){
   if(state.map)setTimeout(()=>{try{state.map.resize();scheduleLocalVoucherRefresh();scheduleHomeCameraRefresh()}catch{}},180);
 }
 function toggleHomeSheet(){setHomeSheetCollapsed(!state.homeSheetCollapsed)}
-function bindHomeSheetDrag(){
-  const sheet=$('homeSheet'),handle=$('homeSheetToggle');if(!sheet||!handle)return;
-  handle.addEventListener('pointerdown',e=>{
-    state.homeSheetDrag={startY:e.clientY,lastY:e.clientY,wasCollapsed:state.homeSheetCollapsed,moved:false};
-    try{handle.setPointerCapture(e.pointerId)}catch{}
-    sheet.classList.add('dragging');e.preventDefault();
-  });
-  handle.addEventListener('pointermove',e=>{
-    const d=state.homeSheetDrag;if(!d)return;d.lastY=e.clientY;
-    const delta=e.clientY-d.startY;if(Math.abs(delta)>6)d.moved=true;
-    const max=Math.max(0,sheet.clientHeight-58);
-    const base=d.wasCollapsed?max:0;
-    const y=Math.max(0,Math.min(max,base+delta));
-    sheet.style.setProperty('--home-sheet-drag-y',`${Math.round(y)}px`);
-  });
-  const end=e=>{
-    const d=state.homeSheetDrag;if(!d)return;
-    const delta=d.lastY-d.startY;sheet.classList.remove('dragging');state.homeSheetDrag=null;
-    if(d.moved){
-      if(delta>42)setHomeSheetCollapsed(true);
-      else if(delta<-42)setHomeSheetCollapsed(false);
-      else setHomeSheetCollapsed(d.wasCollapsed);
-    }else toggleHomeSheet();
-    try{handle.releasePointerCapture(e.pointerId)}catch{}
-  };
-  handle.addEventListener('pointerup',end);handle.addEventListener('pointercancel',end);
-}
+
 function toggleHomeSheet(){setHomeSheetCollapsed(!state.homeSheetCollapsed)}
 
 function openHamburgerMenu(){$('hamburgerMenuModal')?.classList.remove('hidden')}
@@ -2559,7 +2534,7 @@ function bindCriticalUI(){
 function bindUI(){
   try{bindFutureDepartureUI();}catch(e){console.warn('UI bind section 1 failed',e)}
   try{$('allowLocationBtn').onclick=requestLocationPermission;$('allowCameraBtn').onclick=requestCameraPermission;$('permissionContinueBtn').onclick=closePermissionGate;}catch(e){console.warn('UI bind section 2 failed',e)}
-  try{bindHomeSheetDrag();if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=closeMapPlacePrompt;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;applyIcons();$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
+  try{if($('homeSheetToggle'))$('homeSheetToggle').onclick=toggleHomeSheet;if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=closeMapPlacePrompt;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;applyIcons();$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
   try{document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>setCharacter(b.dataset.character));$('homeShortcut').onclick=()=>state.savedPlaces.home?chooseDestination(state.savedPlaces.home):openPlaceModal('home');$('workShortcut').onclick=()=>state.savedPlaces.work?chooseDestination(state.savedPlaces.work):openPlaceModal('work');$('homeManageBtn').onclick=()=>openPlaceModal('home');$('workManageBtn').onclick=()=>openPlaceModal('work');$('favoriteShortcut').onclick=openFavoritesList;}catch(e){console.warn('UI bind section 4 failed',e)}
   try{document.querySelectorAll('[data-my-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.myCharacter);syncCharacterUI();toast(`${characterDefs[state.character].name} 가이드로 변경했습니다.`)});}catch(e){console.warn('UI bind section 5 failed',e)}
   try{document.querySelectorAll('[data-voice-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.voiceCharacter);syncCharacterUI();speak(`${characterDefs[state.character].name} 음성 안내입니다.`)});}catch(e){console.warn('UI bind section 6 failed',e)}
