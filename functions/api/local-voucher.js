@@ -97,7 +97,7 @@ export async function onRequestGet({request,env}){
 
   let franchise=[],providerMode='bounds';
   try{
-    franchise=await fetchFranchises(keyCandidates,region,bounds);
+    franchise=await fetchFranchises(keyCandidates,region,bounds,env.KAKAO_REST_API_KEY);
   }catch(e){
     return json({error:'KOMSCO franchise API failed',status:e?.status||502,detail:e?.detail||''},502);
   }
@@ -138,18 +138,16 @@ async function resolveRegion(lng,lat,kakaoKey){
   }:legal.length>=5?{code:legal.slice(0,5),emdCode:'',legalCode:legal,name:[doc.region_1depth_name,doc.region_2depth_name].filter(Boolean).join(' ')}:null;
 }
 
-async function fetchFranchises(keyCandidates,region,bounds){
+async function fetchFranchises(keyCandidates,region,bounds,kakaoKey){
   const regionCode=String(region?.code||'');
   const hasBounds=[bounds.west,bounds.south,bounds.east,bounds.north].every(Number.isFinite);
   const perPage=2000,maxPages=25,maxVisible=1200;
-  const visible=[],seen=new Map();
+  const visible=[],seen=new Map(),needGeocode=[];
 
   for(let page=1;page<=maxPages&&visible.length<maxVisible;page++){
     const u=new URL(FRANCHISE_URL);
     u.searchParams.set('page',String(page));
     u.searchParams.set('perPage',String(perPage));
-
-    // 지역사랑상품권 통합 가맹점 전체 조회: 카드/모바일/지류 유형 필터를 걸지 않는다.
     if(regionCode)u.searchParams.set('cond[usage_rgn_cd::EQ]',regionCode);
 
     const d=await fetchKomsco(u,keyCandidates);
@@ -158,22 +156,18 @@ async function fetchFranchises(keyCandidates,region,bounds){
 
     for(const row of found){
       const x=normalizeFranchise(row);
-      if(!Number.isFinite(x.lat)||!Number.isFinite(x.lng))continue;
 
-      // regionCode가 없는 비상 조회일 때만 현재 지도 범위로 로컬 필터
-      if(hasBounds&&(x.lng<bounds.west||x.lng>bounds.east||x.lat<bounds.south||x.lat>bounds.north))continue;
-
-      const key=x.id||`${x.name}:${x.lat.toFixed(6)}:${x.lng.toFixed(6)}`;
-      const prev=seen.get(key);
-      if(prev){
-        prev.card=Boolean(prev.card||x.card);
-        prev.mobile=Boolean(prev.mobile||x.mobile);
-        prev.paper=Boolean(prev.paper||x.paper);
-        if(!prev.address&&x.address)prev.address=x.address;
-      }else{
-        seen.set(key,x);
-        visible.push(x);
+      // 공공데이터의 빈 좌표가 Number('') -> 0 으로 변환되어
+      // 한반도 서쪽 바다에 세로줄처럼 찍히는 문제를 차단한다.
+      if(!validKoreaCoordinate(x.lat,x.lng)){
+        if(x.address&&kakaoKey&&needGeocode.length<260)needGeocode.push(x);
+        continue;
       }
+
+      // 좌표가 있는 행은 현재 지도 범위와 너무 동떨어진 잘못된 좌표를 배제.
+      if(hasBounds&&!pointNearBounds(x.lng,x.lat,bounds,0.35))continue;
+
+      addFranchise(visible,seen,x);
       if(visible.length>=maxVisible)break;
     }
 
@@ -182,7 +176,68 @@ async function fetchFranchises(keyCandidates,region,bounds){
     if(found.length<perPage||current<perPage||(Number.isFinite(total)&&page*perPage>=total))break;
   }
 
+  // 좌표 누락/비정상 가맹점은 주소를 Kakao 주소검색으로 복원.
+  // 과도한 외부 호출 방지를 위해 최대 260건, 동시 6건으로 제한.
+  if(kakaoKey&&needGeocode.length&&visible.length<maxVisible){
+    for(let i=0;i<needGeocode.length&&visible.length<maxVisible;i+=6){
+      const batch=needGeocode.slice(i,i+6);
+      const fixed=await Promise.all(batch.map(x=>geocodeFranchiseAddress(x,kakaoKey).catch(()=>null)));
+      for(const x of fixed){
+        if(!x||!validKoreaCoordinate(x.lat,x.lng))continue;
+        if(hasBounds&&!pointNearBounds(x.lng,x.lat,bounds,0.35))continue;
+        addFranchise(visible,seen,x);
+        if(visible.length>=maxVisible)break;
+      }
+    }
+  }
+
   return visible.slice(0,maxVisible);
+}
+
+function addFranchise(visible,seen,x){
+  const key=x.id||`${x.name}:${x.lat.toFixed(6)}:${x.lng.toFixed(6)}`;
+  const prev=seen.get(key);
+  if(prev){
+    prev.card=Boolean(prev.card||x.card);
+    prev.mobile=Boolean(prev.mobile||x.mobile);
+    prev.paper=Boolean(prev.paper||x.paper);
+    if(!prev.address&&x.address)prev.address=x.address;
+  }else{
+    seen.set(key,x);visible.push(x);
+  }
+}
+
+function parseCoordinate(v){
+  if(v===undefined||v===null)return NaN;
+  const text=String(v).trim();
+  if(!text)return NaN;
+  const n=Number(text.replace(/,/g,''));
+  return Number.isFinite(n)?n:NaN;
+}
+
+function normalizeKoreaCoordinate(lat,lng){
+  let a=parseCoordinate(lat),b=parseCoordinate(lng);
+  // 위도/경도가 뒤바뀐 데이터 보정
+  if(a>120&&a<135&&b>30&&b<45)[a,b]=[b,a];
+  return {lat:a,lng:b};
+}
+function validKoreaCoordinate(lat,lng){
+  return Number.isFinite(lat)&&Number.isFinite(lng)&&lat>=31.5&&lat<=39.8&&lng>=123.5&&lng<=132.5;
+}
+function pointNearBounds(lng,lat,b,margin=0.35){
+  return lng>=Number(b.west)-margin&&lng<=Number(b.east)+margin&&lat>=Number(b.south)-margin&&lat<=Number(b.north)+margin;
+}
+async function geocodeFranchiseAddress(item,kakaoKey){
+  const q=String(item.address||'').trim();if(!q)return null;
+  const u=new URL('https://dapi.kakao.com/v2/local/search/address.json');
+  u.searchParams.set('query',q);
+  u.searchParams.set('size','1');
+  const r=await fetch(u,{headers:{Authorization:`KakaoAK ${kakaoKey}`}});
+  if(!r.ok)return null;
+  const d=await r.json(),doc=d.documents?.[0];
+  let lng=parseCoordinate(doc?.x),lat=parseCoordinate(doc?.y);
+  if(!validKoreaCoordinate(lat,lng))return null;
+  return {...item,lng,lat,coordinateSource:'kakao-address'};
 }
 
 async function fetchDiscountPolicies(keyCandidates,regionCode,env){
@@ -434,8 +489,10 @@ function normalizeFranchise(r){
       'frcs_nm','FRCS_NM','franchiseName','frcsNm','mrhstNm','storeName','가맹점명','상호명'
     ])||'지역사랑상품권 가맹점'),
     address:[addr1,addr2].filter(Boolean).join(' '),
-    lat:Number(pick(r,['lat','LAT','latitude','LATITUDE','위도'])),
-    lng:Number(pick(r,['lot','LOT','lon','LON','lng','LNG','longitude','LONGITUDE','경도'])),
+    ...normalizeKoreaCoordinate(
+      pick(r,['lat','LAT','latitude','LATITUDE','위도']),
+      pick(r,['lot','LOT','lon','LON','lng','LNG','longitude','LONGITUDE','경도'])
+    ),
     card,mobile,paper,
     category:String(pick(r,[
       'frcs_reg_se_nm','FRCS_REG_SE_NM','KSIC_NM','KSIC_NAME','ksicName','industryName','업종명'
