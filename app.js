@@ -19,7 +19,7 @@ const state = {
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
   savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:'B027',fuelData:null,fuelFetchedAt:0,fuelLoading:false,destinationSearchSort:'accuracy',lastDestinationQuery:'',
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
-  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,homeSheetDrag:null,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherData:null,localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,homeCameraMarkers:[],homeCameraLoadTimer:0,
+  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,homeSheetDrag:null,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherData:null,localVoucherRetryCount:0,localVoucherLastErrorAt:0,localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,homeCameraMarkers:[],homeCameraLoadTimer:0,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,
   compassHeading:null,compassAt:0,compassReady:false,activeLaneGuideKey:'',nativeLocationAt:0,nativeLocationActive:false,imu:{at:0,yawRateDegS:0,accelMagnitude:0,headingDeg:null},mapMatch:{index:0,routeDistance:0,score:Infinity,confidence:0,at:0},offRouteHeadingHits:0,gpsFix:{lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false},
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
@@ -640,30 +640,6 @@ function openVoucherBuildingList(items){
   }
   $('voucherBuildingModal')?.classList.remove('hidden');
 }
-function voucherClusterLevel(){
-  const z=Number(state.map?.getZoom?.()||0);
-  return z<11?'large':z<14.5?'medium':'small';
-}
-function renderVoucherClusterMarkers(items){
-  const level=voucherClusterLevel(),cellPx=level==='large'?96:level==='medium'?72:52,groups=new Map();
-  for(const item of items){
-    let pt;try{pt=state.map.project([Number(item.lng),Number(item.lat)])}catch{continue}
-    const key=`${Math.floor(pt.x/cellPx)}:${Math.floor(pt.y/cellPx)}`;
-    let g=groups.get(key);if(!g){g={items:[],lat:0,lng:0};groups.set(key,g)}
-    g.items.push(item);g.lat+=Number(item.lat);g.lng+=Number(item.lng);
-  }
-  for(const g of groups.values()){
-    const count=g.items.length,lat=g.lat/count,lng=g.lng/count;
-    const el=document.createElement('button');el.type='button';el.className=`voucher-cluster-marker ${level}`;
-    el.innerHTML=`<strong>${count}</strong>`;el.title=`이 구역 가맹점 ${count}곳`;
-    el.onclick=e=>{
-      e.stopPropagation();
-      const z=Number(state.map.getZoom?.()||0);
-      state.map.easeTo({center:[lng,lat],zoom:Math.min(20.5,z+(level==='large'?2.4:level==='medium'?1.8:1.2)),duration:420});
-    };
-    try{state.localVoucherMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([lng,lat]).addTo(state.map))}catch{}
-  }
-}
 function renderVoucherShopMarkers(items){
   const buildings=new Map();
   for(const item of items){
@@ -672,65 +648,148 @@ function renderVoucherShopMarkers(items){
     buildings.get(key).push(item);
   }
   for(const list of buildings.values()){
-    const item=list[0],el=document.createElement('button');el.type='button';el.className='voucher-shop-marker';
+    const item=list[0],el=document.createElement('button');
+    el.type='button';el.className='voucher-shop-marker';
     el.title=list.length>1?`이 건물 가맹점 ${list.length}곳`:item.name||'지역사랑상품권 가맹점';
     el.innerHTML=`${voucherShopSvg()}${list.length>1?`<span>${list.length}</span>`:''}`;
     el.onclick=e=>{e.stopPropagation();openVoucherBuildingList(list)};
-    try{state.localVoucherMarkers.push(new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([Number(item.lng),Number(item.lat)]).addTo(state.map))}catch{}
+    try{
+      state.localVoucherMarkers.push(
+        new maplibregl.Marker({element:el,anchor:'bottom'})
+          .setLngLat([Number(item.lng),Number(item.lat)]).addTo(state.map)
+      );
+    }catch{}
   }
 }
 function renderLocalVoucherMarkers(data){
   clearLocalVoucherMarkers();
   if(!state.map||!maplibregl?.Marker||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
-  const items=(data?.items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,1000);
+  const items=(data?.items||[])
+    .filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat)))
+    .slice(0,1200);
   if(!items.length)return;
-  const radius=voucherVisibleRadiusMeters();
-  if(radius<50)renderVoucherShopMarkers(items);
-  else renderVoucherClusterMarkers(items);
+
+  // 7.6.0.4: 클러스터를 사용하지 않고 CCTV처럼 처음부터 가게 SVG 아이콘을 직접 표시.
+  // 동일 좌표는 하나의 아이콘으로 묶고 우측 상단에 가맹점 수를 표시.
+  renderVoucherShopMarkers(items);
 }
 function updateLocalVoucherBadge(data){
   const badge=$('localVoucherBadge');if(!badge)return;
   const region=data?.regionName||'현재 지역';
   const rate=Number(data?.discountRate);
+  const detail=String(data?.discountLabel||'').trim();
   $('localVoucherRegion').textContent=region;
-  $('localVoucherDiscount').textContent=Number.isFinite(rate)&&rate>=0?`할인율 ${rate}%`:'할인율 정보 없음';
+  if(Number.isFinite(rate)&&rate>=0){
+    $('localVoucherDiscount').textContent=detail||`할인 ${rate}%`;
+  }else{
+    $('localVoucherDiscount').textContent='할인율 확인 중';
+  }
   badge.classList.remove('hidden');
+}
+function readVoucherStaleCache(){
+  try{
+    const raw=localStorage.getItem('jofams_local_voucher_cache_v2');
+    if(!raw)return null;
+    const d=JSON.parse(raw);
+    if(!d?.payload||Date.now()-Number(d.savedAt||0)>6*60*60*1000)return null;
+    return d.payload;
+  }catch{return null}
+}
+function writeVoucherStaleCache(payload){
+  try{localStorage.setItem('jofams_local_voucher_cache_v2',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
+}
+function scheduleVoucherReconnect(){
+  clearTimeout(state.localVoucherReconnectTimer);
+  const n=Math.min(5,Number(state.localVoucherRetryCount||0)+1);
+  state.localVoucherRetryCount=n;
+  const wait=Math.min(30000,1200*(2**(n-1)));
+  state.localVoucherReconnectTimer=setTimeout(()=>loadLocalVoucherMap({force:true}),wait);
 }
 async function loadLocalVoucherMap({force=false}={}){
   if(!state.map||$('homeView')?.classList.contains('hidden'))return;
-  const zoom=Number(state.map.getZoom?.()||0);if(zoom<8.5){clearLocalVoucherMarkers();$('localVoucherBadge')?.classList.add('hidden');return}
-  const center=state.map.getCenter?.();if(!center)return;
-  if(!force&&Date.now()-Number(state.localVoucherLoadedAt||0)<30000&&state.localVoucherData){
-    renderLocalVoucherMarkers(state.localVoucherData);
+  const zoom=Number(state.map.getZoom?.()||0);
+  if(zoom<7.5){
+    clearLocalVoucherMarkers();
+    $('localVoucherBadge')?.classList.add('hidden');
     return;
   }
+
+  const center=state.map.getCenter?.();if(!center)return;
+
+  // 최근 성공 데이터가 있으면 네트워크 재호출 전에도 바로 유지 표시
+  if(state.localVoucherData){
+    renderLocalVoucherMarkers(state.localVoucherData);
+    updateLocalVoucherBadge(state.localVoucherData);
+  }else{
+    const cached=readVoucherStaleCache();
+    if(cached){
+      state.localVoucherData=cached;
+      renderLocalVoucherMarkers(cached);
+      updateLocalVoucherBadge(cached);
+    }
+  }
+
+  if(!force&&Date.now()-Number(state.localVoucherLoadedAt||0)<45000&&state.localVoucherData)return;
+
   try{
     const b=state.map.getBounds?.();
     const u=new URL('/api/local-voucher',location.origin);
     u.searchParams.set('lng',center.lng);u.searchParams.set('lat',center.lat);
-    if(b){u.searchParams.set('west',b.getWest());u.searchParams.set('south',b.getSouth());u.searchParams.set('east',b.getEast());u.searchParams.set('north',b.getNorth())}
-    const r=await fetch(u,{headers:{accept:'application/json'}});
+    if(b){
+      u.searchParams.set('west',b.getWest());u.searchParams.set('south',b.getSouth());
+      u.searchParams.set('east',b.getEast());u.searchParams.set('north',b.getNorth());
+    }
+
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(),12000);
+    let r;
+    try{
+      r=await fetch(u,{headers:{accept:'application/json'},signal:ctrl.signal,cache:'no-store'});
+    }finally{clearTimeout(timer)}
+
     if(!r.ok){
       const err=await r.json().catch(()=>({}));
       console.warn('local voucher API failed',r.status,err?.error||'');
-      clearLocalVoucherMarkers();
-      if($('localVoucherRegion'))$('localVoucherRegion').textContent='가맹점 조회 실패';
-      if($('localVoucherDiscount')){
-        const detail=String(err?.detail||'');
-        $('localVoucherDiscount').textContent=r.status===503?'공공데이터 API 키 확인':
-          /SERVICE_KEY|인증키|등록되지 않은/i.test(detail)?'인증키 형식 확인':'API 연결 확인';
+      state.localVoucherLastErrorAt=Date.now();
+
+      // 일시 실패 시 기존 성공 데이터를 절대 지우지 않는다.
+      if(!state.localVoucherData){
+        if($('localVoucherRegion'))$('localVoucherRegion').textContent='가맹점 연결 재시도 중';
+        if($('localVoucherDiscount')){
+          const detail=String(err?.detail||'');
+          $('localVoucherDiscount').textContent=r.status===503?'공공데이터 API 키 확인':
+            /SERVICE_KEY|인증키|등록되지 않은/i.test(detail)?'인증키 형식 확인':'연결 복구 중';
+        }
+        $('localVoucherBadge')?.classList.remove('hidden');
       }
-      $('localVoucherBadge')?.classList.remove('hidden');
+      scheduleVoucherReconnect();
       return;
     }
-    const d=await r.json();state.localVoucherLoadedAt=Date.now();state.localVoucherRegionCode=d.regionCode||'';state.localVoucherData=d;
-    renderLocalVoucherMarkers(d);updateLocalVoucherBadge(d);
+
+    const d=await r.json();
+    state.localVoucherLoadedAt=Date.now();
+    state.localVoucherRegionCode=d.regionCode||'';
+    state.localVoucherData=d;
+    state.localVoucherRetryCount=0;
+    clearTimeout(state.localVoucherReconnectTimer);
+    writeVoucherStaleCache(d);
+
+    renderLocalVoucherMarkers(d);
+    updateLocalVoucherBadge(d);
+
     if(!(d.items||[]).length){
-      if($('localVoucherDiscount'))$('localVoucherDiscount').textContent='가맹점 0곳 · API 응답 확인';
+      if($('localVoucherDiscount')&&!Number.isFinite(Number(d.discountRate)))
+        $('localVoucherDiscount').textContent='가맹점 0곳 · 할인율 확인 중';
     }else{
-      if($('localVoucherRegion'))$('localVoucherRegion').textContent=`${d.regionName||'현재 지역'} · ${(d.items||[]).length}곳 표시`;
+      if($('localVoucherRegion'))
+        $('localVoucherRegion').textContent=`${d.regionName||'현재 지역'} · ${(d.items||[]).length}곳`;
     }
-  }catch(e){console.warn('local voucher map load failed',e)}
+  }catch(e){
+    console.warn('local voucher map load failed',e);
+    state.localVoucherLastErrorAt=Date.now();
+    // 기존 마커/할인율 유지 + 자동 재연결
+    scheduleVoucherReconnect();
+  }
 }
 function scheduleLocalVoucherRefresh(){
   clearTimeout(state.localVoucherLoadTimer);
