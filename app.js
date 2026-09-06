@@ -666,7 +666,10 @@ function renderLocalVoucherMarkers(data){
   clearLocalVoucherMarkers();
   if(!state.map||!maplibregl?.Marker||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
   const items=(data?.items||[])
-    .filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat)))
+    .filter(x=>{
+      const lng=Number(x.lng),lat=Number(x.lat);
+      return Number.isFinite(lng)&&Number.isFinite(lat)&&lat>=31.5&&lat<=39.8&&lng>=123.5&&lng<=132.5;
+    })
     .slice(0,1800);
   if(!items.length)return;
 
@@ -694,7 +697,7 @@ function updateLocalVoucherBadge(data){
 }
 function readVoucherStaleCache(){
   try{
-    const raw=localStorage.getItem('jofams_local_voucher_cache_v3');
+    const raw=localStorage.getItem('jofams_local_voucher_cache_v4');
     if(!raw)return null;
     const d=JSON.parse(raw);
     if(!d?.payload||Date.now()-Number(d.savedAt||0)>6*60*60*1000)return null;
@@ -702,7 +705,7 @@ function readVoucherStaleCache(){
   }catch{return null}
 }
 function writeVoucherStaleCache(payload){
-  try{localStorage.setItem('jofams_local_voucher_cache_v3',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
+  try{localStorage.setItem('jofams_local_voucher_cache_v4',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
 }
 function scheduleVoucherReconnect(){
   clearTimeout(state.localVoucherReconnectTimer);
@@ -1167,7 +1170,7 @@ async function loadHomeFacility(category=state.homeFacilityCategory){
       const b=document.createElement('button');b.type='button';b.className='home-facility-item';
       const dist=Number(x.distance);
       b.innerHTML=`<div><b>${escapeHtml(x.name||state.homeFacilityCategory)}</b><small>${escapeHtml(x.address||x.category||'')}</small></div><strong>${Number.isFinite(dist)?km(dist):''}</strong>`;
-      b.onclick=()=>chooseDestination(x);box.appendChild(b);
+      b.onclick=()=>chooseDestination(x,{autoGuide:true});box.appendChild(b);
     });
   }catch{box.innerHTML='<div class="facility-empty">주변 시설 검색에 실패했습니다.</div>'}
 }
@@ -1196,7 +1199,7 @@ async function searchPlaces(q,target='searchResults'){
       const b=document.createElement('button');b.className='search-result';
       const dist=Number(x.distance);
       b.innerHTML=`<b>${escapeHtml(x.name)}</b><small>${escapeHtml(x.address||x.category||'')}${Number.isFinite(dist)&&dist>=0?` · ${km(dist)}`:''}</small>`;
-      b.onclick=()=>target==='placeSearchResults'?selectPlaceCandidate(x):chooseDestination(x);
+      b.onclick=()=>target==='placeSearchResults'?selectPlaceCandidate(x):chooseDestination(x,{autoGuide:true});
       box.appendChild(b);
     })
   }catch(e){
@@ -1204,7 +1207,7 @@ async function searchPlaces(q,target='searchResults'){
     const err=document.createElement('button');err.className='search-result';err.innerHTML='<b>검색 서버 연결을 확인해 주세요.</b>';box.appendChild(err);
   }
 }
-async function chooseDestination(item){
+async function chooseDestination(item,{autoGuide=false}={}){
   state.waypoints=[];renderRouteWaypoints();state.destination=normalizedPlace(item);
   state.routeMode='car';state.carRouteOptions=[];state.walkingRoute=null;state.routeModeDurations={car:null,walk:null};renderRouteModeSwitch();
   if(pointValid(state.destination))saveRecentDestination(state.destination).catch(e=>console.warn('recent destination save failed',e));
@@ -1222,7 +1225,11 @@ async function chooseDestination(item){
   if(!state.user){$('routeCards').innerHTML='<div class="auto-start-hint">위치 권한을 허용하면 경로를 계산합니다.</div>';showPermissionGate();return}
   if(!state.origin||state.originMode==='current'){state.origin={...state.user,name:'내 위치',address:'현재 GPS 위치'};state.originMode='current'}
   updateOriginUI();
-  loadRouteOptions();
+  await loadRouteOptions();
+  if(autoGuide&&state.route&&state.destination){
+    cancelAutoStart();
+    startNavigation();
+  }
 }
 function placeKindLabel(kind){return kind==='home'?'집':'회사'}
 function renderPlaceManageState(){
@@ -2485,7 +2492,7 @@ async function loadDbRecents(){
 function renderRecentDestinations(){
   const box=$('recentDestinationList');if(!box)return;
   const items=(state.recentDestinations||[]).slice(0,6);if(!items.length){box.innerHTML='<div class="recent-empty">최근 목적지가 없습니다.</div>';return}
-  box.innerHTML=items.map((x,i)=>`<div class="recent-row main-recent-row"><button class="recent-item" data-recent-index="${i}"><span class="recent-dot ${i?'blue':''}"></span><span><b>${escapeHtml(x.name||'목적지')}</b><small>${escapeHtml(x.address||'')}</small></span><i data-icon="chevron"></i></button></div>`).join('');applyIcons(box);box.querySelectorAll('[data-recent-index]').forEach(b=>b.onclick=()=>chooseDestination(items[Number(b.dataset.recentIndex)]));
+  box.innerHTML=items.map((x,i)=>`<div class="recent-row main-recent-row"><button class="recent-item" data-recent-index="${i}"><span class="recent-dot ${i?'blue':''}"></span><span><b>${escapeHtml(x.name||'목적지')}</b><small>${escapeHtml(x.address||'')}</small></span><i data-icon="chevron"></i></button></div>`).join('');applyIcons(box);box.querySelectorAll('[data-recent-index]').forEach(b=>b.onclick=()=>chooseDestination(items[Number(b.dataset.recentIndex)],{autoGuide:true}));
 }
 async function deleteRecentDestinationAt(index,items=state.recentDestinations){
   const p=items?.[index];if(!p)return;const id=p.id||recentId(p);state.recentDestinations=(state.recentDestinations||[]).filter(x=>(x.id||recentId(x))!==id);saveLocalRecents();renderRecentDestinations();
@@ -2833,7 +2840,7 @@ window.addEventListener('load',()=>{
     }catch(e){console.warn('initial facility load failed',e)}
   },700);
 });if($('voucherBuildingModal'))$('voucherBuildingModal').addEventListener('click',e=>{if(e.target===$('voucherBuildingModal'))closeVoucherBuildingModal()});applyIcons();$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
-  try{document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>setCharacter(b.dataset.character));$('homeShortcut').onclick=()=>state.savedPlaces.home?chooseDestination(state.savedPlaces.home):openPlaceModal('home');$('workShortcut').onclick=()=>state.savedPlaces.work?chooseDestination(state.savedPlaces.work):openPlaceModal('work');$('homeManageBtn').onclick=()=>openPlaceModal('home');$('workManageBtn').onclick=()=>openPlaceModal('work');$('favoriteShortcut').onclick=openFavoritesList;}catch(e){console.warn('UI bind section 4 failed',e)}
+  try{document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>setCharacter(b.dataset.character));$('homeShortcut').onclick=()=>state.savedPlaces.home?chooseDestination(state.savedPlaces.home,{autoGuide:true}):openPlaceModal('home');$('workShortcut').onclick=()=>state.savedPlaces.work?chooseDestination(state.savedPlaces.work,{autoGuide:true}):openPlaceModal('work');$('homeManageBtn').onclick=()=>openPlaceModal('home');$('workManageBtn').onclick=()=>openPlaceModal('work');$('favoriteShortcut').onclick=openFavoritesList;}catch(e){console.warn('UI bind section 4 failed',e)}
   try{document.querySelectorAll('[data-my-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.myCharacter);syncCharacterUI();toast(`${characterDefs[state.character].name} 가이드로 변경했습니다.`)});}catch(e){console.warn('UI bind section 5 failed',e)}
   try{document.querySelectorAll('[data-voice-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.voiceCharacter);syncCharacterUI();speak(`${characterDefs[state.character].name} 음성 안내입니다.`)});}catch(e){console.warn('UI bind section 6 failed',e)}
   try{$('voiceGuideSettingBtn').onclick=()=>{const opening=$('voiceGuidePanel').classList.contains('hidden');$('voiceGuidePanel').classList.toggle('hidden',!opening);$('characterSettingPanel').classList.toggle('hidden',!opening);$('voiceGuideSettingBtn').setAttribute('aria-expanded',String(opening))};$('voicePreviewBtn').onclick=()=>speak(`${characterDefs[state.character].name}이 길안내를 시작합니다. 안전운전하세요.`);}catch(e){console.warn('UI bind section 7 failed',e)}
