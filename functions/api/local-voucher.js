@@ -76,7 +76,18 @@ async function fetchFranchises(serviceKey,region,bounds){
       const total=extractTotalCount(d);
       if(found.length<pageSize||(Number.isFinite(total)&&page*pageSize>=total))break;
     }
-    return visible;
+    const merged=new Map();
+    for(const x of visible){
+      const key=x.id||`${x.name}:${Number(x.lat).toFixed(6)}:${Number(x.lng).toFixed(6)}`;
+      const prev=merged.get(key);
+      if(prev){
+        prev.card=Boolean(prev.card||x.card);
+        prev.mobile=Boolean(prev.mobile||x.mobile);
+        prev.paper=Boolean(prev.paper||x.paper);
+        if(!prev.address&&x.address)prev.address=x.address;
+      }else merged.set(key,{...x});
+    }
+    return [...merged.values()].slice(0,maxVisible);
   }
 
   // 현재 읍면동(8자리) 조회가 지원되면 가장 먼저 사용해 화면 주변 가맹점을 빠르게 찾는다.
@@ -121,8 +132,40 @@ async function parseResponse(r){
 }
 function extractRows(d){
   if(Array.isArray(d))return d;
-  const candidates=[d?.items,d?.response?.body?.items?.item,d?.response?.body?.items,d?.body?.items?.item,d?.body?.items,d?.data?.items,d?.data];
-  for(const x of candidates){if(Array.isArray(x))return x;if(x&&typeof x==='object')return [x]}
+  const candidates=[
+    d?.items,d?.item,
+    d?.response?.body?.items?.item,d?.response?.body?.items,d?.response?.body?.item,
+    d?.body?.items?.item,d?.body?.items,d?.body?.item,
+    d?.data?.items,d?.data?.item,d?.data,
+    d?.result?.items,d?.result?.item,d?.result
+  ];
+  for(const x of candidates){
+    if(Array.isArray(x))return x;
+    if(x&&typeof x==='object'&&!Array.isArray(x)){
+      const vals=Object.values(x);
+      const arr=vals.find(v=>Array.isArray(v)&&v.length&&typeof v[0]==='object');
+      if(arr)return arr;
+    }
+  }
+
+  // 공공데이터포털 응답 포맷 변경에도 대응: LAT/LOT 또는 가맹점명 계열 필드를 가진 객체 배열 탐색
+  const queue=[d],seen=new Set();
+  while(queue.length){
+    const cur=queue.shift();
+    if(!cur||typeof cur!=='object'||seen.has(cur))continue;
+    seen.add(cur);
+    for(const v of Object.values(cur)){
+      if(Array.isArray(v)){
+        if(v.length&&typeof v[0]==='object'){
+          const sample=v[0]||{};
+          const keys=Object.keys(sample).map(String);
+          if(keys.some(k=>['LAT','latitude','lat','위도'].includes(k))||
+             keys.some(k=>['FRCS_NM','franchiseName','frcsNm','가맹점명'].includes(k)))return v;
+        }
+        for(const y of v)if(y&&typeof y==='object')queue.push(y);
+      }else if(v&&typeof v==='object')queue.push(v);
+    }
+  }
   return [];
 }
 function extractTotalCount(d){
@@ -135,15 +178,41 @@ function extractTotalCount(d){
 function pick(o,keys){for(const k of keys){const v=o?.[k];if(v!==undefined&&v!==null&&String(v).trim()!=='')return v}return ''}
 function yn(v){const s=String(v??'').trim().toUpperCase();return ['Y','YES','1','TRUE','가능','사용'].includes(s)}
 function normalizeFranchise(r){
+  const payTypeName=String(pick(r,[
+    'FRCS_PAY_TYPE_NM','frcsPayTypeNm','payTypeName','가맹점결제유형구분명','결제유형명'
+  ])||'');
+  const payTypeCode=String(pick(r,[
+    'FRCS_PAY_TYPE','frcsPayType','payType','가맹점결제유형구분'
+  ])||'');
+  const payText=`${payTypeName} ${payTypeCode}`.toLowerCase();
+
+  const cardByType=/카드|card/.test(payText);
+  const mobileByType=/모바일|mobile|qr/.test(payText);
+  const paperByType=/지류|paper|voucher/.test(payText);
+
   return {
-    id:String(pick(r,['franchiseId','franchiseNo','가맹점번호','가맹점ID','id'])||''),
-    name:String(pick(r,['franchiseName','mrhstNm','storeName','가맹점명','상호명'])||'지역사랑상품권 가맹점'),
-    address:String(pick(r,['roadAddress','address','rdnmAdr','소재지도로명주소','주소','지번주소'])||''),
-    lat:Number(pick(r,['latitude','lat','위도'])),lng:Number(pick(r,['longitude','lng','lon','경도'])),
-    card:yn(pick(r,['cardUseYn','cardYn','카드사용여부','카드가맹점여부'])),
-    mobile:yn(pick(r,['mobileUseYn','mobileYn','모바일사용여부','모바일가맹점여부'])),
-    paper:yn(pick(r,['paperUseYn','paperYn','voucherUseYn','지류사용여부','지류가맹점여부'])),
-    category:String(pick(r,['ksicName','industryName','업종명','표준산업분류명'])||'')
+    id:String(pick(r,[
+      'FRCS_ID','FRCS_NO','franchiseId','franchiseNo','frcsId','가맹점구분ID','가맹점번호','가맹점ID','id'
+    ])||''),
+    name:String(pick(r,[
+      'FRCS_NM','franchiseName','frcsNm','mrhstNm','storeName','가맹점명','상호명'
+    ])||'지역사랑상품권 가맹점'),
+    address:String(pick(r,[
+      'FRCS_ADDR','FRCS_DADDR','franchiseAddress','frcsAddr','roadAddress','address','rdnmAdr','가맹점주소','가맹점상세주소','소재지도로명주소','주소','지번주소'
+    ])||''),
+    lat:Number(pick(r,[
+      'LAT','LATITUDE','latitude','lat','위도'
+    ])),
+    lng:Number(pick(r,[
+      'LOT','LON','LNG','LONGITUDE','longitude','lng','lon','경도'
+    ])),
+    card:cardByType||yn(pick(r,['cardUseYn','cardYn','카드사용여부','카드가맹점여부'])),
+    mobile:mobileByType||yn(pick(r,['mobileUseYn','mobileYn','모바일사용여부','모바일가맹점여부'])),
+    paper:paperByType||yn(pick(r,['paperUseYn','paperYn','voucherUseYn','지류사용여부','지류가맹점여부','지류가맹점신청여부'])),
+    category:String(pick(r,[
+      'KSIC_NM','KSIC_NAME','ksicName','industryName','표준산업분류코드명','업종명'
+    ])||''),
+    payTypeName
   };
 }
 function normalizePolicy(r){
