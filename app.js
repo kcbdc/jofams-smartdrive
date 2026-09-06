@@ -638,10 +638,30 @@ function renderVoucherShopMarkers(items){
     }catch{}
   }
 }
+
+function sanitizeVoucherCoordinates(items){
+  const rows=(items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat)));
+  if(rows.length<5)return rows;
+  const latBins=new Map(),lngBins=new Map();
+  const add=(map,key)=>map.set(key,(map.get(key)||0)+1);
+  for(const x of rows){
+    add(latBins,Number(x.lat).toFixed(5));
+    add(lngBins,Number(x.lng).toFixed(5));
+  }
+  const suspiciousLat=new Set([...latBins].filter(([,n])=>n>=5&&n/rows.length>=.18).map(([k])=>k));
+  const suspiciousLng=new Set([...lngBins].filter(([,n])=>n>=5&&n/rows.length>=.18).map(([k])=>k));
+  if(!suspiciousLat.size&&!suspiciousLng.size)return rows;
+  return rows.filter(x=>{
+    const sameLat=suspiciousLat.has(Number(x.lat).toFixed(5));
+    const sameLng=suspiciousLng.has(Number(x.lng).toFixed(5));
+    // 주소 기반으로 교정된 좌표는 유지하고, 원본 API에서 대량 일렬 반복되는 좌표만 제외한다.
+    return x.coordinateSource==='kakao-address'||x.coordinateSource==='kakao-keyword'||(!sameLat&&!sameLng);
+  });
+}
 function renderLocalVoucherMarkers(data){
   clearLocalVoucherMarkers();
   if(!state.map||!maplibregl?.Marker||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
-  const items=(data?.items||[])
+  const items=sanitizeVoucherCoordinates(data?.items||[])
     .filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat)))
     .slice(0,1200);
   if(!items.length)return;
@@ -655,7 +675,7 @@ function updateLocalVoucherBadge(data){
 }
 function readVoucherStaleCache(){
   try{
-    const raw=localStorage.getItem('jofams_local_voucher_cache_v2');
+    const raw=localStorage.getItem('jofams_local_voucher_cache_v7');
     if(!raw)return null;
     const d=JSON.parse(raw);
     if(!d?.payload||Date.now()-Number(d.savedAt||0)>6*60*60*1000)return null;
@@ -663,7 +683,7 @@ function readVoucherStaleCache(){
   }catch{return null}
 }
 function writeVoucherStaleCache(payload){
-  try{localStorage.setItem('jofams_local_voucher_cache_v2',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
+  try{localStorage.setItem('jofams_local_voucher_cache_v7',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
 }
 function scheduleVoucherReconnect(){
   clearTimeout(state.localVoucherReconnectTimer);
@@ -2129,7 +2149,8 @@ function mergeSafetyEvents(events,geometry){
 function clearSafetyMarkers(){for(const m of state.safetyMarkers||[])try{m.remove()}catch{}state.safetyMarkers=[]}
 function renderSafetyMarkers(){
   if(!state.map||!maplibregl?.Marker)return;clearSafetyMarkers();
-  const skip=['speed_limit','tunnel','curve_left','curve_right','double_curve']; // 경로 상대적 합성 이벤트(커브)는 고정 마커로 표시하지 않는다
+  const skip=['speed_limit','tunnel','curve_left','curve_right','double_curve'];
+  const cameraTypes=new Set(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','bus_lane_camera','mobile_camera']);
   for(const e of state.safetyEvents){
     if(skip.includes(e.type))continue;
     const meta=e.type.startsWith('school')?['school','S','스쿨존/학교 주변']
@@ -2151,9 +2172,16 @@ function renderSafetyMarkers(){
       :e.type==='weight_limit'?['truck','W','중량제한']
       :e.type==='width_limit'?['truck','폭','폭제한']
       :['camera','📷','단속 카메라'];
-    const el=document.createElement('div');el.className=`safety-map-marker ${meta[0]}`;el.title=meta[2];
-    if(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','bus_lane_camera','mobile_camera'].includes(e.type))el.innerHTML=cctvMarkerSvg();
-    else el.textContent=meta[1];
+
+    const el=document.createElement('div');
+    el.className=`safety-map-marker ${meta[0]}${cameraTypes.has(e.type)?' camera-pin':''}`;
+    el.title=meta[2];
+    if(cameraTypes.has(e.type)){
+      const limit=Number(e.maxspeed)||0;
+      el.innerHTML=`<span class="camera-pin-icon">${cctvMarkerSvg()}</span>${limit>0?`<small class="camera-pin-speed">${Math.round(limit)}</small>`:''}`;
+    }else{
+      el.textContent=meta[1];
+    }
     try{state.safetyMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map))}catch{}
   }
 }

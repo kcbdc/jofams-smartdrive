@@ -1142,3 +1142,57 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .home-camera-marker{display:none!important}
 .voucher-shop-marker>span{display:none!important}
 .drive-bottom-summary b,.speed-limit b{white-space:nowrap}
+
+
+/* === 7.6.1.7 주행 단속카메라 고대비 마커 === */
+.safety-map-marker.camera-pin{
+  position:relative!important;
+  width:38px!important;
+  height:38px!important;
+  border:2px solid #cf2634!important;
+  border-radius:11px!important;
+  background:#ffffff!important;
+  color:#172033!important;
+  box-shadow:0 4px 14px rgba(10,24,48,.28),0 0 0 2px rgba(255,255,255,.92)!important;
+  padding:0!important;
+  overflow:visible!important;
+}
+.safety-map-marker.camera-pin.mobile{
+  border-color:#6d4ac7!important;
+  background:#ffffff!important;
+  color:#4d318f!important;
+}
+.camera-pin-icon{
+  width:30px!important;
+  height:30px!important;
+  display:grid!important;
+  place-items:center!important;
+  color:#172033!important;
+}
+.camera-pin-icon svg{
+  width:25px!important;
+  height:25px!important;
+  display:block!important;
+  color:inherit!important;
+}
+.camera-pin-speed{
+  position:absolute!important;
+  right:-8px!important;
+  bottom:-7px!important;
+  min-width:22px!important;
+  height:22px!important;
+  padding:0 4px!important;
+  border:2px solid #fff!important;
+  border-radius:999px!important;
+  background:#cf2634!important;
+  color:#fff!important;
+  display:grid!important;
+  place-items:center!important;
+  font-size:9px!important;
+  font-weight:900!important;
+  line-height:1!important;
+  box-shadow:0 2px 6px rgba(0,0,0,.25)!important;
+}
+
+/* 홈 CCTV는 계속 숨김 */
+.home-camera-marker{display:none!important}
