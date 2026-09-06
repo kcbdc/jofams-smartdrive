@@ -1018,3 +1018,36 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 /* 주행 중 주변 최저가 레이어는 안내 하단 카드와 겹치지 않게 위로 */
 .drive-fuel-chip{bottom:316px!important}
 @media(orientation:landscape){.drive-fuel-chip{bottom:190px!important}}
+
+
+/* === 7.5.9.8 home sheet stop position === */
+#homeSheet.collapsed{
+  transform:translateY(calc(100% - 138px - var(--safeB)))!important;
+  pointer-events:none!important;
+  overflow:hidden!important;
+}
+#homeSheet.collapsed #homeSheetToggle{
+  pointer-events:auto!important;
+}
+
+/* === 7.5.9.8 drawn CCTV marker === */
+.home-camera-marker,
+.safety-map-marker.camera,
+.safety-map-marker.mobile{
+  color:#b4232b!important;
+}
+.home-camera-marker svg,
+.safety-map-marker.camera svg,
+.safety-map-marker.mobile svg{
+  width:22px!important;
+  height:22px!important;
+  display:block!important;
+}
+.home-camera-marker{
+  width:30px!important;height:30px!important;
+  border:1px solid rgba(180,35,43,.28)!important;
+  border-radius:9px!important;
+  background:rgba(255,255,255,.97)!important;
+  display:grid!important;place-items:center!important;padding:0!important;
+  box-shadow:0 3px 10px rgba(18,34,62,.18)!important;
+}

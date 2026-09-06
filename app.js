@@ -450,8 +450,14 @@ async function initMap(){
       state.map.on('rotate',updateDriveCompass);
       state.map.on('moveend',()=>{scheduleLocalVoucherRefresh();scheduleHomeCameraRefresh()});
       if(state.pendingRouteDraw){const p=state.pendingRouteDraw;state.pendingRouteDraw=null;drawRoute(p.route,p.options)}
-      permissionStatus('geolocation').then(s=>{if(s==='granted')locate(false)});
-      setTimeout(()=>{scheduleLocalVoucherRefresh();scheduleHomeCameraRefresh()},500);
+      permissionStatus('geolocation').then(async status=>{
+        try{
+          const u=await locate(status==='granted');
+          if(u&&pointValid(u)&&state.map)state.map.easeTo({center:[u.lng,u.lat],zoom:15.5,duration:450});
+        }catch(e){console.warn('initial current location failed',e)}
+        setTimeout(()=>{scheduleLocalVoucherRefresh();scheduleHomeCameraRefresh()},250);
+      });
+      setTimeout(()=>{scheduleLocalVoucherRefresh();scheduleHomeCameraRefresh()},900);
       clearTimeout(state.mapWatchdog);
       state.mapWatchdog=setTimeout(()=>{if(!mapHasRenderedTiles())useMapFallback()},2200);
     });
@@ -526,6 +532,14 @@ function clearHomeCameraMarkers(){
   for(const m of state.homeCameraMarkers||[])try{m.remove()}catch{}
   state.homeCameraMarkers=[];
 }
+
+function cctvMarkerSvg(){
+  return `<svg viewBox="0 0 28 28" aria-hidden="true">
+    <path d="M6.2 8.3h11.1c1.1 0 2 .9 2 2v4.6c0 1.1-.9 2-2 2H6.2c-1.1 0-2-.9-2-2v-4.6c0-1.1.9-2 2-2Z" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <circle cx="14.7" cy="12.6" r="2.6" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M19.4 11.1 24 8.9v7.4l-4.6-2.2M9.2 17.1l-1.4 4.1M16.6 17.1l1.3 4.1M5.7 21.2h13.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+}
 function homeCameraLabel(row){
   const raw=String(pickField(row,['단속구분','regltSe','규제구분'])||'').trim();
   const maxspeed=Number(pickField(row,['제한속도','lmttVe','speedLimit']))||0;
@@ -557,7 +571,7 @@ async function renderHomeCameraMarkers(){
   for(const x of visible){
     const info=homeCameraLabel(x.row),el=document.createElement('button');el.type='button';el.className='home-camera-marker';
     el.title=`${info.title}${info.maxspeed?` · ${info.maxspeed}km/h`:''}`;
-    el.innerHTML='<span aria-hidden="true">📷</span>';
+    el.innerHTML=cctvMarkerSvg();
     el.onclick=e=>{e.stopPropagation();toast(`${info.title}${info.maxspeed?` · 제한 ${info.maxspeed}km/h`:''}`,1800)};
     try{state.homeCameraMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([x.lng,x.lat]).addTo(state.map))}catch{}
   }
@@ -581,7 +595,7 @@ function voucherUseFlags(item){
 function renderLocalVoucherMarkers(data){
   clearLocalVoucherMarkers();
   if(!state.map||!maplibregl?.Marker||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
-  const items=(data?.items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,160);
+  const items=(data?.items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,500);
   for(const item of items){
     const el=document.createElement('button');el.type='button';el.className='local-voucher-marker';el.title=item.name||'지역사랑상품권 가맹점';
     const uses=voucherUseFlags(item);
@@ -600,7 +614,7 @@ function updateLocalVoucherBadge(data){
 }
 async function loadLocalVoucherMap({force=false}={}){
   if(!state.map||$('homeView')?.classList.contains('hidden'))return;
-  const zoom=Number(state.map.getZoom?.()||0);if(zoom<11.5){clearLocalVoucherMarkers();$('localVoucherBadge')?.classList.add('hidden');return}
+  const zoom=Number(state.map.getZoom?.()||0);if(zoom<8.5){clearLocalVoucherMarkers();$('localVoucherBadge')?.classList.add('hidden');return}
   const center=state.map.getCenter?.();if(!center)return;
   if(!force&&Date.now()-Number(state.localVoucherLoadedAt||0)<30000)return;
   try{
@@ -1604,7 +1618,15 @@ function setView(view){
   applyNightMode();if(view==='home'){
     loadSavedWaypointCourses();renderSavedWaypointCourses();
     setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),180);
-    setTimeout(()=>{scheduleLocalVoucherRefresh();scheduleHomeCameraRefresh()},320);
+    setTimeout(async()=>{
+      try{
+        if(!state.tripStartedAt){
+          const u=await locate(false);
+          if(u&&pointValid(u)&&state.map&&!state.homeSheetCollapsed)state.map.easeTo({center:[u.lng,u.lat],zoom:15.5,duration:380});
+        }
+      }catch{}
+      scheduleLocalVoucherRefresh();scheduleHomeCameraRefresh();
+    },320);
   }else{
     $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearHomeCameraMarkers();
   }
@@ -1859,7 +1881,9 @@ function renderSafetyMarkers(){
       :e.type==='weight_limit'?['truck','W','중량제한']
       :e.type==='width_limit'?['truck','폭','폭제한']
       :['camera','📷','단속 카메라'];
-    const el=document.createElement('div');el.className=`safety-map-marker ${meta[0]}`;el.textContent=meta[1];el.title=meta[2];
+    const el=document.createElement('div');el.className=`safety-map-marker ${meta[0]}`;el.title=meta[2];
+    if(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','bus_lane_camera','mobile_camera'].includes(e.type))el.innerHTML=cctvMarkerSvg();
+    else el.textContent=meta[1];
     try{state.safetyMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map))}catch{}
   }
 }
