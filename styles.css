@@ -825,3 +825,39 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   justify-self:end!important;
   margin-right:2px!important;
 }
+
+
+/* === 7.5.9.3 section-speed camera === */
+.section-speed-panel{
+  position:absolute;
+  z-index:36;
+  left:50%;
+  top:96px;
+  transform:translateX(-50%);
+  width:min(calc(100% - 30px),390px);
+  min-height:54px;
+  display:grid;
+  grid-template-columns:auto 1fr 1fr auto;
+  align-items:center;
+  gap:9px;
+  padding:7px 10px;
+  border-radius:16px;
+  background:rgba(24,31,46,.94);
+  color:#fff;
+  box-shadow:0 8px 24px rgba(0,0,0,.22);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+  pointer-events:none;
+}
+.section-speed-panel.hidden{display:none!important}
+.section-speed-panel>span{
+  padding:5px 7px;border-radius:9px;background:#f3b11a;color:#171717;font-size:9px;font-weight:900;white-space:nowrap
+}
+.section-speed-panel div{display:grid;gap:1px;min-width:0}
+.section-speed-panel small{font-size:8px;opacity:.68;white-space:nowrap}
+.section-speed-panel b,.section-speed-panel strong{font-size:12px;white-space:nowrap}
+.section-speed-panel em{font-style:normal;font-size:9px;opacity:.82;white-space:nowrap}
+.section-speed-panel.over{background:rgba(148,21,27,.96)}
+@media (orientation:landscape){
+  .section-speed-panel{top:72px;width:min(48vw,360px);min-height:48px;padding:5px 9px}
+}
