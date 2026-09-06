@@ -144,10 +144,10 @@ async function resolveRegion(lng,lat,kakaoKey){
 async function fetchFranchises(keyCandidates,region,bounds,kakaoKey){
   const regionCode=String(region?.code||'');
   const hasBounds=[bounds.west,bounds.south,bounds.east,bounds.north].every(Number.isFinite);
-  const perPage=2000,maxPages=25,maxVisible=1200;
-  const visible=[],seen=new Map(),needGeocode=[];
+  const perPage=2000,maxPages=25,maxVisible=420;
+  const rawCandidates=[],seenRaw=new Set();
 
-  for(let page=1;page<=maxPages&&visible.length<maxVisible;page++){
+  for(let page=1;page<=maxPages&&rawCandidates.length<maxVisible*3;page++){
     const u=new URL(FRANCHISE_URL);
     u.searchParams.set('page',String(page));
     u.searchParams.set('perPage',String(perPage));
@@ -159,19 +159,11 @@ async function fetchFranchises(keyCandidates,region,bounds,kakaoKey){
 
     for(const row of found){
       const x=normalizeFranchise(row);
-
-      // 공공데이터의 빈 좌표가 Number('') -> 0 으로 변환되어
-      // 한반도 서쪽 바다에 세로줄처럼 찍히는 문제를 차단한다.
-      if(!validKoreaCoordinate(x.lat,x.lng)){
-        if(x.address&&kakaoKey&&needGeocode.length<260)needGeocode.push(x);
-        continue;
-      }
-
-      // 좌표가 있는 행은 현재 지도 범위와 너무 동떨어진 잘못된 좌표를 배제.
-      if(hasBounds&&!pointNearBounds(x.lng,x.lat,bounds,0.02))continue;
-
-      addFranchise(visible,seen,x);
-      if(visible.length>=maxVisible)break;
+      const rawKey=x.id||`${x.name}:${x.address}`;
+      if(seenRaw.has(rawKey))continue;
+      seenRaw.add(rawKey);
+      rawCandidates.push(x);
+      if(rawCandidates.length>=maxVisible*3)break;
     }
 
     const total=extractTotalCount(d);
@@ -179,18 +171,25 @@ async function fetchFranchises(keyCandidates,region,bounds,kakaoKey){
     if(found.length<perPage||current<perPage||(Number.isFinite(total)&&page*perPage>=total))break;
   }
 
-  // 좌표 누락/비정상 가맹점은 주소를 Kakao 주소검색으로 복원.
-  // 과도한 외부 호출 방지를 위해 최대 260건, 동시 6건으로 제한.
-  if(kakaoKey&&needGeocode.length&&visible.length<maxVisible){
-    for(let i=0;i<needGeocode.length&&visible.length<maxVisible;i+=6){
-      const batch=needGeocode.slice(i,i+6);
-      const fixed=await Promise.all(batch.map(x=>geocodeFranchiseAddress(x,kakaoKey).catch(()=>null)));
-      for(const x of fixed){
-        if(!x||!validKoreaCoordinate(x.lat,x.lng))continue;
-        if(hasBounds&&!pointNearBounds(x.lng,x.lat,bounds,0.02))continue;
-        addFranchise(visible,seen,x);
-        if(visible.length>=maxVisible)break;
+  const visible=[],seen=new Map();
+
+  // 주소가 있는 가맹점은 주소 좌표를 최우선으로 사용.
+  // 잘못된 API 위경도가 일렬로 찍히는 문제를 원천 차단한다.
+  for(let i=0;i<rawCandidates.length&&visible.length<maxVisible;i+=8){
+    const batch=rawCandidates.slice(i,i+8);
+    const resolved=await Promise.all(batch.map(async x=>{
+      if(kakaoKey&&x.address){
+        const fixed=await geocodeFranchiseAddress(x,kakaoKey).catch(()=>null);
+        if(fixed)return fixed;
       }
+      return validKoreaCoordinate(x.lat,x.lng)?x:null;
+    }));
+
+    for(const x of resolved){
+      if(!x||!validKoreaCoordinate(x.lat,x.lng))continue;
+      if(hasBounds&&!pointNearBounds(x.lng,x.lat,bounds,0.03))continue;
+      addFranchise(visible,seen,x);
+      if(visible.length>=maxVisible)break;
     }
   }
 
