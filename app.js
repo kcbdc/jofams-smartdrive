@@ -19,7 +19,7 @@ const state = {
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
   savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:'B027',fuelData:null,fuelFetchedAt:0,fuelLoading:false,destinationSearchSort:'accuracy',lastDestinationQuery:'',
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
-  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,homeSheetDrag:null,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,homeCameraMarkers:[],homeCameraLoadTimer:0,
+  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,homeSheetDrag:null,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherData:null,localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,homeCameraMarkers:[],homeCameraLoadTimer:0,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,
   compassHeading:null,compassAt:0,compassReady:false,activeLaneGuideKey:'',nativeLocationAt:0,nativeLocationActive:false,imu:{at:0,yawRateDegS:0,accelMagnitude:0,headingDeg:null},mapMatch:{index:0,routeDistance:0,score:Infinity,confidence:0,at:0},offRouteHeadingHits:0,gpsFix:{lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false},
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
@@ -592,17 +592,101 @@ function voucherUseFlags(item){
   if(item.paper===true)flags.push('지류');
   return flags;
 }
+function voucherShopSvg(){
+  return `<svg viewBox="0 0 32 32" aria-hidden="true">
+    <path d="M6 12.2 8.1 6h15.8l2.1 6.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M5.2 12.2h21.6v3.1c0 1.7-1.4 3.1-3.1 3.1-1.3 0-2.4-.8-2.9-1.9-.5 1.1-1.6 1.9-2.9 1.9s-2.4-.8-2.9-1.9c-.5 1.1-1.6 1.9-2.9 1.9s-2.4-.8-2.9-1.9c-.5 1.1-1.6 1.9-2.9 1.9-1.7 0-3.1-1.4-3.1-3.1v-3.1Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M8.3 18.1V27h15.4v-8.9M12 27v-5.8h5.2V27M20 21.2h2.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+}
+function voucherGeoMeters(aLat,aLng,bLat,bLng){
+  const r=6371000,toRad=Math.PI/180,dLat=(bLat-aLat)*toRad,dLng=(bLng-aLng)*toRad;
+  const aa=Math.sin(dLat/2)**2+Math.cos(aLat*toRad)*Math.cos(bLat*toRad)*Math.sin(dLng/2)**2;
+  return 2*r*Math.asin(Math.min(1,Math.sqrt(aa)));
+}
+function voucherVisibleRadiusMeters(){
+  try{
+    const b=state.map?.getBounds?.(),ctr=state.map?.getCenter?.();
+    if(!b||!ctr)return Infinity;
+    return voucherGeoMeters(ctr.lat,ctr.lng,ctr.lat,b.getEast());
+  }catch{return Infinity}
+}
+function voucherBuildingKey(item){
+  return `${Number(item.lat).toFixed(6)}:${Number(item.lng).toFixed(6)}`;
+}
+function closeVoucherBuildingModal(){$('voucherBuildingModal')?.classList.add('hidden')}
+function openVoucherStoreInfo(item){
+  closeVoucherBuildingModal();
+  showMapPlacePrompt({name:item.name||'지역사랑상품권 가맹점',address:item.address||'',lng:Number(item.lng),lat:Number(item.lat),voucher:item});
+}
+function openVoucherBuildingList(items){
+  const list=(items||[]).filter(Boolean);
+  if(!list.length)return;
+  if(list.length===1){openVoucherStoreInfo(list[0]);return}
+  if($('voucherBuildingTitle'))$('voucherBuildingTitle').textContent=`가맹점 ${list.length}곳`;
+  const box=$('voucherBuildingList');
+  if(box){
+    box.innerHTML=list.map((item,i)=>{
+      const uses=voucherUseFlags(item);
+      return `<button type="button" data-voucher-building-item="${i}">
+        <span class="voucher-list-shop">${voucherShopSvg()}</span>
+        <span class="voucher-list-copy"><b>${escapeHtml(item.name||'가맹점')}</b><small>${escapeHtml(item.address||'주소 정보 없음')}</small><em>${escapeHtml(uses.join(' · ')||'지역사랑상품권')}</em></span>
+        <span class="voucher-list-arrow">›</span>
+      </button>`;
+    }).join('');
+    box.querySelectorAll('[data-voucher-building-item]').forEach(btn=>{
+      btn.onclick=e=>{e.stopPropagation();openVoucherStoreInfo(list[Number(btn.dataset.voucherBuildingItem)])};
+    });
+  }
+  $('voucherBuildingModal')?.classList.remove('hidden');
+}
+function voucherClusterLevel(){
+  const z=Number(state.map?.getZoom?.()||0);
+  return z<11?'large':z<14.5?'medium':'small';
+}
+function renderVoucherClusterMarkers(items){
+  const level=voucherClusterLevel(),cellPx=level==='large'?96:level==='medium'?72:52,groups=new Map();
+  for(const item of items){
+    let pt;try{pt=state.map.project([Number(item.lng),Number(item.lat)])}catch{continue}
+    const key=`${Math.floor(pt.x/cellPx)}:${Math.floor(pt.y/cellPx)}`;
+    let g=groups.get(key);if(!g){g={items:[],lat:0,lng:0};groups.set(key,g)}
+    g.items.push(item);g.lat+=Number(item.lat);g.lng+=Number(item.lng);
+  }
+  for(const g of groups.values()){
+    const count=g.items.length,lat=g.lat/count,lng=g.lng/count;
+    const el=document.createElement('button');el.type='button';el.className=`voucher-cluster-marker ${level}`;
+    el.innerHTML=`<strong>${count}</strong>`;el.title=`이 구역 가맹점 ${count}곳`;
+    el.onclick=e=>{
+      e.stopPropagation();
+      const z=Number(state.map.getZoom?.()||0);
+      state.map.easeTo({center:[lng,lat],zoom:Math.min(20.5,z+(level==='large'?2.4:level==='medium'?1.8:1.2)),duration:420});
+    };
+    try{state.localVoucherMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([lng,lat]).addTo(state.map))}catch{}
+  }
+}
+function renderVoucherShopMarkers(items){
+  const buildings=new Map();
+  for(const item of items){
+    const key=voucherBuildingKey(item);
+    if(!buildings.has(key))buildings.set(key,[]);
+    buildings.get(key).push(item);
+  }
+  for(const list of buildings.values()){
+    const item=list[0],el=document.createElement('button');el.type='button';el.className='voucher-shop-marker';
+    el.title=list.length>1?`이 건물 가맹점 ${list.length}곳`:item.name||'지역사랑상품권 가맹점';
+    el.innerHTML=`${voucherShopSvg()}${list.length>1?`<span>${list.length}</span>`:''}`;
+    el.onclick=e=>{e.stopPropagation();openVoucherBuildingList(list)};
+    try{state.localVoucherMarkers.push(new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([Number(item.lng),Number(item.lat)]).addTo(state.map))}catch{}
+  }
+}
 function renderLocalVoucherMarkers(data){
   clearLocalVoucherMarkers();
   if(!state.map||!maplibregl?.Marker||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
   const items=(data?.items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,1000);
-  for(const item of items){
-    const el=document.createElement('button');el.type='button';el.className='local-voucher-marker';el.title=item.name||'지역사랑상품권 가맹점';
-    const uses=voucherUseFlags(item);
-    el.innerHTML=`<b>₩</b><span>${escapeHtml(item.name||'가맹점')}</span><small>${escapeHtml(uses.join('·')||'지역사랑상품권')}</small>`;
-    el.onclick=e=>{e.stopPropagation();showMapPlacePrompt({name:item.name||'지역사랑상품권 가맹점',address:item.address||'',lng:Number(item.lng),lat:Number(item.lat),voucher:item})};
-    try{state.localVoucherMarkers.push(new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([Number(item.lng),Number(item.lat)]).addTo(state.map))}catch{}
-  }
+  if(!items.length)return;
+  const radius=voucherVisibleRadiusMeters();
+  if(radius<50)renderVoucherShopMarkers(items);
+  else renderVoucherClusterMarkers(items);
 }
 function updateLocalVoucherBadge(data){
   const badge=$('localVoucherBadge');if(!badge)return;
@@ -616,7 +700,10 @@ async function loadLocalVoucherMap({force=false}={}){
   if(!state.map||$('homeView')?.classList.contains('hidden'))return;
   const zoom=Number(state.map.getZoom?.()||0);if(zoom<8.5){clearLocalVoucherMarkers();$('localVoucherBadge')?.classList.add('hidden');return}
   const center=state.map.getCenter?.();if(!center)return;
-  if(!force&&Date.now()-Number(state.localVoucherLoadedAt||0)<30000)return;
+  if(!force&&Date.now()-Number(state.localVoucherLoadedAt||0)<30000&&state.localVoucherData){
+    renderLocalVoucherMarkers(state.localVoucherData);
+    return;
+  }
   try{
     const b=state.map.getBounds?.();
     const u=new URL('/api/local-voucher',location.origin);
@@ -636,7 +723,7 @@ async function loadLocalVoucherMap({force=false}={}){
       $('localVoucherBadge')?.classList.remove('hidden');
       return;
     }
-    const d=await r.json();state.localVoucherLoadedAt=Date.now();state.localVoucherRegionCode=d.regionCode||'';
+    const d=await r.json();state.localVoucherLoadedAt=Date.now();state.localVoucherRegionCode=d.regionCode||'';state.localVoucherData=d;
     renderLocalVoucherMarkers(d);updateLocalVoucherBadge(d);
     if(!(d.items||[]).length){
       if($('localVoucherDiscount'))$('localVoucherDiscount').textContent='가맹점 0곳 · API 응답 확인';
@@ -2577,7 +2664,7 @@ function bindCriticalUI(){
 function bindUI(){
   try{bindFutureDepartureUI();}catch(e){console.warn('UI bind section 1 failed',e)}
   try{$('allowLocationBtn').onclick=requestLocationPermission;$('allowCameraBtn').onclick=requestCameraPermission;$('permissionContinueBtn').onclick=closePermissionGate;}catch(e){console.warn('UI bind section 2 failed',e)}
-  try{if($('homeSheetToggle'))$('homeSheetToggle').onclick=toggleHomeSheet;if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=closeMapPlacePrompt;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;applyIcons();$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
+  try{if($('homeSheetToggle'))$('homeSheetToggle').onclick=toggleHomeSheet;if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=closeMapPlacePrompt;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;if($('voucherBuildingClose'))$('voucherBuildingClose').onclick=closeVoucherBuildingModal;if($('voucherBuildingModal'))$('voucherBuildingModal').addEventListener('click',e=>{if(e.target===$('voucherBuildingModal'))closeVoucherBuildingModal()});applyIcons();$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
   try{document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>setCharacter(b.dataset.character));$('homeShortcut').onclick=()=>state.savedPlaces.home?chooseDestination(state.savedPlaces.home):openPlaceModal('home');$('workShortcut').onclick=()=>state.savedPlaces.work?chooseDestination(state.savedPlaces.work):openPlaceModal('work');$('homeManageBtn').onclick=()=>openPlaceModal('home');$('workManageBtn').onclick=()=>openPlaceModal('work');$('favoriteShortcut').onclick=openFavoritesList;}catch(e){console.warn('UI bind section 4 failed',e)}
   try{document.querySelectorAll('[data-my-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.myCharacter);syncCharacterUI();toast(`${characterDefs[state.character].name} 가이드로 변경했습니다.`)});}catch(e){console.warn('UI bind section 5 failed',e)}
   try{document.querySelectorAll('[data-voice-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.voiceCharacter);syncCharacterUI();speak(`${characterDefs[state.character].name} 음성 안내입니다.`)});}catch(e){console.warn('UI bind section 6 failed',e)}

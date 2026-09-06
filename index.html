@@ -8,7 +8,7 @@
   <title>조팸스 내비</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.0.0" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.0.3" />
 </head>
 <body>
   <main id="app">
@@ -96,6 +96,17 @@
         <button id="mapPlacePromptCancel" type="button">취소</button>
         <button id="mapPlacePromptGo" type="button" class="primary">확인 · 길안내</button>
       </div>
+    </div>
+
+
+    <div id="voucherBuildingModal" class="voucher-building-modal hidden" role="dialog" aria-modal="true" aria-labelledby="voucherBuildingTitle">
+      <section class="voucher-building-sheet">
+        <header>
+          <div><small>같은 건물 가맹점</small><b id="voucherBuildingTitle">가맹점 목록</b></div>
+          <button id="voucherBuildingClose" type="button" aria-label="닫기">×</button>
+        </header>
+        <div id="voucherBuildingList" class="voucher-building-list"></div>
+      </section>
     </div>
 
     <div id="localVoucherBadge" class="local-voucher-badge hidden" role="status" aria-live="polite">
@@ -586,6 +597,6 @@
   </main>
 
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.0.2"></script>
+  <script type="module" src="/app.js?v=7.6.0.3"></script>
 </body>
 </html>

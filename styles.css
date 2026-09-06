@@ -1079,3 +1079,26 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   pointer-events:auto!important;
   min-height:44px!important;
 }
+
+
+/* === 7.6.0.3 voucher cluster / shop === */
+.voucher-cluster-marker{border:2px solid rgba(255,255,255,.96)!important;border-radius:999px!important;background:#245aa8!important;color:#fff!important;display:grid!important;place-items:center!important;box-shadow:0 4px 14px rgba(20,44,86,.28)!important;padding:0!important;pointer-events:auto!important}
+.voucher-cluster-marker strong{font-weight:900!important;line-height:1!important}
+.voucher-cluster-marker.large{width:54px!important;height:54px!important}.voucher-cluster-marker.large strong{font-size:18px!important}
+.voucher-cluster-marker.medium{width:44px!important;height:44px!important}.voucher-cluster-marker.medium strong{font-size:15px!important}
+.voucher-cluster-marker.small{width:34px!important;height:34px!important}.voucher-cluster-marker.small strong{font-size:12px!important}
+
+.voucher-shop-marker{position:relative!important;width:36px!important;height:36px!important;border:1px solid rgba(36,79,134,.25)!important;border-radius:11px!important;background:rgba(255,255,255,.98)!important;color:#245aa8!important;display:grid!important;place-items:center!important;padding:0!important;box-shadow:0 4px 13px rgba(18,34,62,.22)!important;pointer-events:auto!important}
+.voucher-shop-marker svg{width:25px!important;height:25px!important;display:block!important}
+.voucher-shop-marker>span{position:absolute!important;right:-6px!important;top:-7px!important;min-width:18px!important;height:18px!important;padding:0 4px!important;border:2px solid #fff!important;border-radius:999px!important;background:#245aa8!important;color:#fff!important;font-size:9px!important;font-weight:900!important;line-height:14px!important}
+
+.voucher-building-modal{position:fixed!important;z-index:500!important;inset:0!important;background:rgba(11,20,35,.35)!important;display:flex!important;align-items:flex-end!important;justify-content:center!important;padding:12px 12px calc(88px + var(--safeB))!important;pointer-events:auto!important}
+.voucher-building-modal.hidden{display:none!important}
+.voucher-building-sheet{width:min(100%,440px)!important;max-height:min(62vh,520px)!important;border-radius:22px!important;background:#fff!important;box-shadow:0 18px 46px rgba(12,25,48,.28)!important;overflow:hidden!important}
+.voucher-building-sheet>header{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:12px!important;padding:14px 14px 10px!important;border-bottom:1px solid #edf1f5!important}
+.voucher-building-sheet>header>div{display:grid!important;gap:2px!important}.voucher-building-sheet>header small{font-size:9px!important;color:#7a8798!important}.voucher-building-sheet>header b{font-size:16px!important;color:#202b3b!important}
+#voucherBuildingClose{width:36px!important;height:36px!important;border:0!important;border-radius:11px!important;background:#f1f4f8!important;color:#56657b!important;font-size:22px!important}
+.voucher-building-list{display:grid!important;overflow:auto!important;max-height:calc(min(62vh,520px) - 62px)!important}
+.voucher-building-list>button{width:100%!important;display:grid!important;grid-template-columns:38px minmax(0,1fr) 18px!important;align-items:center!important;gap:10px!important;padding:12px 14px!important;border:0!important;border-bottom:1px solid #eef1f4!important;background:#fff!important;text-align:left!important}
+.voucher-list-shop{width:36px!important;height:36px!important;border-radius:11px!important;background:#edf4ff!important;color:#245aa8!important;display:grid!important;place-items:center!important}.voucher-list-shop svg{width:24px!important;height:24px!important}
+.voucher-list-copy{display:grid!important;gap:3px!important;min-width:0!important}.voucher-list-copy b{font-size:13px!important;color:#1f2937!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}.voucher-list-copy small{font-size:9px!important;color:#687487!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}.voucher-list-copy em{font-style:normal!important;font-size:9px!important;color:#245aa8!important;font-weight:800!important}.voucher-list-arrow{font-size:20px!important;color:#94a0af!important}
