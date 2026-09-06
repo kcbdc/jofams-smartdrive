@@ -16,7 +16,7 @@ export async function onRequestGet({request,env}){
       opinetLow(areaCode,prodcd,cnt,env.OPINET_CERT_KEY),
       area.sidoCode?opinetAverage(area.sidoCode,area.sigunCode,prodcd,env.OPINET_CERT_KEY):Promise.resolve(null)
     ]);
-    const detailed=await enrichStationAddresses(stations.slice(0,8),env.OPINET_CERT_KEY);
+    const detailed=await enrichStationLocations(stations.slice(0,8),env.OPINET_CERT_KEY,env.KAKAO_REST_API_KEY);
     return json({
       provider:'opinet',
       product:prodcd,
@@ -95,14 +95,40 @@ async function opinetAverage(sido,sigun,prodcd,key){
     return Number(found?.PRICE)||null;
   }catch{return null}
 }
-async function enrichStationAddresses(items,key){
-  return Promise.all(items.map(async x=>{
-    if(!x.id||x.address)return x;
-    try{
-      const d=await opinet('detailById.do',{id:x.id},key);
-      const row=rows(d)[0]||{};
-      return {...x,name:row.OS_NM||x.name,brand:row.POLL_DIV_CD||x.brand,address:row.NEW_ADR||row.VAN_ADR||x.address};
-    }catch{return x}
+async function enrichStationLocations(items,key,kakaoKey){
+  const detailed=await Promise.all(items.map(async x=>{
+    let item=x;
+    if(x.id&&!x.address){
+      try{
+        const d=await opinet('detailById.do',{id:x.id},key);
+        const row=rows(d)[0]||{};
+        item={...x,name:row.OS_NM||x.name,brand:row.POLL_DIV_CD||x.brand,address:row.NEW_ADR||row.VAN_ADR||x.address};
+      }catch{}
+    }
+    if(!kakaoKey)return item;
+
+    const byAddress=item.address?await kakaoPlaceCoordinate(item.address,kakaoKey,'address').catch(()=>null):null;
+    if(byAddress)return {...item,...byAddress};
+
+    const byKeyword=await kakaoPlaceCoordinate(item.name,kakaoKey,'keyword').catch(()=>null);
+    return byKeyword?{...item,...byKeyword}:item;
   }));
+  return detailed;
+}
+
+async function kakaoPlaceCoordinate(query,key,mode='address'){
+  const q=String(query||'').trim();
+  if(!q)return null;
+  const endpoint=mode==='address'
+    ?'https://dapi.kakao.com/v2/local/search/address.json'
+    :'https://dapi.kakao.com/v2/local/search/keyword.json';
+  const u=new URL(endpoint);
+  u.searchParams.set(mode==='address'?'query':'query',q);
+  u.searchParams.set('size','1');
+  const d=await fetchJson(u,{Authorization:`KakaoAK ${key}`});
+  const doc=d?.documents?.[0];
+  const lng=Number(doc?.x),lat=Number(doc?.y);
+  if(!Number.isFinite(lng)||!Number.isFinite(lat))return null;
+  return {lng,lat};
 }
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:JSON_HEADERS})}
