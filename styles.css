@@ -1384,3 +1384,76 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   overflow:visible!important;
   z-index:10!important;
 }
+
+
+/* === 7.6.1.3 터치/클릭 CSS 충돌 정리 === */
+/* 화면 컨테이너의 pointer-events:none 규칙과 후속 스타일 간 충돌 방지 */
+#homeView .home-header,
+#homeView .home-sheet,
+#routeView .route-header,
+#routeView .route-sheet{
+  pointer-events:auto!important;
+  isolation:isolate!important;
+}
+
+#homeView .home-sheet button,
+#homeView .search-result,
+#homeView .recent-item,
+#homeView .home-facility-item,
+#homeView .fuel-station-row,
+#homeView #homeShortcut,
+#homeView #workShortcut,
+#routeView #startBtn,
+#routeView .route-card,
+#routeView .route-mode-switch button{
+  position:relative!important;
+  pointer-events:auto!important;
+  touch-action:manipulation!important;
+  -webkit-tap-highlight-color:rgba(40,117,245,.12);
+  z-index:4!important;
+}
+
+#routeView .route-sheet{
+  z-index:40!important;
+  overflow:auto!important;
+}
+#routeView #startBtn{
+  position:sticky!important;
+  bottom:0!important;
+  z-index:60!important;
+  min-height:50px!important;
+  opacity:1!important;
+}
+#routeView #startBtn:disabled{
+  pointer-events:none!important;
+  opacity:.72!important;
+}
+#routeView #autoStartHint{
+  pointer-events:none!important;
+  position:relative!important;
+  z-index:1!important;
+}
+
+/* 실시간 유가 행 자체를 확실한 버튼으로 사용 */
+.fuel-station-row{
+  width:100%!important;
+  border:0!important;
+  border-bottom:1px solid #eef1f5!important;
+  background:transparent!important;
+  text-align:left!important;
+  cursor:pointer!important;
+  pointer-events:auto!important;
+  touch-action:manipulation!important;
+  appearance:none!important;
+  -webkit-appearance:none!important;
+}
+.fuel-station-row:active{
+  background:rgba(40,117,245,.07)!important;
+}
+
+/* 아이콘/문자 자식이 클릭 이벤트를 가로채지 않게 버튼이 일관되게 받도록 */
+#homeView button > *,
+#routeView #startBtn > *,
+.fuel-station-row > *{
+  pointer-events:none;
+}
