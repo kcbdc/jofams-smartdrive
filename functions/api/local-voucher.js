@@ -14,7 +14,7 @@ export async function onRequestGet({request,env}){
     east:Number(url.searchParams.get('east')),north:Number(url.searchParams.get('north'))
   };
 
-  const franchise=await fetchFranchises(serviceKey,region.code,bounds);
+  const franchise=await fetchFranchises(serviceKey,region,bounds);
   const policy=await fetchDiscountPolicy(serviceKey,region.code,env).catch(()=>null);
   return json({
     provider:'한국조폐공사_통합_가맹점기본정보',
@@ -34,30 +34,66 @@ async function resolveRegion(lng,lat,kakaoKey){
   if(!r.ok)return null;
   const d=await r.json(),doc=(d.documents||[]).find(x=>x.region_type==='B')||d.documents?.[0];
   const legal=String(doc?.code||'').replace(/\D/g,'');
-  return legal.length>=5?{code:legal.slice(0,5),name:[doc.region_1depth_name,doc.region_2depth_name].filter(Boolean).join(' ')}:null;
+  return legal.length>=8?{
+    code:legal.slice(0,5),
+    emdCode:legal.slice(0,8),
+    legalCode:legal,
+    name:[doc.region_1depth_name,doc.region_2depth_name,doc.region_3depth_name].filter(Boolean).join(' ')
+  }:legal.length>=5?{code:legal.slice(0,5),emdCode:'',legalCode:legal,name:[doc.region_1depth_name,doc.region_2depth_name].filter(Boolean).join(' ')}:null;
 }
 
-async function fetchFranchises(serviceKey,regionCode,bounds){
-  const candidateParams=['usageRegionCode','useRegionCode','usageRegionCd','useRegionCd'];
-  let rows=[];
-  for(const field of candidateParams){
-    const u=new URL(FRANCHISE_URL);
-    u.searchParams.set('serviceKey',serviceKey);
-    u.searchParams.set('pageNo','1');u.searchParams.set('numOfRows','1000');u.searchParams.set('type','json');
-    u.searchParams.set(field,regionCode);
-    const r=await fetch(u);
-    if(!r.ok)continue;
-    const d=await parseResponse(r);
-    const found=extractRows(d);
-    if(found.length){rows=found;break}
-  }
-  return rows.map(normalizeFranchise).filter(x=>{
-    if(!Number.isFinite(x.lat)||!Number.isFinite(x.lng))return false;
-    if([bounds.west,bounds.south,bounds.east,bounds.north].every(Number.isFinite)){
-      return x.lng>=bounds.west&&x.lng<=bounds.east&&x.lat>=bounds.south&&x.lat<=bounds.north;
+async function fetchFranchises(serviceKey,region,bounds){
+  const regionCode=region?.code||'',emdCode=region?.emdCode||'';
+  const regionParamNames=['usageRegionCode','useRegionCode','usageRegionCd','useRegionCd'];
+  const emdParamNames=['eupMyeonDongCode','emdCode','eupmyeondongCode','읍면동코드'];
+  const pageSize=1000,maxPages=20,maxVisible=500;
+  const hasBounds=[bounds.west,bounds.south,bounds.east,bounds.north].every(Number.isFinite);
+
+  async function collect(extraName,extraValue){
+    const visible=[],seen=new Set();
+    for(let page=1;page<=maxPages&&visible.length<maxVisible;page++){
+      const u=new URL(FRANCHISE_URL);
+      u.searchParams.set('serviceKey',serviceKey);
+      u.searchParams.set('pageNo',String(page));
+      u.searchParams.set('numOfRows',String(pageSize));
+      u.searchParams.set('type','json');
+      if(extraName&&extraValue)u.searchParams.set(extraName,extraValue);
+
+      const r=await fetch(u);
+      if(!r.ok)break;
+      const d=await parseResponse(r),found=extractRows(d);
+      if(!found.length)break;
+
+      for(const row of found){
+        const x=normalizeFranchise(row);
+        if(!Number.isFinite(x.lat)||!Number.isFinite(x.lng))continue;
+        if(hasBounds&&(x.lng<bounds.west||x.lng>bounds.east||x.lat<bounds.south||x.lat>bounds.north))continue;
+        const key=x.id||`${x.name}:${x.lat.toFixed(6)}:${x.lng.toFixed(6)}`;
+        if(seen.has(key))continue;seen.add(key);visible.push(x);
+        if(visible.length>=maxVisible)break;
+      }
+
+      const total=extractTotalCount(d);
+      if(found.length<pageSize||(Number.isFinite(total)&&page*pageSize>=total))break;
     }
-    return true;
-  }).slice(0,250);
+    return visible;
+  }
+
+  // 현재 읍면동(8자리) 조회가 지원되면 가장 먼저 사용해 화면 주변 가맹점을 빠르게 찾는다.
+  if(emdCode){
+    for(const field of emdParamNames){
+      const rows=await collect(field,emdCode);
+      if(rows.length)return rows;
+    }
+  }
+
+  // 읍면동 파라미터가 제공 API 버전에 없으면 시군구(5자리)를 페이지 순회한다.
+  for(const field of regionParamNames){
+    const rows=await collect(field,regionCode);
+    if(rows.length)return rows;
+  }
+
+  return [];
 }
 
 async function fetchDiscountPolicy(serviceKey,regionCode,env){
@@ -88,6 +124,13 @@ function extractRows(d){
   const candidates=[d?.items,d?.response?.body?.items?.item,d?.response?.body?.items,d?.body?.items?.item,d?.body?.items,d?.data?.items,d?.data];
   for(const x of candidates){if(Array.isArray(x))return x;if(x&&typeof x==='object')return [x]}
   return [];
+}
+function extractTotalCount(d){
+  const vals=[
+    d?.matchCount,d?.totalCount,d?.response?.body?.totalCount,d?.body?.totalCount,d?.data?.matchCount,d?.data?.totalCount
+  ];
+  for(const v of vals){const n=Number(v);if(Number.isFinite(n))return n}
+  return NaN;
 }
 function pick(o,keys){for(const k of keys){const v=o?.[k];if(v!==undefined&&v!==null&&String(v).trim()!=='')return v}return ''}
 function yn(v){const s=String(v??'').trim().toUpperCase();return ['Y','YES','1','TRUE','가능','사용'].includes(s)}
