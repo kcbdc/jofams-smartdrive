@@ -595,7 +595,7 @@ function voucherUseFlags(item){
 function renderLocalVoucherMarkers(data){
   clearLocalVoucherMarkers();
   if(!state.map||!maplibregl?.Marker||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
-  const items=(data?.items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,800);
+  const items=(data?.items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,1000);
   for(const item of items){
     const el=document.createElement('button');el.type='button';el.className='local-voucher-marker';el.title=item.name||'지역사랑상품권 가맹점';
     const uses=voucherUseFlags(item);
@@ -628,7 +628,11 @@ async function loadLocalVoucherMap({force=false}={}){
       console.warn('local voucher API failed',r.status,err?.error||'');
       clearLocalVoucherMarkers();
       if($('localVoucherRegion'))$('localVoucherRegion').textContent='가맹점 조회 실패';
-      if($('localVoucherDiscount'))$('localVoucherDiscount').textContent=r.status===503?'공공데이터 API 키 확인':'API 연결 확인';
+      if($('localVoucherDiscount')){
+        const detail=String(err?.detail||'');
+        $('localVoucherDiscount').textContent=r.status===503?'공공데이터 API 키 확인':
+          /SERVICE_KEY|인증키|등록되지 않은/i.test(detail)?'인증키 형식 확인':'API 연결 확인';
+      }
       $('localVoucherBadge')?.classList.remove('hidden');
       return;
     }
