@@ -1557,8 +1557,52 @@ async function chooseDestination(item,{autoGuide=true}={}){
   // 카운트다운을 건너뛰지 않는다. 사용자는 10초 안에 "안내 시작"을 눌러 즉시 시작하거나 취소할 수 있다.
   void autoGuide;
 }
+function resumeNavigationWithSelectedRoute(){
+  if(!state.route||!state.destination)return false;
+  cancelAutoStart();
+  // 기존 주행 세션은 유지하되 선택한 새 경로 기준으로 위치/안내 상태만 재초기화한다.
+  state.routeCumulative=buildCumulative(state.route);
+  state.currentRouteIndex=0;
+  state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};
+  state.routeLockedDistance=0;
+  state.routeLockedAt=Date.now();
+  state.offRouteHits=0;
+  state.offRouteHeadingHits=0;
+  state.offRouteSince=0;
+  state.arrivalCandidateSince=0;
+  state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false};
+  setView('drive');
+  $('driveView')?.classList.toggle('walking-mode',state.routeMode==='walk');
+  initializeDriveSummary();
+  drawRoute(state.route,{fit:false});
+  if(state.routeMode==='car'){
+    loadSafetyEvents(state.route).catch(()=>{});
+    startLiveRouteRefresh();
+  }else{
+    state.safetyEvents=[];
+    clearSafetyMarkers();
+    hideSafetyAlert();
+    stopLiveRouteRefresh();
+  }
+  startWatch();
+  ensureUserMarker();
+  updateCarMarkerImage();
+  updateDriving(true);
+  toast('선택한 경로로 안내를 계속합니다.',1600);
+  return true;
+}
+
 async function startRouteGuidanceNow(){
-  if(state.tripStartedAt)return;
+  // 주행 중 '다른 경로'를 선택해 경로 화면으로 돌아온 경우에도 버튼이 반드시 동작해야 한다.
+  if(state.tripStartedAt){
+    if(state.route&&state.destination){
+      resumeNavigationWithSelectedRoute();
+    }else{
+      toast('선택한 경로를 확인할 수 없습니다.',1800);
+    }
+    return;
+  }
+
   if(state.route&&state.destination){
     cancelAutoStart();
     startNavigation();
@@ -1568,6 +1612,7 @@ async function startRouteGuidanceNow(){
     toast('목적지를 먼저 선택해 주세요.',2000);
     return;
   }
+
   const btn=$('startBtn');
   if(btn){btn.disabled=true;btn.textContent='경로 계산 중...'}
   try{
@@ -1768,14 +1813,14 @@ function renderRouteCards(){
     const b=document.createElement('button');b.className=`route-card ${i===state.selectedRoute?'selected':''}`;
     if(state.routeMode==='walk')b.innerHTML=`<div class="route-meta"><span class="route-tag walk">도보 추천</span><strong>${mins(rr.duration)}</strong><small>${km(rr.distance)} · 보행 경로</small><em>예상 도착 ${eta(rr.duration)}</em></div><span class="route-walk-art">${icon('walk')}</span>`;
     else{const ch=characterDefs[rr._character],fare=rr.fare?.toll||0;b.innerHTML=`<div class="route-meta"><span class="route-tag ${rr._class}">${rr._label}</span><strong>${mins(rr.duration)}</strong><small>${km(rr.distance)} · ${fare?`${fare.toLocaleString()}원`:'통행료 0원'}</small><em>예상 도착 ${eta(rr.duration)}</em></div><img src="${ch.car}" alt="${ch.name} 자동차">`}
-    b.onclick=()=>{selectRoute(i,true);renderRouteCards();scheduleAutoStart()};box.appendChild(b)
+    b.onclick=()=>{selectRoute(i,true);renderRouteCards();const start=$('startBtn');if(start){start.disabled=false;start.textContent=state.routeMode==='walk'?'도보 안내 시작':'안내 시작'}scheduleAutoStart()};box.appendChild(b)
   })
 }
 function selectRoute(index,fit=true){
   state.selectedRoute=index;state.route=state.routeOptions[index];syncCharacterUI();drawRoute(state.route,{fit});state.routeCumulative=buildCumulative(state.route);state.currentRouteIndex=0;updateRoutePlanEta();
   if(state.routeMode==='car')loadSafetyEvents(state.route);else{state.safetyEvents=[];clearSafetyMarkers();hideSafetyAlert()}
 }
-function scheduleAutoStart(){cancelAutoStart();state.autoStartSeconds=10;updateAutoHint();state.autoStartTimer=setInterval(()=>{state.autoStartSeconds--;if(state.autoStartSeconds<=0){cancelAutoStart();startNavigation()}else updateAutoHint()},1000)}
+function scheduleAutoStart(){cancelAutoStart();state.autoStartSeconds=10;updateAutoHint();state.autoStartTimer=setInterval(()=>{state.autoStartSeconds--;if(state.autoStartSeconds<=0){cancelAutoStart();if(state.tripStartedAt)resumeNavigationWithSelectedRoute();else startNavigation()}else updateAutoHint()},1000)}
 function cancelAutoStart(){if(state.autoStartTimer){clearInterval(state.autoStartTimer);state.autoStartTimer=null}}
 function updateAutoHint(){$('autoStartHint').textContent=state.autoStartSeconds>0?`${state.autoStartSeconds}초 후 ${state.routeMode==='walk'?'도보 ':''}안내를 시작합니다.`:''}
 
@@ -3453,6 +3498,18 @@ function bindCriticalUI(){
     const btn=e.target?.closest?.('#driveMenuBtn');if(!btn)return;
     if(!$('driveMenu')?.classList.contains('hidden'))return;
     try{openDriveMenu()}catch(err){console.warn('drive menu open failed',err)}
+  },true);
+
+  // 안내 시작 버튼은 다른 bindUI 섹션의 오류와 무관하게 캡처 단계에서 항상 처리한다.
+  document.addEventListener('click',e=>{
+    const btn=e.target?.closest?.('#startBtn');if(!btn)return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if(btn.disabled)return;
+    Promise.resolve(startRouteGuidanceNow()).catch(err=>{
+      console.warn('critical start button failed',err);
+      toast('안내 시작을 다시 눌러 주세요.',1800);
+    });
   },true);
 }
 

@@ -1241,3 +1241,43 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 
 /* 7.6.3.0 할인율 UI 완전 숨김 */
 #localVoucherBadge{display:none!important}
+
+
+/* === 7.6.3.3 홈/메인메뉴 Android WebView 세로 스크롤 복구 === */
+#homeSheet,
+.home-sheet{
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+  -webkit-overflow-scrolling:touch!important;
+  overscroll-behavior-y:contain!important;
+  touch-action:pan-y!important;
+  min-height:0!important;
+  max-height:calc(100dvh - var(--safeT) - 76px)!important;
+}
+#homeSheet:not(.collapsed){
+  pointer-events:auto!important;
+}
+#homeSheet:not(.collapsed) > *{
+  pointer-events:auto!important;
+}
+.hamburger-sheet{
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+  -webkit-overflow-scrolling:touch!important;
+  overscroll-behavior-y:contain!important;
+  touch-action:pan-y!important;
+  min-height:0!important;
+  max-height:calc(100dvh - var(--safeT) - var(--safeB) - 20px)!important;
+}
+.hamburger-menu-list{
+  overflow:visible!important;
+}
+#startBtn{
+  position:relative!important;
+  z-index:40!important;
+  pointer-events:auto!important;
+  touch-action:manipulation!important;
+}
+#startBtn:disabled{
+  pointer-events:none!important;
+}
