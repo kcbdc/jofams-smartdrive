@@ -580,17 +580,18 @@ function cctvMarkerSvg(){
 // 추상적인 "제동등 켜진 차량" 아이콘이었으나, 실제 표지판과 형태가 달라 사용자가 표지판을
 // 보고도 앱 안에서 같은 의미인지 알아보기 어려웠다. 지도 위 마커와 길안내 좌측 하단 안전
 // 배지(safety-alert, kind=stat) 양쪽에서 이 함수를 공통으로 사용한다.
+// 상습정체 구간(chronic_congestion) 아이콘: 빨간 원 안에 흰색 테두리(outline)만으로 그린
+// 단순 자동차 픽토그램. 이전에는 실제 도로표지판(적/황 삼각형 + 차량 3대 실루엣)을 그대로
+// 옮겼으나, 요청에 따라 다른 안전 마커들과 통일감 있는 "원형 배지 + 흰색 라인 아이콘"
+// 스타일로 다시 단순화했다. 지도 위 마커와 길안내 좌측 하단 안전 배지(safety-alert,
+// kind=stat) 양쪽에서 이 함수를 공통으로 사용한다.
 function congestionMarkerSvg(){
   return `<svg viewBox="0 0 100 100" aria-hidden="true">
-    <path d="M50 4 L95.5 90 L4.5 90 Z" fill="#e2001a"/>
-    <path d="M50 12.6 L88.7 84.3 L11.3 84.3 Z" fill="#fff"/>
-    <path d="M50 19 L84 82 L16 82 Z" fill="#ffd400"/>
-    <rect x="20" y="50" width="20" height="16" rx="7" fill="#111"/>
-    <rect x="60" y="50" width="20" height="16" rx="7" fill="#111"/>
-    <rect x="32" y="56" width="36" height="24" rx="10" fill="#111"/>
-    <rect x="41" y="44" width="18" height="14" rx="7" fill="#111"/>
-    <circle cx="38" cy="72" r="3.2" fill="#ffd400"/>
-    <circle cx="62" cy="72" r="3.2" fill="#ffd400"/>
+    <circle cx="50" cy="50" r="47" fill="#e2001a"/>
+    <rect x="18" y="52" width="64" height="20" rx="9" fill="none" stroke="#fff" stroke-width="5"/>
+    <rect x="33" y="36" width="34" height="20" rx="8" fill="none" stroke="#fff" stroke-width="5"/>
+    <circle cx="33" cy="72" r="8" fill="none" stroke="#fff" stroke-width="5"/>
+    <circle cx="67" cy="72" r="8" fill="none" stroke="#fff" stroke-width="5"/>
   </svg>`;
 }
 function homeCameraLabel(row){
