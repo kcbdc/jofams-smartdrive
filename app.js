@@ -1082,35 +1082,11 @@ function fuelStationRows(data){
   const items=(data?.stations||[]).filter(x=>Number(x.price)>0);
   if(!items.length)return '<div class="fuel-empty">표시할 주유소 가격정보가 없습니다.</div>';
   const min=Math.min(...items.map(x=>Number(x.price)));
-  return items.map((x,i)=>`<button type="button" class="fuel-station-row" data-fuel-station-index="${i}">
+  return items.map((x,i)=>`<div class="fuel-station-row">
     <span class="fuel-rank ${i===0?'best':''}">${i===0?'최저':i+1}</span>
-    <span class="fuel-station-copy"><b>${escapeHtml(x.name||'주유소')}</b><small>${escapeHtml(fuelBrandName(x.brand))}${x.address?` · ${escapeHtml(x.address)}`:''}</small></span>
-    <span class="fuel-station-price"><b>${fuelWon(x.price)}</b><small>${Number(x.price)===min?'최저가':'L당'}</small></span>
-  </button>`).join('');
-}
-
-function bindFuelStationGuide(container,items){
-  if(!container)return;
-  container.querySelectorAll('[data-fuel-station-index]').forEach(btn=>{
-    btn.onclick=e=>{
-      e.preventDefault();
-      e.stopPropagation();
-      const x=items[Number(btn.dataset.fuelStationIndex)];
-      if(!x)return;
-      if(!pointValid(x)){
-        toast('주유소 위치를 확인하고 있습니다.',1800);
-        return;
-      }
-      closeFuelModal();
-      chooseDestination({
-        id:x.id||'',
-        name:x.name||'주유소',
-        address:x.address||'',
-        lng:Number(x.lng),
-        lat:Number(x.lat)
-      },{autoGuide:true});
-    };
-  });
+    <div class="fuel-station-copy"><b>${escapeHtml(x.name||'주유소')}</b><small>${escapeHtml(fuelBrandName(x.brand))}${x.address?` · ${escapeHtml(x.address)}`:''}</small></div>
+    <div class="fuel-station-price"><b>${fuelWon(x.price)}</b><small>${Number(x.price)===min?'최저가':'L당'}</small></div>
+  </div>`).join('');
 }
 function renderFuelData(data){
   const area=data?.areaName||'현재 지역';
@@ -1121,14 +1097,8 @@ function renderFuelData(data){
   if($('fuelModalArea'))$('fuelModalArea').textContent=`${area} · ${FUEL_PRODUCT_NAMES[state.fuelProduct]||''}`;
   if($('fuelPriceSummary'))$('fuelPriceSummary').innerHTML=`<span>${escapeHtml(area)} ${escapeHtml(FUEL_PRODUCT_NAMES[state.fuelProduct]||'')}</span><b>${min?`최저 ${fuelWon(min)}`:'가격정보 없음'}${avg?` <small>평균 ${fuelWon(avg)}</small>`:''}</b>`;
   const rows=fuelStationRows(data);
-  if($('fuelStationList')){
-    $('fuelStationList').innerHTML=rows;
-    bindFuelStationGuide($('fuelStationList'),items);
-  }
-  if($('fuelModalList')){
-    $('fuelModalList').innerHTML=rows;
-    bindFuelStationGuide($('fuelModalList'),items);
-  }
+  if($('fuelStationList'))$('fuelStationList').innerHTML=rows;
+  if($('fuelModalList'))$('fuelModalList').innerHTML=rows;
   const chip=$('driveFuelChip');
   if(chip&&state.tripStartedAt&&items.length){
     $('driveFuelPrice').textContent=fuelWon(items[0].price);
@@ -1262,160 +1232,37 @@ async function searchPlaces(q,target='searchResults'){
 async function chooseDestination(item,{autoGuide=true}={}){
   const picked=normalizedPlace(item);
   if(!pointValid(picked)){toast('선택한 장소의 위치를 확인할 수 없습니다.',2600);return}
-
-  state.waypoints=[];
-  renderRouteWaypoints();
-  state.destination=picked;
-  state.routeMode='car';
-  state.carRouteOptions=[];
-  state.walkingRoute=null;
-  state.routeModeDurations={car:null,walk:null};
-  renderRouteModeSwitch();
-
-  saveRecentDestination(state.destination).catch(e=>console.warn('recent destination save failed',e));
+  state.waypoints=[];renderRouteWaypoints();state.destination=picked;
+  state.routeMode='car';state.carRouteOptions=[];state.walkingRoute=null;state.routeModeDurations={car:null,walk:null};renderRouteModeSwitch();
+  if(pointValid(state.destination))saveRecentDestination(state.destination).catch(e=>console.warn('recent destination save failed',e));
   setDestinationMarker();
-  $('searchResults')?.classList.add('hidden');
-  if($('routeDestinationName'))$('routeDestinationName').textContent=state.destination.name;
-  if($('routeAddressDest'))$('routeAddressDest').textContent=state.destination.name;
+  $('searchResults').classList.add('hidden');
+  $('routeDestinationName').textContent=state.destination.name;
+  $('routeAddressDest').textContent=state.destination.name;
   updateFavoriteButtonState();
-
-  // 홈에서 장소를 눌렀을 때는 경로 선택 화면에서 오래 대기하지 않고
-  // 추천 자동차 경로 1개만 우선 계산하여 즉시 길안내 화면으로 진입한다.
-  if(autoGuide){
-    return startDirectGuidance(state.destination);
-  }
-
   setView('route');
   refreshMapLayout();
-  if($('routeCards'))$('routeCards').innerHTML='<div class="auto-start-hint">출발 위치 확인 중...</div>';
+  $('routeCards').innerHTML='<div class="auto-start-hint">출발 위치 확인 중...</div>';
+  // 화면 전환을 먼저 완료해 탭 반응이 즉시 보이게 한 뒤, GPS/경로 계산은 비동기로 처리한다.
   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-
   if(!state.user)await locate(false);
-  if(!state.user){
-    if($('routeCards'))$('routeCards').innerHTML='<div class="auto-start-hint">위치 권한을 허용하면 경로를 계산합니다.</div>';
-    showPermissionGate();
-    return;
-  }
-  if(!state.origin||state.originMode==='current'){
-    state.origin={...state.user,name:'내 위치',address:'현재 GPS 위치'};
-    state.originMode='current';
-  }
+  if(!state.user){$('routeCards').innerHTML='<div class="auto-start-hint">위치 권한을 허용하면 경로를 계산합니다.</div>';showPermissionGate();return}
+  if(!state.origin||state.originMode==='current'){state.origin={...state.user,name:'내 위치',address:'현재 GPS 위치'};state.originMode='current'}
   updateOriginUI();
-  await loadRouteOptions();
-}
-
-let directGuideBusy=false;
-async function startDirectGuidance(destination=state.destination){
-  if(directGuideBusy)return;
-  directGuideBusy=true;
   try{
-    const dest=normalizedPlace(destination);
-    if(!pointValid(dest)){toast('목적지 위치를 확인할 수 없습니다.',2400);return}
-    state.destination=dest;
-    state.routeMode='car';
-
-    // 즉시 화면 피드백을 주어 "무반응"처럼 보이지 않게 한다.
-    setView('route');
-    refreshMapLayout();
-    if($('routeCards'))$('routeCards').innerHTML='<div class="auto-start-hint">바로 길안내를 준비하고 있습니다...</div>';
-    if($('startBtn')){
-      $('startBtn').disabled=true;
-      $('startBtn').textContent='경로 계산 중...';
-    }
-
-    if(!pointValid(state.user))await locate(false);
-    if(!pointValid(state.user)){
-      if($('startBtn')){
-        $('startBtn').disabled=false;
-        $('startBtn').textContent='안내 시작';
-      }
-      showPermissionGate();
-      toast('현재 위치를 확인한 후 길안내를 시작합니다.',2600);
-      return;
-    }
-
-    state.origin={...state.user,name:'내 위치',address:'현재 GPS 위치'};
-    state.originMode='current';
-    updateOriginUI();
-
-    // 도보 경로까지 동시에 기다리던 기존 구조를 피하고 추천 자동차 경로만 우선 조회.
-    const route=await routeRequest('RECOMMEND',null,null,'car');
-    if(!route?.geometry?.length)throw new Error('추천 경로가 없습니다.');
-
-    state.carRouteOptions=[{...route,_label:'추천',_character:state.character,_class:''}];
-    state.routeOptions=state.carRouteOptions;
-    state.selectedRoute=0;
-    state.routeModeDurations.car=route.duration;
-    selectRoute(0,false);
-    renderRouteModeSwitch();
-
-    if($('startBtn')){
-      $('startBtn').disabled=false;
-      $('startBtn').textContent='안내 시작';
-    }
-    cancelAutoStart();
-    startNavigation();
+    await loadRouteOptions();
   }catch(e){
-    console.warn('direct guidance failed',e);
-    if($('startBtn')){
-      $('startBtn').disabled=false;
-      $('startBtn').textContent='안내 시작';
-    }
-    if($('routeCards'))$('routeCards').innerHTML='<div class="auto-start-hint">경로 계산에 실패했습니다. 안내 시작을 다시 눌러 주세요.</div>';
-    toast(e?.message||'길안내를 시작하지 못했습니다.',2800);
-  }finally{
-    directGuideBusy=false;
-  }
-}
-
-async function startRouteGuidanceNow(){
-  if(state.tripStartedAt)return;
-  if(state.route&&state.destination){
-    cancelAutoStart();
-    startNavigation();
+    console.warn('direct guidance route load failed',e);
+    $('routeCards').innerHTML='<div class="auto-start-hint">경로 계산에 실패했습니다. 다시 선택해 주세요.</div>';
+    toast('경로 계산에 실패했습니다. 다시 선택해 주세요.',2600);
     return;
   }
-  if(!state.destination){
-    toast('목적지를 먼저 선택해 주세요.',2200);
-    return;
-  }
-
-  // 길찾기 화면 하단 안내 버튼은 경로가 아직 없어도 직접 계산 후 바로 시작.
-  const mode=state.routeMode==='walk'?'walk':'car';
-  const btn=$('startBtn');
-  if(btn){btn.disabled=true;btn.textContent=mode==='walk'?'도보 경로 계산 중...':'경로 계산 중...'}
-  try{
-    if(!pointValid(state.user))await locate(false);
-    if(!pointValid(state.user)){showPermissionGate();throw new Error('현재 위치를 확인할 수 없습니다.')}
-    if(!state.origin||state.originMode==='current'){
-      state.origin={...state.user,name:'내 위치',address:'현재 GPS 위치'};
-      state.originMode='current';
-    }
-    updateOriginUI();
-
-    const route=await routeRequest('RECOMMEND',null,null,mode);
-    if(!route?.geometry?.length)throw new Error(mode==='walk'?'도보 경로가 없습니다.':'자동차 경로가 없습니다.');
-
-    if(mode==='walk'){
-      state.walkingRoute={...route,_label:'도보 추천',_character:state.character,_class:'walk'};
-      state.routeOptions=[state.walkingRoute];
-      state.routeModeDurations.walk=route.duration;
+  if(autoGuide){
+    if(state.route&&state.destination){
+      cancelAutoStart();
+      startNavigation();
     }else{
-      state.carRouteOptions=[{...route,_label:'추천',_character:state.character,_class:''}];
-      state.routeOptions=state.carRouteOptions;
-      state.routeModeDurations.car=route.duration;
-    }
-    state.selectedRoute=0;
-    selectRoute(0,false);
-    cancelAutoStart();
-    startNavigation();
-  }catch(e){
-    console.warn('start button guidance failed',e);
-    toast(e?.message||'길안내를 시작하지 못했습니다.',2600);
-  }finally{
-    if(btn){
-      btn.disabled=false;
-      btn.textContent=state.routeMode==='walk'?'도보 안내 시작':'안내 시작';
+      toast('경로 계산에 실패했습니다. 다시 눌러 주세요.',2600);
     }
   }
 }
@@ -3045,7 +2892,7 @@ window.addEventListener('load',()=>{
   try{document.querySelectorAll('[data-voice-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.voiceCharacter);syncCharacterUI();speak(`${characterDefs[state.character].name} 음성 안내입니다.`)});}catch(e){console.warn('UI bind section 6 failed',e)}
   try{$('voiceGuideSettingBtn').onclick=()=>{const opening=$('voiceGuidePanel').classList.contains('hidden');$('voiceGuidePanel').classList.toggle('hidden',!opening);$('characterSettingPanel').classList.toggle('hidden',!opening);$('voiceGuideSettingBtn').setAttribute('aria-expanded',String(opening))};$('voicePreviewBtn').onclick=()=>speak(`${characterDefs[state.character].name}이 길안내를 시작합니다. 안전운전하세요.`);}catch(e){console.warn('UI bind section 7 failed',e)}
   try{document.querySelectorAll('[data-route-mode]').forEach(b=>b.onclick=()=>selectTravelMode(b.dataset.routeMode));document.querySelectorAll('[data-home-facility]').forEach(b=>b.onclick=()=>loadHomeFacility(b.dataset.homeFacility));}catch(e){console.warn('route mode/facility bind failed',e)}
-  try{$('menuBtn').onclick=openHamburgerMenu;$('myBtn').onclick=openMy;$('routeBackBtn').onclick=()=>{cancelAutoStart();setView('home')};$('routeFavoriteBtn').onclick=toggleFavorite;$('startBtn').onclick=startRouteGuidanceNow;if($('postDriveFavoriteAddBtn'))$('postDriveFavoriteAddBtn').onclick=confirmPostDriveFavorite;if($('postDriveFavoriteSkipBtn'))$('postDriveFavoriteSkipBtn').onclick=closePostDriveFavoritePrompt;if($('postDriveFavoriteModal'))$('postDriveFavoriteModal').addEventListener('click',e=>{if(e.target===$('postDriveFavoriteModal'))closePostDriveFavoritePrompt()});$('routeOriginBtn').onclick=openOriginModal;}catch(e){console.warn('UI bind section 8 failed',e)}
+  try{$('menuBtn').onclick=openHamburgerMenu;$('myBtn').onclick=openMy;$('routeBackBtn').onclick=()=>{cancelAutoStart();setView('home')};$('routeFavoriteBtn').onclick=toggleFavorite;$('startBtn').onclick=startNavigation;if($('postDriveFavoriteAddBtn'))$('postDriveFavoriteAddBtn').onclick=confirmPostDriveFavorite;if($('postDriveFavoriteSkipBtn'))$('postDriveFavoriteSkipBtn').onclick=closePostDriveFavoritePrompt;if($('postDriveFavoriteModal'))$('postDriveFavoriteModal').addEventListener('click',e=>{if(e.target===$('postDriveFavoriteModal'))closePostDriveFavoritePrompt()});$('routeOriginBtn').onclick=openOriginModal;}catch(e){console.warn('UI bind section 8 failed',e)}
   
   try{
     document.addEventListener('click',e=>{
