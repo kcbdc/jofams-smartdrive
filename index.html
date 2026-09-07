@@ -8,7 +8,7 @@
   <title>조팸스 내비</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.1.2" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.3.0" />
 </head>
 <body>
   <main id="app">
@@ -219,6 +219,7 @@
       <div id="driveMapControls" class="drive-map-controls hidden" aria-label="지도 설정">
         <button id="mapCompassBtn" class="map-compass-btn" type="button" aria-label="나침반 북쪽으로 맞추기"><span class="map-compass-needle" aria-hidden="true">▲</span><small>N</small></button>
         <button id="map3dBtn" type="button">3D</button>
+        <button id="mapSatelliteBtn" type="button" aria-label="위성 지도로 현재 위치 확인" aria-pressed="false">위성</button>
         <button id="mapZoomInBtn" type="button" aria-label="지도 확대">+</button>
         <button id="mapZoomOutBtn" type="button" aria-label="지도 축소">−</button>
       </div>
@@ -618,6 +619,6 @@
   </main>
 
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.1.2"></script>
+  <script type="module" src="/app.js?v=7.6.3.1"></script>
 </body>
 </html>
