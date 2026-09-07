@@ -1,5 +1,20 @@
 const FRANCHISE_URL='https://apis.data.go.kr/B190001/localFranchisesV2/franchiseV2';
 const SALES_POLICY_URL='https://apis.data.go.kr/B190001/salesPolicy';
+import {KOMSCO_REGION_CODES} from './komsco-region-codes.js';
+
+// 한국조폐공사 판매정책(할인율) 데이터는 자치구 단위가 아니라 "사용코드" 단위로 등록되어 있다.
+// 예) 서울 강북구(법정동코드 11305)의 할인정책은 자치구 코드가 아니라 서울 전체 코드(11000)로 등록됨.
+// 또한 강원/전북처럼 최근 지역코드가 개편된 곳은 여전히 개편 이전 코드(과거 사용처지역코드)로
+// 등록되어 있을 수 있다. resolveKomscoQueryCodes()는 Kakao가 반환한 법정동코드(자치구 단위)를
+// 실제 판매정책 API가 쓰는 코드 후보들로 변환한다(우선순위: 사용코드 → 과거코드 → 원본 법정동코드).
+function resolveKomscoQueryCodes(districtCode){
+  const out=[];
+  const add=c=>{c=String(c||'').replace(/\D/g,'').slice(0,5);if(c&&!out.includes(c))out.push(c)};
+  const entry=KOMSCO_REGION_CODES[String(districtCode||'')];
+  if(entry){add(entry[0]);add(entry[1])}
+  add(districtCode);
+  return out;
+}
 
 function serviceKeyCandidates(raw){
   const src=String(raw||'').trim();
@@ -106,7 +121,8 @@ export async function onRequestGet({request,env}){
   }
   let policyResult={rows:[],status:'region-unavailable',detail:''};
   if(region?.code){
-    try{policyResult=await fetchDiscountPolicies(keyCandidates,region.code,env)}
+    const komscoCodes=resolveKomscoQueryCodes(region.code);
+    try{policyResult=await fetchDiscountPolicies(keyCandidates,komscoCodes,env)}
     catch(e){policyResult={rows:[],status:'error',detail:String(e?.message||e||'').slice(0,180)}}
   }
   const policy=pickActiveDiscountPolicy(policyResult.rows);
@@ -349,17 +365,20 @@ async function geocodeFranchiseKeyword(item,kakaoKey){
   return null;
 }
 
-async function fetchDiscountPolicies(keyCandidates,regionCode,env){
+async function fetchDiscountPolicies(keyCandidates,regionCodes,env){
   const endpoint=String(env.KOMSCO_SALES_POLICY_API_URL||SALES_POLICY_URL).trim();
+  const codes=(Array.isArray(regionCodes)?regionCodes:[regionCodes]).filter(Boolean);
+  const codeSet=new Set(codes);
+  const primaryCode=codes[0]||'';
   const attempts=[
     // 가장 호환성이 높은 최소요청부터 시도한다. 지역필터는 응답을 받은 뒤 로컬에서 적용한다.
     {kind:'standard-all',params:{page:'1',perPage:'1000',returnType:'JSON'}},
     {kind:'standard-all-type',params:{page:'1',perPage:'1000',type:'json'}},
     {kind:'legacy-all',params:{pageNo:'1',numOfRows:'1000',type:'json'}},
-    // 서버측 지역조건을 지원하는 경우의 보조 시도
-    {kind:'standard-cond',params:{page:'1',perPage:'1000','cond[usage_rgn_cd::EQ]':regionCode,returnType:'JSON'}},
-    {kind:'standard-direct',params:{page:'1',perPage:'1000',usage_rgn_cd:regionCode,returnType:'JSON'}},
-    {kind:'legacy-region',params:{pageNo:'1',numOfRows:'1000',type:'json',usageRegionCode:regionCode}}
+    // 서버측 지역조건을 지원하는 경우의 보조 시도 (사용코드 기준 우선 시도)
+    {kind:'standard-cond',params:{page:'1',perPage:'1000','cond[usage_rgn_cd::EQ]':primaryCode,returnType:'JSON'}},
+    {kind:'standard-direct',params:{page:'1',perPage:'1000',usage_rgn_cd:primaryCode,returnType:'JSON'}},
+    {kind:'legacy-region',params:{pageNo:'1',numOfRows:'1000',type:'json',usageRegionCode:primaryCode}}
   ];
 
   let lastDetail='',lastStatus='';
@@ -397,14 +416,16 @@ async function fetchDiscountPolicies(keyCandidates,regionCode,env){
 
         if(!normalized.length){lastDetail=`${a.kind}: discount field not recognized`;continue}
 
-        const exact=normalized.filter(x=>String(x.usageRegionCode||'').replace(/\D/g,'').slice(0,5)===regionCode);
-        // 응답에 지역코드 필드가 있으면 현재 지역만 사용.
+        // 자치구 단위 법정동코드가 아니라 사용코드(광역 발행지역은 상위 광역시/도 코드, 필요 시
+        // 지역코드 개편 이전 과거코드까지) 후보 중 하나라도 일치하면 해당 지역 정책으로 인정한다.
+        const exact=normalized.filter(x=>codeSet.has(String(x.usageRegionCode||'').replace(/\D/g,'').slice(0,5)));
+        // 응답에 지역코드 필드가 있으면 후보 코드와 일치하는 것만 사용.
         // 지역코드 필드가 전혀 없을 때만 서버측 지역필터 응답을 신뢰한다.
         const anyRegionField=normalized.some(x=>String(x.usageRegionCode||'').trim());
         const rows=exact.length?exact:(!anyRegionField&&/cond|direct|region/.test(a.kind)?normalized:[]);
         if(rows.length)return {rows,status:'ok',detail:`${a.kind}:${rows.length}`};
 
-        lastDetail=`${a.kind}: region ${regionCode} not found`;
+        lastDetail=`${a.kind}: region ${codes.join('/')} not found`;
       }catch(e){
         lastDetail=e?.name==='AbortError'?'policy timeout':String(e?.message||e||'policy error').slice(0,160);
       }
