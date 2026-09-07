@@ -575,18 +575,25 @@ function cctvMarkerSvg(){
   </svg>`;
 }
 // 상습정체 구간(chronic_congestion) 마커는 이전까지 '정'이라는 한 글자 텍스트로만 표시되어
-// 사용자가 그 의미를 알아보기 어려웠다. 정체 구간임을 직관적으로 알 수 있도록 도로 위에 차량이
-// 밀려 있는 형태의 SVG 아이콘으로 대체한다.
+// 사용자가 그 의미를 알아보기 어려웠다. 정체 구간임을 직관적으로 알 수 있도록, CCTV 마커(cctvMarkerSvg)와
+// 동일한 톤(선화/currentColor 스트로크)으로 정차한 두 대의 차량 뒷모습 + 빨간 제동등을 그린 아이콘으로 대체한다.
+// 지도 위 마커와 길안내 좌측 하단 안전 배지(safety-alert, kind=stat) 양쪽에서 공통으로 사용된다.
 function congestionMarkerSvg(){
   return `<svg viewBox="0 0 28 28" aria-hidden="true">
-    <path d="M3.4 21h21.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-    <path d="M5 21v-3.3c0-.5.3-.9.8-1.1l2.9-1c.3-.1.7-.1 1 0l2.9 1c.5.2.8.6.8 1.1V21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-    <circle cx="7" cy="21" r="1.15" fill="currentColor"/>
-    <circle cx="11.5" cy="21" r="1.15" fill="currentColor"/>
-    <path d="M15.7 21v-3.3c0-.5.3-.9.8-1.1l2.9-1c.3-.1.7-.1 1 0l2.9 1c.5.2.8.6.8 1.1V21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-    <circle cx="17.7" cy="21" r="1.15" fill="currentColor"/>
-    <circle cx="22.2" cy="21" r="1.15" fill="currentColor"/>
-    <path d="M8.6 9.4h10.8M8.6 6.6h10.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M2.6 21h9.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M15.8 21h9.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M4 20.3v-4.6c0-1 .35-1.55 1.25-1.8l.55-1.5c.2-.55.6-.8 1.15-.8h2.1c.55 0 .95.25 1.15.8l.55 1.5c.9.25 1.25.8 1.25 1.8v4.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M17.2 20.3v-4.6c0-1 .35-1.55 1.25-1.8l.55-1.5c.2-.55.6-.8 1.15-.8h2.1c.55 0 .95.25 1.15.8l.55 1.5c.9.25 1.25.8 1.25 1.8v4.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M4.55 17.3h4.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M17.75 17.3h4.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="5.5" cy="20.3" r="0.95" fill="currentColor"/>
+    <circle cx="8.5" cy="20.3" r="0.95" fill="currentColor"/>
+    <circle cx="18.7" cy="20.3" r="0.95" fill="currentColor"/>
+    <circle cx="21.7" cy="20.3" r="0.95" fill="currentColor"/>
+    <rect x="3.9" y="18.35" width="1.9" height="1.5" rx="0.5" fill="#ff3b30"/>
+    <rect x="8.15" y="18.35" width="1.9" height="1.5" rx="0.5" fill="#ff3b30"/>
+    <rect x="17.1" y="18.35" width="1.9" height="1.5" rx="0.5" fill="#ff3b30"/>
+    <rect x="21.35" y="18.35" width="1.9" height="1.5" rx="0.5" fill="#ff3b30"/>
   </svg>`;
 }
 function homeCameraLabel(row){
@@ -2541,7 +2548,7 @@ function computeSafetyCandidates(idx){
 }
 function updateSafetyUI(idx,candidates){
   candidates=candidates||computeSafetyCandidates(idx);
-  const e=candidates[0];if(!e){hideSafetyAlert();return}if(state.overspeedActive&&['speed_camera','signal_speed_camera','traffic_camera'].includes(e.type)){hideSafetyAlert();return}const info=safetyLabel(e),el=$('safetyAlert');el.className=`safety-alert ${info.kind}`;$('safetyAlertIcon').textContent=info.icon;$('safetyAlertTitle').textContent=info.title;$('safetyAlertText').textContent=info.text;$('safetyAlertDistance').textContent=km(e.d);state.activeSafetyId=e.id;
+  const e=candidates[0];if(!e){hideSafetyAlert();return}if(state.overspeedActive&&['speed_camera','signal_speed_camera','traffic_camera'].includes(e.type)){hideSafetyAlert();return}const info=safetyLabel(e),el=$('safetyAlert');el.className=`safety-alert ${info.kind}`;const iconEl=$('safetyAlertIcon');if(e.type==='chronic_congestion'){iconEl.innerHTML=congestionMarkerSvg()}else{iconEl.textContent=info.icon}$('safetyAlertTitle').textContent=info.title;$('safetyAlertText').textContent=info.text;$('safetyAlertDistance').textContent=km(e.d);state.activeSafetyId=e.id;
   const stage=e.d<=180?'near':e.d<=600?'far':'';if(stage){const key=`${e.id}:${stage}`;if(!state.lastSafetySpoken.has(key)){state.lastSafetySpoken.add(key);const meters=Math.max(100,Math.round(e.d/100)*100);
     if(e.type.startsWith('school'))speak(stage==='near'?'전방 어린이 보호구역입니다. 속도를 줄이고 주변을 확인하세요.':'전방에 스쿨존이 있습니다. 안전 운전하세요.');
     else if(e.type==='silver_zone')speak(`${meters}미터 앞 노인 보호구역이 있습니다. 속도를 줄이세요.`);

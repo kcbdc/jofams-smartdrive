@@ -365,30 +365,46 @@ async function geocodeFranchiseKeyword(item,kakaoKey){
   return null;
 }
 
+// 7.6.2.3: 판매정책 API는 전국 약 250개 시군구 x 개정 이력이 누적되어 총 로우 수가
+// perPage(최대 1000) 한 페이지를 넘는 경우가 많다. 기존 코드는 매 요청형식마다 1페이지만
+// 조회했기 때문에, 조회 대상 지역(예: 태안군 44825, 금산군 44710)의 데이터가 마침 1페이지에
+// 없으면 실제로는 할인정책이 존재하는데도 "정책 없음(할인율 0%)"으로 잘못 표시되었다.
+// 이를 해결하기 위해, 정상 포맷(할인율 필드가 인식되는 응답)이 확인된 요청 방식에 한해
+// 대상 지역코드를 찾거나 마지막 페이지에 도달할 때까지 계속 다음 페이지를 조회한다.
+// 서버가 지역조건(cond[usage_rgn_cd::EQ]/usage_rgn_cd/usageRegionCode)을 지원하는 경우
+// 첫 페이지만으로 끝날 수 있도록, 전체조회보다 지역필터 요청을 먼저 시도한다.
 async function fetchDiscountPolicies(keyCandidates,regionCodes,env){
   const endpoint=String(env.KOMSCO_SALES_POLICY_API_URL||SALES_POLICY_URL).trim();
   const codes=(Array.isArray(regionCodes)?regionCodes:[regionCodes]).filter(Boolean);
   const codeSet=new Set(codes);
   const primaryCode=codes[0]||'';
   const attempts=[
-    // 가장 호환성이 높은 최소요청부터 시도한다. 지역필터는 응답을 받은 뒤 로컬에서 적용한다.
-    {kind:'standard-all',params:{page:'1',perPage:'1000',returnType:'JSON'}},
-    {kind:'standard-all-type',params:{page:'1',perPage:'1000',type:'json'}},
-    {kind:'legacy-all',params:{pageNo:'1',numOfRows:'1000',type:'json'}},
-    // 서버측 지역조건을 지원하는 경우의 보조 시도 (사용코드 기준 우선 시도)
+    // 서버측 지역조건을 지원하면 해당 지역 데이터만 받아오므로 페이지 수를 최소화할 수 있어 먼저 시도.
     {kind:'standard-cond',params:{page:'1',perPage:'1000','cond[usage_rgn_cd::EQ]':primaryCode,returnType:'JSON'}},
     {kind:'standard-direct',params:{page:'1',perPage:'1000',usage_rgn_cd:primaryCode,returnType:'JSON'}},
-    {kind:'legacy-region',params:{pageNo:'1',numOfRows:'1000',type:'json',usageRegionCode:primaryCode}}
+    {kind:'legacy-region',params:{pageNo:'1',numOfRows:'1000',type:'json',usageRegionCode:primaryCode}},
+    // 서버가 지역조건을 지원하지 않을 때를 대비한 전체조회 폴백(페이지네이션으로 전체 순회).
+    {kind:'standard-all',params:{page:'1',perPage:'1000',returnType:'JSON'}},
+    {kind:'standard-all-type',params:{page:'1',perPage:'1000',type:'json'}},
+    {kind:'legacy-all',params:{pageNo:'1',numOfRows:'1000',type:'json'}}
   ];
+  const MAX_POLICY_PAGES=15;
 
   let lastDetail='',lastStatus='';
   for(const a of attempts){
     for(const key of keyCandidates){
-      try{
+      const pageParamKey='page' in a.params?'page':('pageNo' in a.params?'pageNo':null);
+      const perPageParamKey='perPage' in a.params?'perPage':('numOfRows' in a.params?'numOfRows':null);
+      const perPageNum=Number(perPageParamKey?a.params[perPageParamKey]:0)||1000;
+      let formatConfirmed=false,anyRegionField=false,attemptErrorDetail='';
+      const collected=[];
+
+      for(let page=1;page<=MAX_POLICY_PAGES;page++){
         const u=new URL(endpoint);
         // URLSearchParams에 디코딩 키를 넣으면 URL 인코딩은 한 번만 적용된다.
         u.searchParams.set('serviceKey',key);
         for(const [k,v] of Object.entries(a.params))u.searchParams.set(k,String(v));
+        if(pageParamKey)u.searchParams.set(pageParamKey,String(page));
 
         const ctrl=new AbortController();
         const timer=setTimeout(()=>ctrl.abort(),10000);
@@ -396,39 +412,50 @@ async function fetchDiscountPolicies(keyCandidates,regionCodes,env){
         try{
           rr=await fetch(u,{headers:{accept:'application/json, application/xml;q=0.8, text/xml;q=0.7'},signal:ctrl.signal,cache:'no-store'});
           text=await rr.text();
+        }catch(e){
+          attemptErrorDetail=e?.name==='AbortError'?'policy timeout':String(e?.message||e||'policy error').slice(0,160);
+          break;
         }finally{clearTimeout(timer)}
 
         lastStatus=String(rr?.status||'');
-        if(!rr?.ok){lastDetail=`HTTP ${lastStatus}`;continue}
+        if(!rr?.ok){attemptErrorDetail=`HTTP ${lastStatus}`;break}
 
         const parsed=parsePolicyPayload(text);
         if(parsed.error){
-          lastDetail=parsed.error;
-          // 인증키 오류라면 다음 key candidate로 넘어가고, 잘못된 파라미터면 다음 요청형식을 시도한다.
-          continue;
+          // 인증키 오류라면 다음 key candidate로, 잘못된 파라미터면 다음 요청형식으로 넘어간다.
+          attemptErrorDetail=parsed.error;
+          break;
         }
 
         const rawRows=extractPolicyRows(parsed.data);
-        if(!rawRows.length){lastDetail=`${a.kind}: rows 0`;continue}
+        if(!rawRows.length){
+          if(page===1)attemptErrorDetail=`${a.kind}: rows 0`;
+          break; // 더 이상 데이터가 없는 마지막 페이지
+        }
 
-        const normalized=rawRows.map(normalizePolicy)
-          .filter(x=>Number.isFinite(Number(x.discountRate)));
+        const normalizedPage=rawRows.map(normalizePolicy).filter(x=>Number.isFinite(Number(x.discountRate)));
+        if(page===1&&!normalizedPage.length){attemptErrorDetail=`${a.kind}: discount field not recognized`;break}
 
-        if(!normalized.length){lastDetail=`${a.kind}: discount field not recognized`;continue}
+        formatConfirmed=true;
+        collected.push(...normalizedPage);
+        if(normalizedPage.some(x=>String(x.usageRegionCode||'').trim()))anyRegionField=true;
 
         // 자치구 단위 법정동코드가 아니라 사용코드(광역 발행지역은 상위 광역시/도 코드, 필요 시
         // 지역코드 개편 이전 과거코드까지) 후보 중 하나라도 일치하면 해당 지역 정책으로 인정한다.
-        const exact=normalized.filter(x=>codeSet.has(String(x.usageRegionCode||'').replace(/\D/g,'').slice(0,5)));
-        // 응답에 지역코드 필드가 있으면 후보 코드와 일치하는 것만 사용.
-        // 지역코드 필드가 전혀 없을 때만 서버측 지역필터 응답을 신뢰한다.
-        const anyRegionField=normalized.some(x=>String(x.usageRegionCode||'').trim());
-        const rows=exact.length?exact:(!anyRegionField&&/cond|direct|region/.test(a.kind)?normalized:[]);
-        if(rows.length)return {rows,status:'ok',detail:`${a.kind}:${rows.length}`};
-
-        lastDetail=`${a.kind}: region ${codes.join('/')} not found`;
-      }catch(e){
-        lastDetail=e?.name==='AbortError'?'policy timeout':String(e?.message||e||'policy error').slice(0,160);
+        const matchedAlready=collected.some(x=>codeSet.has(String(x.usageRegionCode||'').replace(/\D/g,'').slice(0,5)));
+        if(matchedAlready)break; // 대상 지역 데이터를 이미 찾았으면 더 이상 페이지를 넘기지 않는다
+        if(rawRows.length<perPageNum)break; // 서버가 준 로우 수가 perPage보다 적으면 마지막 페이지
       }
+
+      if(!formatConfirmed){lastDetail=attemptErrorDetail||lastDetail;continue}
+
+      const exact=collected.filter(x=>codeSet.has(String(x.usageRegionCode||'').replace(/\D/g,'').slice(0,5)));
+      // 응답에 지역코드 필드가 전혀 없을 때만(=서버가 이미 지역필터를 적용해 내려줬다고 볼 수 있을 때만)
+      // 서버측 지역필터 요청(cond/direct/region)의 전체 응답을 신뢰한다.
+      const rows=exact.length?exact:(!anyRegionField&&/cond|direct|region/.test(a.kind)?collected:[]);
+      if(rows.length)return {rows,status:'ok',detail:`${a.kind}:${rows.length}`};
+
+      lastDetail=`${a.kind}: region ${codes.join('/')} not found (checked ${collected.length} rows)`;
     }
   }
   return {rows:[],status:lastStatus?`http-${lastStatus}`:'no-policy',detail:lastDetail};
@@ -511,16 +538,17 @@ function pickActiveDiscountPolicy(rows){
   const now=new Date(),all=(rows||[]).filter(x=>Number.isFinite(Number(x.discountRate)));
   if(!all.length)return null;
   const active=all.filter(x=>{
-    const start=parseDate(x.startDate),end=parseDate(x.endDate);
+    const start=parseDate(x.startDate)||parseDate(x.referenceDate),end=parseDate(x.endDate);
     return (!start||start<=now)&&(!end||now<=end);
   });
   const candidates=active.length?active:all.filter(x=>{
-    const start=parseDate(x.startDate);return !start||start<=now;
+    const start=parseDate(x.startDate)||parseDate(x.referenceDate);return !start||start<=now;
   });
   if(!candidates.length)return null;
   candidates.sort((a,b)=>{
-    const ae=parseDate(a.endDate)?.getTime()||parseDate(a.startDate)?.getTime()||0;
-    const be=parseDate(b.endDate)?.getTime()||parseDate(b.startDate)?.getTime()||0;
+    // 종료일이 없는(기준일자만 있는) 스냅샷 데이터는 기준일자가 최신인 쪽을 우선한다.
+    const ae=parseDate(a.endDate)?.getTime()||parseDate(a.referenceDate)?.getTime()||parseDate(a.startDate)?.getTime()||0;
+    const be=parseDate(b.endDate)?.getTime()||parseDate(b.referenceDate)?.getTime()||parseDate(b.startDate)?.getTime()||0;
     return active.length?(Number(b.discountRate)-Number(a.discountRate)):(be-ae);
   });
   const top=candidates[0];
@@ -655,9 +683,17 @@ function normalizePolicy(r){
     'useAreaCode','useRegionCode','사용처지역코드','사용지역코드'
   ]) || fuzzy([/usagergncd/,/usageregioncode/,/사용처지역코드/,/사용지역코드/]);
 
+  // 일부 응답(예: 카드·모바일 판매정책정보)은 별도의 시작/종료일 없이 "기준일자"만 내려준다.
+  // 이 경우 기준일자를 참고용 시작일로 사용해, 동일 지역에 여러 스냅샷이 섞여 있어도
+  // pickActiveDiscountPolicy가 가장 최신 기준일자의 정책을 우선 채택할 수 있게 한다.
+  const referenceDate=String(pick(r,[
+    'std_ymd','STD_YMD','base_ymd','BASE_YMD','stdDate','baseDate','기준일자','기준일'
+  ])||fuzzy([/std.*ymd/,/base.*ymd/,/기준일/])||'');
+
   return {
     usageRegionCode:String(regionRaw||'').replace(/\D/g,'').slice(0,5),
     discountRate:numericValue(discountRaw),
+    referenceDate,
     startDate:String(pick(r,[
       'dscnt_plcy_aply_bgng_ymd','DSCNT_PLCY_APLY_BGNG_YMD',
       'dscnt_plcy_aply_strt_ymd','DSCNT_PLCY_APLY_STRT_YMD',
