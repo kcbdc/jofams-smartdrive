@@ -171,18 +171,51 @@ async function fetchFranchises(keyCandidates,region,bounds,kakaoKey){
     if(found.length<perPage||current<perPage||(Number.isFinite(total)&&page*perPage>=total))break;
   }
 
+  // 통합 가맹점 API에서 특정 위도/경도가 대량 반복되면 지도에 세로/가로 일직선이 생긴다.
+  // 5자리 소수점 기준 반복비율을 계산해 이런 원본좌표는 "의심좌표"로 분류한다.
+  const latBins=new Map(),lngBins=new Map();
+  for(const x of rawCandidates){
+    if(validKoreaCoordinate(x.lat,x.lng)){
+      const lk=Number(x.lat).toFixed(5),ok=Number(x.lng).toFixed(5);
+      latBins.set(lk,(latBins.get(lk)||0)+1);
+      lngBins.set(ok,(lngBins.get(ok)||0)+1);
+    }
+  }
+  const suspiciousLat=new Set([...latBins].filter(([,n])=>n>=5&&n/Math.max(1,rawCandidates.length)>=.18).map(([k])=>k));
+  const suspiciousLng=new Set([...lngBins].filter(([,n])=>n>=5&&n/Math.max(1,rawCandidates.length)>=.18).map(([k])=>k));
+
+  // 좌표가 완전히 동일하지 않아도, 경도(또는 위도)가 좁은 폭 안에 몰려있으면서
+  // 반대축(위도 또는 경도)이 넓게 퍼져 있으면 지도에서는 여전히 하나의 직선으로 보인다.
+  // (예: 첨부 스크린샷처럼 경도는 거의 고정, 위도만 남북으로 길게 늘어선 패턴)
+  // 이런 "준-직선" 패턴을 잡기 위해 약 2km 폭 밴드 단위로 좌표를 묶어 넓은 위도/경도 스팬을 탐지한다.
+  const lineBadKeys=detectLinearArtifactBands(rawCandidates);
+
+  const suspicious=x=>validKoreaCoordinate(x.lat,x.lng)&&(
+    suspiciousLat.has(Number(x.lat).toFixed(5))||
+    suspiciousLng.has(Number(x.lng).toFixed(5))||
+    lineBadKeys.has(x)
+  );
+
   const visible=[],seen=new Map();
 
-  // 주소가 있는 가맹점은 주소 좌표를 최우선으로 사용.
-  // 잘못된 API 위경도가 일렬로 찍히는 문제를 원천 차단한다.
-  for(let i=0;i<rawCandidates.length&&visible.length<maxVisible;i+=8){
-    const batch=rawCandidates.slice(i,i+8);
+  for(let i=0;i<rawCandidates.length&&visible.length<maxVisible;i+=6){
+    const batch=rawCandidates.slice(i,i+6);
     const resolved=await Promise.all(batch.map(async x=>{
+      // 주소가 있으면 API 원본 좌표보다 주소 기반 좌표를 우선한다.
       if(kakaoKey&&x.address){
         const fixed=await geocodeFranchiseAddress(x,kakaoKey).catch(()=>null);
         if(fixed)return fixed;
       }
-      return validKoreaCoordinate(x.lat,x.lng)?x:null;
+
+      // 주소검색이 실패하면 상호명+주소 키워드검색으로 한 번 더 보정한다.
+      if(kakaoKey){
+        const fixed=await geocodeFranchiseKeyword(x,kakaoKey).catch(()=>null);
+        if(fixed)return fixed;
+      }
+
+      // 반복 직선패턴으로 판정된 원본좌표는 잘못된 위치로 보이므로 표시하지 않는다.
+      if(suspicious(x))return null;
+      return validKoreaCoordinate(x.lat,x.lng)?{...x,coordinateSource:'komsco-raw'}:null;
     }));
 
     for(const x of resolved){
@@ -226,20 +259,86 @@ function normalizeKoreaCoordinate(lat,lng){
 function validKoreaCoordinate(lat,lng){
   return Number.isFinite(lat)&&Number.isFinite(lng)&&lat>=33.0&&lat<=38.75&&lng>=125.65&&lng<=131.05;
 }
+/* 완전 동일 좌표 반복이 아니어도, 좁은 경도/위도 밴드 안에 다수 지점이 몰려있으면서
+   반대축으로는 광범위(약 30km 이상)하게 퍼져 있으면 지도에서 하나의 직선처럼 보인다.
+   BIN 폭(약 0.02도 ≈ 2km) 단위로 좌표를 묶어 이런 준-직선 패턴을 찾아낸다. */
+function detectLinearArtifactBands(rows){
+  const bad=new Set();
+  const valid=rows.filter(x=>validKoreaCoordinate(x.lat,x.lng));
+  if(valid.length<8)return bad;
+  const BIN=0.02,MIN_COUNT=6,MIN_RATIO=.05,MIN_SPAN=.3;
+  const scan=(getKey,getSpanValue)=>{
+    const bins=new Map();
+    for(const x of valid){
+      const k=Math.round(getKey(x)/BIN);
+      if(!bins.has(k))bins.set(k,[]);
+      bins.get(k).push(x);
+    }
+    for(const list of bins.values()){
+      if(list.length<MIN_COUNT||list.length/valid.length<MIN_RATIO)continue;
+      const values=list.map(getSpanValue);
+      if(Math.max(...values)-Math.min(...values)>=MIN_SPAN)
+        for(const x of list)bad.add(x);
+    }
+  };
+  scan(x=>Number(x.lng),x=>Number(x.lat)); // 경도가 좁게 몰리고 위도가 길게 늘어진 세로 직선
+  scan(x=>Number(x.lat),x=>Number(x.lng)); // 위도가 좁게 몰리고 경도가 길게 늘어진 가로 직선
+  return bad;
+}
 function pointNearBounds(lng,lat,b,margin=0.35){
   return lng>=Number(b.west)-margin&&lng<=Number(b.east)+margin&&lat>=Number(b.south)-margin&&lat<=Number(b.north)+margin;
 }
 async function geocodeFranchiseAddress(item,kakaoKey){
-  const q=String(item.address||'').trim();if(!q)return null;
-  const u=new URL('https://dapi.kakao.com/v2/local/search/address.json');
-  u.searchParams.set('query',q);
-  u.searchParams.set('size','1');
-  const r=await fetch(u,{headers:{Authorization:`KakaoAK ${kakaoKey}`}});
-  if(!r.ok)return null;
-  const d=await r.json(),doc=d.documents?.[0];
-  let lng=parseCoordinate(doc?.x),lat=parseCoordinate(doc?.y);
-  if(!validKoreaCoordinate(lat,lng))return null;
-  return {...item,lng,lat,coordinateSource:'kakao-address'};
+  const raw=String(item.address||'').trim();if(!raw)return null;
+  // 상세주소(층/호/괄호)가 주소검색을 실패시키는 경우가 있어 단계적으로 단순화한다.
+  const candidates=[];
+  const push=q=>{q=String(q||'').replace(/\s+/g,' ').trim();if(q&&!candidates.includes(q))candidates.push(q)};
+  push(raw);
+  push(raw.replace(/\([^)]*\)/g,'').replace(/\s+(?:지하?\s*)?\d+층.*$/,'').replace(/\s+\d+호.*$/,''));
+  const tokens=raw.replace(/\([^)]*\)/g,'').split(/\s+/);
+  if(tokens.length>3)push(tokens.slice(0,Math.min(tokens.length,6)).join(' '));
+
+  for(const q of candidates){
+    const u=new URL('https://dapi.kakao.com/v2/local/search/address.json');
+    u.searchParams.set('query',q);
+    u.searchParams.set('size','1');
+    const r=await fetch(u,{headers:{Authorization:`KakaoAK ${kakaoKey}`}});
+    if(!r.ok)continue;
+    const d=await r.json(),doc=d.documents?.[0];
+    const lng=parseCoordinate(doc?.x),lat=parseCoordinate(doc?.y);
+    if(validKoreaCoordinate(lat,lng))return {...item,lng,lat,coordinateSource:'kakao-address'};
+  }
+  return null;
+}
+
+async function geocodeFranchiseKeyword(item,kakaoKey){
+  const name=String(item.name||'').trim(),address=String(item.address||'').trim();
+  const queries=[];
+  const push=q=>{q=String(q||'').replace(/\s+/g,' ').trim();if(q&&!queries.includes(q))queries.push(q)};
+  push(`${name} ${address}`);
+  push(name);
+  for(const q of queries){
+    const u=new URL('https://dapi.kakao.com/v2/local/search/keyword.json');
+    u.searchParams.set('query',q);
+    u.searchParams.set('size','3');
+    const r=await fetch(u,{headers:{Authorization:`KakaoAK ${kakaoKey}`}});
+    if(!r.ok)continue;
+    const d=await r.json();
+    const docs=Array.isArray(d?.documents)?d.documents:[];
+    for(const doc of docs){
+      const lng=parseCoordinate(doc?.x),lat=parseCoordinate(doc?.y);
+      if(!validKoreaCoordinate(lat,lng))continue;
+      // 주소가 있으면 결과 주소가 같은 시/구 수준인지 최소 검증한다.
+      if(address){
+        const src=address.replace(/\s+/g,' ');
+        const dst=String(doc.road_address_name||doc.address_name||'').replace(/\s+/g,' ');
+        const head=src.split(' ').slice(0,2).join(' ');
+        if(head&&dst&&!dst.includes(head.split(' ')[0]))continue;
+      }
+      return {...item,lng,lat,coordinateSource:'kakao-keyword'};
+    }
+  }
+  return null;
 }
 
 async function fetchDiscountPolicies(keyCandidates,regionCode,env){
