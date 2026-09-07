@@ -512,6 +512,7 @@ async function initMap(){
       state.map.on('click',e=>{if(state.tripStartedAt)toggleMapControls(true);else handleHomeMapClick(e)});
       state.map.on('touchend',()=>{if(state.tripStartedAt)toggleMapControls(true)});
       state.map.on('rotate',updateDriveCompass);
+      state.map.on('zoomend',()=>{if(state.onnuriData)renderOnnuriMarkers(state.onnuriData);if(state.localVoucherData)renderLocalVoucherMarkers(state.localVoucherData);if(state.tripStartedAt&&state.safetyEvents?.length)renderSafetyMarkers()});
       state.map.on('moveend',()=>{scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh();if(state.tripStartedAt&&state.safetyEvents?.length)renderSafetyMarkers()});
       if(state.pendingRouteDraw){const p=state.pendingRouteDraw;state.pendingRouteDraw=null;drawRoute(p.route,p.options)}
       permissionStatus('geolocation').then(async status=>{
@@ -762,10 +763,16 @@ async function loadOnnuriMap({force=false}={}){
     if(b){u.searchParams.set('west',b.getWest());u.searchParams.set('south',b.getSouth());u.searchParams.set('east',b.getEast());u.searchParams.set('north',b.getNorth())}
     const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),12000);
     let r;try{r=await fetch(u,{headers:{accept:'application/json'},signal:ctrl.signal,cache:'no-store'})}finally{clearTimeout(timer)}
-    if(!r.ok){console.warn('onnuri API unavailable',r.status);return}
+    if(!r.ok){
+      const err=await r.json().catch(()=>({}));
+      console.warn('onnuri API unavailable',r.status,err?.code||'',err?.detail||err?.error||'');
+      clearOnnuriMarkers();
+      return;
+    }
     const d=await r.json();
     state.onnuriData=d;state.onnuriLoadedAt=Date.now();state.onnuriLoadedCenter={lat:center.lat,lng:center.lng};
     renderOnnuriMarkers(d);
+    if(!d.items?.length)console.warn('onnuri mapped rows 0',d.region,d.fetchMeta,d.fetchedRows,d.localRows);
   }catch(e){console.warn('onnuri map load failed',e)}
 }
 function scheduleOnnuriRefresh(){
