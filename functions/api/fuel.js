@@ -5,18 +5,33 @@ export async function onRequestGet({request,env}){
   const lat=Number(url.searchParams.get('lat')),lng=Number(url.searchParams.get('lng'));
   const prodcd=validProduct(url.searchParams.get('prodcd')||'B027');
   const cnt=Math.max(1,Math.min(20,Number(url.searchParams.get('cnt'))||8));
-  if(!Number.isFinite(lat)||!Number.isFinite(lng))return json({error:'lat/lng가 필요합니다.'},400);
-  if(!env.OPINET_CERT_KEY)return json({error:'OPINET_CERT_KEY가 설정되지 않았습니다.',setup:'Cloudflare Pages Secret에 오피넷 인증키를 등록하세요.'},503);
+  if(!Number.isFinite(lat)||!Number.isFinite(lng))return json({error:'lat/lng가 필요합니다.',code:'INVALID_COORDINATES'},400);
+
+  // 기존 배포에서 사용하던 OPINET_CERT_KEY를 최우선으로 유지하되,
+  // 환경변수 이름이 달랐던 과거/별도 배포도 호환한다.
+  const certKey=String(
+    env.OPINET_CERT_KEY||
+    env.OPINET_API_KEY||
+    env.OPINET_KEY||
+    env.OIL_API_KEY||
+    ''
+  ).trim();
+
+  if(!certKey)return json({
+    error:'오피넷 인증키가 서버에 연결되지 않았습니다.',
+    code:'OPINET_KEY_MISSING',
+    setup:'Cloudflare Pages/Workers의 Production 환경변수(Secret)에서 OPINET_CERT_KEY를 확인하세요.'
+  },503);
 
   try{
     const region=await kakaoRegion(lat,lng,env.KAKAO_REST_API_KEY);
-    const area=await resolveOpinetArea(region,env.OPINET_CERT_KEY);
+    const area=await resolveOpinetArea(region,certKey);
     const areaCode=area.sigunCode||area.sidoCode||'';
     const [stations,avg]=await Promise.all([
-      opinetLow(areaCode,prodcd,cnt,env.OPINET_CERT_KEY),
-      area.sidoCode?opinetAverage(area.sidoCode,area.sigunCode,prodcd,env.OPINET_CERT_KEY):Promise.resolve(null)
+      opinetLow(areaCode,prodcd,cnt,certKey),
+      area.sidoCode?opinetAverage(area.sidoCode,area.sigunCode,prodcd,certKey):Promise.resolve(null)
     ]);
-    const detailed=await enrichStationLocations(stations.slice(0,8),env.OPINET_CERT_KEY,env.KAKAO_REST_API_KEY);
+    const detailed=await enrichStationLocations(stations.slice(0,8),certKey,env.KAKAO_REST_API_KEY);
     return json({
       provider:'opinet',
       product:prodcd,
@@ -28,7 +43,12 @@ export async function onRequestGet({request,env}){
       stations:detailed
     });
   }catch(e){
-    return json({error:e?.message||'오피넷 유가 조회에 실패했습니다.'},502);
+    const msg=String(e?.message||'오피넷 유가 조회에 실패했습니다.');
+    const keyRelated=/인증|certkey|key|등록되지 않은|access denied|permission/i.test(msg);
+    return json({
+      error:msg,
+      code:keyRelated?'OPINET_KEY_REJECTED':'OPINET_UPSTREAM_ERROR'
+    },502);
   }
 }
 
