@@ -574,6 +574,21 @@ function cctvMarkerSvg(){
     <path d="M19.4 11.1 24 8.9v7.4l-4.6-2.2M9.2 17.1l-1.4 4.1M16.6 17.1l1.3 4.1M5.7 21.2h13.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
 }
+// 상습정체 구간(chronic_congestion) 마커는 이전까지 '정'이라는 한 글자 텍스트로만 표시되어
+// 사용자가 그 의미를 알아보기 어려웠다. 정체 구간임을 직관적으로 알 수 있도록 도로 위에 차량이
+// 밀려 있는 형태의 SVG 아이콘으로 대체한다.
+function congestionMarkerSvg(){
+  return `<svg viewBox="0 0 28 28" aria-hidden="true">
+    <path d="M3.4 21h21.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M5 21v-3.3c0-.5.3-.9.8-1.1l2.9-1c.3-.1.7-.1 1 0l2.9 1c.5.2.8.6.8 1.1V21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <circle cx="7" cy="21" r="1.15" fill="currentColor"/>
+    <circle cx="11.5" cy="21" r="1.15" fill="currentColor"/>
+    <path d="M15.7 21v-3.3c0-.5.3-.9.8-1.1l2.9-1c.3-.1.7-.1 1 0l2.9 1c.5.2.8.6.8 1.1V21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <circle cx="17.7" cy="21" r="1.15" fill="currentColor"/>
+    <circle cx="22.2" cy="21" r="1.15" fill="currentColor"/>
+    <path d="M8.6 9.4h10.8M8.6 6.6h10.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>`;
+}
 function homeCameraLabel(row){
   const raw=String(pickField(row,['단속구분','regltSe','규제구분'])||'').trim();
   const maxspeed=Number(pickField(row,['제한속도','lmttVe','speedLimit']))||0;
@@ -725,6 +740,61 @@ function sanitizeVoucherCoordinates(items){
     return !sameLat&&!sameLng&&!lineBad.has(x);
   });
 }
+// 화면 픽셀 격자 기준으로 가맹점을 묶는다. 지리 좌표(m) 기준이 아니라 화면 픽셀 기준으로 묶으므로
+// 확대/축소와 무관하게 항상 "화면상 겹치지 않을 만큼" 자연스럽게 뭉쳐진다. 클러스터 중심은
+// 포함된 가맹점들의 픽셀 좌표 평균을 다시 지도 좌표로 역변환해 구한다.
+function clusterVoucherItemsByPixel(items){
+  if(!state.map?.project||!state.map?.unproject)return items.map(it=>({lng:Number(it.lng),lat:Number(it.lat),count:1,items:[it]}));
+  const CELL=64;
+  const buckets=new Map();
+  for(const it of items){
+    let p;try{p=state.map.project([Number(it.lng),Number(it.lat)])}catch{continue}
+    if(!p||!Number.isFinite(p.x)||!Number.isFinite(p.y))continue;
+    const key=`${Math.floor(p.x/CELL)}:${Math.floor(p.y/CELL)}`;
+    if(!buckets.has(key))buckets.set(key,[]);
+    buckets.get(key).push({item:it,x:p.x,y:p.y});
+  }
+  const out=[];
+  for(const list of buckets.values()){
+    let sx=0,sy=0;for(const x of list){sx+=x.x;sy+=x.y}
+    const cx=sx/list.length,cy=sy/list.length;
+    let center;try{center=state.map.unproject([cx,cy])}catch{center=null}
+    const first=list[0].item;
+    out.push({
+      lng:center?center.lng:Number(first.lng),
+      lat:center?center.lat:Number(first.lat),
+      count:list.length,
+      items:list.map(x=>x.item)
+    });
+  }
+  return out;
+}
+function renderVoucherClusterMarkers(clusters){
+  for(const c of clusters){
+    const el=document.createElement('button');
+    el.type='button';
+    const size=c.count>=25?'large':c.count>=8?'medium':'small';
+    el.className=`voucher-cluster-marker ${size}`;
+    el.title=`가맹점 ${c.count}곳 · 확대하면 개별 매장이 표시됩니다`;
+    el.innerHTML=`<strong>${c.count>99?'99+':c.count}</strong>`;
+    el.onclick=e=>{
+      e.stopPropagation();
+      try{
+        const lngs=c.items.map(x=>Number(x.lng)).filter(Number.isFinite);
+        const lats=c.items.map(x=>Number(x.lat)).filter(Number.isFinite);
+        if(!lngs.length||!lats.length)return;
+        if(lngs.length===1){state.map.easeTo({center:[lngs[0],lats[0]],zoom:Math.max(state.map.getZoom(),16.5),duration:420});return}
+        state.map.fitBounds([[Math.min(...lngs),Math.min(...lats)],[Math.max(...lngs),Math.max(...lats)]],{padding:70,maxZoom:16.5,duration:420});
+      }catch{}
+    };
+    try{
+      state.localVoucherMarkers.push(
+        new maplibregl.Marker({element:el,anchor:'center'})
+          .setLngLat([c.lng,c.lat]).addTo(state.map)
+      );
+    }catch{}
+  }
+}
 function renderLocalVoucherMarkers(data){
   clearLocalVoucherMarkers();
   if(!state.map||!maplibregl?.Marker||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
@@ -733,9 +803,17 @@ function renderLocalVoucherMarkers(data){
     .slice(0,1200);
   if(!items.length)return;
 
-  // 7.6.0.4: 클러스터를 사용하지 않고 CCTV처럼 처음부터 가게 SVG 아이콘을 직접 표시.
-  // 동일 좌표는 하나의 아이콘으로 묶고 우측 상단에 가맹점 수를 표시.
-  renderVoucherShopMarkers(items);
+  // 7.6.2.0: 화면이 넓게(1km 이상) 보일 때는 지점들이 화면에 겹쳐 보이거나(과거 버그로는 한 줄로
+  // 늘어서 보이는 문제까지) 발생했다. 이제는 구역별로 묶어 큰/중간/작은 숫자 배지의 클러스터로
+  // 표시하고, 화면 폭이 1km 미만으로 확대되었을 때만 개별 가맹점 SVG 아이콘을 표시한다.
+  const visibleWidthMeters=voucherVisibleRadiusMeters()*2;
+  const zoomedInEnoughForIndividualPins=Number.isFinite(visibleWidthMeters)&&visibleWidthMeters<1000;
+
+  if(zoomedInEnoughForIndividualPins){
+    renderVoucherShopMarkers(items);
+  }else{
+    renderVoucherClusterMarkers(clusterVoucherItemsByPixel(items));
+  }
 }
 function updateLocalVoucherBadge(data){
   $('localVoucherBadge')?.classList.add('hidden');
@@ -2347,6 +2425,8 @@ function renderSafetyMarkers(){
     if(cameraTypes.has(e.type)){
       const limit=Number(e.maxspeed)||0;
       el.innerHTML=`<span class="camera-pin-icon">${cctvMarkerSvg()}</span>${limit>0?`<small class="camera-pin-speed">${Math.round(limit)}</small>`:''}`;
+    }else if(e.type==='chronic_congestion'){
+      el.innerHTML=congestionMarkerSvg();
     }else{
       el.textContent=meta[1];
     }

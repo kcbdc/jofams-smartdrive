@@ -1054,6 +1054,11 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   height:22px!important;
   display:block!important;
 }
+.safety-map-marker.stat svg{
+  width:17px!important;
+  height:17px!important;
+  display:block!important;
+}
 .home-camera-marker{
   width:30px!important;height:30px!important;
   border:1px solid rgba(180,35,43,.28)!important;
@@ -1093,13 +1098,13 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 
 
 /* === 7.6.0.3 voucher cluster / shop === */
-.voucher-cluster-marker{border:2px solid rgba(255,255,255,.96)!important;border-radius:999px!important;background:#245aa8!important;color:#fff!important;display:grid!important;place-items:center!important;box-shadow:0 4px 14px rgba(20,44,86,.28)!important;padding:0!important;pointer-events:auto!important}
+.voucher-cluster-marker{border:2px solid rgba(255,255,255,.96)!important;border-radius:999px!important;background:#245aa8!important;color:#fff!important;display:grid!important;place-items:center!important;box-shadow:0 4px 14px rgba(20,44,86,.28)!important;padding:0!important;pointer-events:auto!important;cursor:pointer!important}
 .voucher-cluster-marker strong{font-weight:900!important;line-height:1!important}
 .voucher-cluster-marker.large{width:54px!important;height:54px!important}.voucher-cluster-marker.large strong{font-size:18px!important}
 .voucher-cluster-marker.medium{width:44px!important;height:44px!important}.voucher-cluster-marker.medium strong{font-size:15px!important}
 .voucher-cluster-marker.small{width:34px!important;height:34px!important}.voucher-cluster-marker.small strong{font-size:12px!important}
 
-.voucher-shop-marker{position:relative!important;width:36px!important;height:36px!important;border:1px solid rgba(36,79,134,.25)!important;border-radius:11px!important;background:rgba(255,255,255,.98)!important;color:#245aa8!important;display:grid!important;place-items:center!important;padding:0!important;box-shadow:0 4px 13px rgba(18,34,62,.22)!important;pointer-events:auto!important}
+.voucher-shop-marker{width:36px!important;height:36px!important;border:1px solid rgba(36,79,134,.25)!important;border-radius:11px!important;background:rgba(255,255,255,.98)!important;color:#245aa8!important;display:grid!important;place-items:center!important;padding:0!important;box-shadow:0 4px 13px rgba(18,34,62,.22)!important;pointer-events:auto!important}
 .voucher-shop-marker svg{width:25px!important;height:25px!important;display:block!important}
 .voucher-shop-marker>span{position:absolute!important;right:-6px!important;top:-7px!important;min-width:18px!important;height:18px!important;padding:0 4px!important;border:2px solid #fff!important;border-radius:999px!important;background:#245aa8!important;color:#fff!important;font-size:9px!important;font-weight:900!important;line-height:14px!important}
 
@@ -1116,7 +1121,6 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 
 
 /* === 7.6.0.4 direct voucher store icons === */
-.voucher-cluster-marker{display:none!important}
 .voucher-shop-marker{
   width:34px!important;height:34px!important;
   border:1px solid rgba(36,79,134,.26)!important;
