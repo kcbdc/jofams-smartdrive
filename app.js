@@ -815,8 +815,30 @@ function renderLocalVoucherMarkers(data){
     renderVoucherClusterMarkers(clusterVoucherItemsByPixel(items));
   }
 }
+// 지역명 + 할인율을 지도 위 배지에 표시한다. 값이 없을 때는 상태에 맞는 안내 문구로 대체하고,
+// 지역 자체를 확인할 수 없을 때만 배지를 숨긴다.
+function formatVoucherDiscountRate(n){
+  if(!Number.isFinite(n))return '';
+  const rounded=Math.round(n*10)/10;
+  return (Number.isInteger(rounded)?String(rounded):rounded.toFixed(1));
+}
 function updateLocalVoucherBadge(data){
-  $('localVoucherBadge')?.classList.add('hidden');
+  const badge=$('localVoucherBadge');
+  if(!badge)return;
+  const regionName=String(data?.regionName||'').trim();
+  if(!regionName){badge.classList.add('hidden');return}
+  const rate=Number(data?.discountRate);
+  const count=(data?.items||[]).length;
+  if($('localVoucherRegion'))$('localVoucherRegion').textContent=regionName;
+  if($('localVoucherDiscount')){
+    const label=String(data?.discountLabel||'').trim();
+    $('localVoucherDiscount').textContent=Number.isFinite(rate)
+      ?`${label||`할인 ${formatVoucherDiscountRate(rate)}%`}${count?` · 가맹점 ${count}곳`:''}`
+      :(data?.discountStatus==='no-policy'||data?.discountStatus==='region-unavailable'
+        ?`할인율 정보 없음${count?` · 가맹점 ${count}곳`:''}`
+        :'할인율 확인 중');
+  }
+  badge.classList.remove('hidden');
 }
 function readVoucherStaleCache(){
   try{
@@ -926,14 +948,6 @@ async function loadLocalVoucherMap({force=false}={}){
 
     renderLocalVoucherMarkers(d);
     updateLocalVoucherBadge(d);
-
-    if(!(d.items||[]).length){
-      if($('localVoucherDiscount')&&!Number.isFinite(Number(d.discountRate)))
-        $('localVoucherDiscount').textContent='가맹점 0곳 · 할인율 확인 중';
-    }else{
-      if($('localVoucherRegion'))
-        $('localVoucherRegion').textContent=`${d.regionName||'현재 지역'} · ${(d.items||[]).length}곳`;
-    }
   }catch(e){
     console.warn('local voucher map load failed',e);
     state.localVoucherLastErrorAt=Date.now();

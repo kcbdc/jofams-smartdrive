@@ -908,11 +908,12 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .local-voucher-badge{
   position:absolute;z-index:12;left:12px;top:calc(var(--safeT) + 72px);
   display:flex;align-items:center;gap:7px;max-width:calc(100% - 24px);padding:7px 9px;border-radius:13px;
-  background:rgba(255,255,255,.94);box-shadow:0 6px 18px rgba(20,38,68,.14);backdrop-filter:blur(9px)
+  background:rgba(255,255,255,.94);box-shadow:0 6px 18px rgba(20,38,68,.14);backdrop-filter:blur(9px);
+  overflow:hidden
 }
-.local-voucher-badge span{font-size:8px;color:#6b7280;font-weight:800}
-.local-voucher-badge b{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.local-voucher-badge strong{font-size:10px;color:#244f86;white-space:nowrap}
+.local-voucher-badge span{font-size:8px;color:#6b7280;font-weight:800;flex:none}
+.local-voucher-badge b{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:none}
+.local-voucher-badge strong{font-size:10px;color:#244f86;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .local-voucher-marker{
   min-width:34px;height:34px;border:1px solid rgba(36,79,134,.22);border-radius:12px;background:rgba(255,255,255,.97);
   display:grid;grid-template-columns:auto 1fr;align-items:center;gap:4px;padding:4px 6px;box-shadow:0 4px 12px rgba(20,38,68,.18)
@@ -1153,7 +1154,6 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 
 
 /* === 7.6.1.6 안정본 기반 최소 보정 === */
-#localVoucherBadge{display:none!important}
 .home-camera-marker{display:none!important}
 .voucher-shop-marker>span{display:none!important}
 .drive-bottom-summary b,.speed-limit b{white-space:nowrap}
