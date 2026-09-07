@@ -1087,9 +1087,41 @@ function clearRouteLayer(){['route-traffic','route-main','route-shadow'].forEach
 
 /* ---------- LOCATION ---------- */
 async function locate(fly=true){
-  if(state.permissionPrefs?.location===false){toast('MY에서 위치정보 조회 동의를 켜 주세요.');return null}
-  if(!navigator.geolocation){toast('위치 기능을 지원하지 않습니다.');return null}
-  return new Promise(resolve=>navigator.geolocation.getCurrentPosition(p=>{applyGps(p,fly);resolve(state.user)},()=>{toast('현재 위치 권한을 확인해 주세요.');resolve(null)},{enableHighAccuracy:true,timeout:7000,maximumAge:0}))
+  if(state.permissionPrefs?.location===false){
+    toast('MY에서 위치정보 조회 동의를 켜 주세요.');
+    return null;
+  }
+
+  // Android WebView에서는 브라우저 geolocation보다 네이티브 Fused Location을 먼저 요청한다.
+  if(nativeBridgeAvailable()){
+    nativePost('requestLocation',{highAccuracy:true});
+    const started=Date.now();
+    while(Date.now()-started<2200){
+      if(pointValid(state.user)&&Date.now()-Number(state.nativeLocationAt||0)<5000){
+        if(fly&&state.map)state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:16,duration:350});
+        return state.user;
+      }
+      await new Promise(r=>setTimeout(r,100));
+    }
+  }
+
+  if(!navigator.geolocation){
+    toast('위치 기능을 지원하지 않습니다.');
+    return pointValid(state.user)?state.user:null;
+  }
+
+  return new Promise(resolve=>{
+    navigator.geolocation.getCurrentPosition(
+      p=>{applyGps(p,fly);resolve(state.user)},
+      err=>{
+        console.warn('browser geolocation failed',err?.code,err?.message);
+        if(pointValid(state.user)){resolve(state.user);return}
+        toast('현재 위치를 확인할 수 없습니다. 휴대폰 위치 권한과 GPS를 확인해 주세요.');
+        resolve(null);
+      },
+      {enableHighAccuracy:true,timeout:6500,maximumAge:5000}
+    );
+  });
 }
 function applyGps(pos,fly=false){
   if(state.permissionPrefs?.location===false)return;
@@ -1259,7 +1291,7 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
   syncFuelTabs();
   if(!state.user)await locate(false);
   if(!state.user){
-    renderFuelError('현재 위치를 확인할 수 없습니다.');
+    renderFuelLocationError();
     return;
   }
   if(!force&&fuelFreshEnough()&&state.fuelData?.product===state.fuelProduct){
@@ -1348,6 +1380,11 @@ function renderFuelData(data){
 }
 function renderFuelLoading(){
   const msg='<div class="fuel-empty">오피넷 실시간 유가를 불러오는 중...</div>';
+  if($('fuelStationList'))$('fuelStationList').innerHTML=msg;
+  if($('fuelModalList'))$('fuelModalList').innerHTML=msg;
+}
+function renderFuelLocationError(){
+  const msg='<div class="fuel-empty fuel-error">현재 위치를 확인할 수 없습니다.<br><small>휴대폰 위치 권한과 GPS를 확인해 주세요. 오피넷 인증키 오류가 아닙니다.</small></div>';
   if($('fuelStationList'))$('fuelStationList').innerHTML=msg;
   if($('fuelModalList'))$('fuelModalList').innerHTML=msg;
 }
