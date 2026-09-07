@@ -1274,10 +1274,29 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
     u.searchParams.set('prodcd',state.fuelProduct);u.searchParams.set('cnt','8');
     const res=await fetch(u,{headers:{accept:'application/json'}});
     const d=await res.json().catch(()=>({}));
-    if(!res.ok)throw new Error(d?.error||`유가 조회 실패 (${res.status})`);
+    if(!res.ok){
+      const err=new Error(d?.error||`유가 조회 실패 (${res.status})`);
+      err.code=d?.code||'';
+      throw err;
+    }
     state.fuelData=d;state.fuelFetchedAt=Date.now();
+    try{localStorage.setItem('jofams_fuel_last_success_v1',JSON.stringify({savedAt:Date.now(),payload:d}))}catch{}
     renderFuelData(d);
-  }catch(e){renderFuelError(e?.message||'유가 정보를 불러오지 못했습니다.')}
+  }catch(e){
+    // 일시적인 서버/외부 API 오류라면 마지막 정상 유가를 우선 표시한다.
+    let cached=null;
+    try{
+      const raw=JSON.parse(localStorage.getItem('jofams_fuel_last_success_v1')||'null');
+      if(raw?.payload&&Date.now()-Number(raw.savedAt||0)<6*60*60*1000)cached=raw.payload;
+    }catch{}
+    if(cached){
+      state.fuelData=cached;state.fuelFetchedAt=Number(Date.now()-5*60*1000);
+      renderFuelData(cached);
+      toast('실시간 유가 연결이 지연되어 최근 정상 유가를 표시합니다.',2400);
+    }else{
+      renderFuelError(e?.message||'유가 정보를 불러오지 못했습니다.',e?.code||'');
+    }
+  }
   finally{state.fuelLoading=false}
 }
 function syncFuelTabs(){
@@ -1332,9 +1351,13 @@ function renderFuelLoading(){
   if($('fuelStationList'))$('fuelStationList').innerHTML=msg;
   if($('fuelModalList'))$('fuelModalList').innerHTML=msg;
 }
-function renderFuelError(message){
+function renderFuelError(message,code=''){
   const safe=escapeHtml(message||'유가 정보를 불러오지 못했습니다.');
-  const msg=`<div class="fuel-empty fuel-error">${safe}<br><small>OPINET_CERT_KEY 설정을 확인해 주세요.</small></div>`;
+  const keyProblem=code==='OPINET_KEY_MISSING'||code==='OPINET_KEY_REJECTED';
+  const detail=keyProblem
+    ?'<small>오피넷 서버 인증키 연결 상태를 확인해 주세요.</small>'
+    :'<small>오피넷 또는 네트워크 연결이 일시적으로 지연되고 있습니다.</small>';
+  const msg=`<div class="fuel-empty fuel-error">${safe}<br>${detail}</div>`;
   if($('fuelStationList'))$('fuelStationList').innerHTML=msg;
   if($('fuelModalList'))$('fuelModalList').innerHTML=msg;
 }
