@@ -19,7 +19,7 @@ const state = {
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
   savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:'B027',fuelData:null,fuelFetchedAt:0,fuelLoading:false,destinationSearchSort:'accuracy',lastDestinationQuery:'',routeMode:'car',carRouteOptions:[],walkingRoute:null,routeModeDurations:{car:null,walk:null},homeFacilityCategory:'주유소',homeFacilityItems:[],
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
-  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapSatellite:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,homeSheetDrag:null,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherData:null,localVoucherRetryCount:0,localVoucherLastErrorAt:0,localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,localVoucherLoadedCenter:null,homeCameraMarkers:[],homeCameraLoadTimer:0,
+  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapSatellite:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,homeSheetDrag:null,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherData:null,localVoucherRetryCount:0,localVoucherLastErrorAt:0,localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,localVoucherLoadedCenter:null,onnuriMarkers:[],onnuriData:null,onnuriLoadedAt:0,onnuriLoadedCenter:null,onnuriLoadTimer:0,homeCameraMarkers:[],homeCameraLoadTimer:0,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,
   compassHeading:null,compassAt:0,compassReady:false,activeLaneGuideKey:'',nativeLocationAt:0,nativeLocationActive:false,imu:{at:0,yawRateDegS:0,accelMagnitude:0,headingDeg:null},mapMatch:{index:0,routeDistance:0,score:Infinity,confidence:0,at:0},offRouteHeadingHits:0,gpsFix:{lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false},
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
@@ -474,7 +474,7 @@ function toggleMapSatellite(){
       state.mapReady=true;enforce2DMap();
       if(state.route)drawRoute(state.route,{fit:false});
       if(state.routeMode&&state.tripStartedAt)loadSafetyEvents(state.route);
-      if(!state.mapSatellite){scheduleLocalVoucherRefresh();scheduleHomeCameraRefresh()}
+      if(!state.mapSatellite){scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh()}
     });
   }catch(e){console.warn('satellite toggle failed',e)}
   const btn=$('mapSatelliteBtn');
@@ -512,16 +512,16 @@ async function initMap(){
       state.map.on('click',e=>{if(state.tripStartedAt)toggleMapControls(true);else handleHomeMapClick(e)});
       state.map.on('touchend',()=>{if(state.tripStartedAt)toggleMapControls(true)});
       state.map.on('rotate',updateDriveCompass);
-      state.map.on('moveend',()=>{scheduleLocalVoucherRefresh();scheduleHomeCameraRefresh()});
+      state.map.on('moveend',()=>{scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh();if(state.tripStartedAt&&state.safetyEvents?.length)renderSafetyMarkers()});
       if(state.pendingRouteDraw){const p=state.pendingRouteDraw;state.pendingRouteDraw=null;drawRoute(p.route,p.options)}
       permissionStatus('geolocation').then(async status=>{
         try{
           const u=await locate(status==='granted');
           if(u&&pointValid(u)&&state.map)state.map.easeTo({center:[u.lng,u.lat],zoom:15.5,duration:450});
         }catch(e){console.warn('initial current location failed',e)}
-        setTimeout(()=>{scheduleLocalVoucherRefresh();scheduleHomeCameraRefresh()},250);
+        setTimeout(()=>{scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh()},250);
       });
-      setTimeout(()=>{scheduleLocalVoucherRefresh();scheduleHomeCameraRefresh()},900);
+      setTimeout(()=>{scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh()},900);
       clearTimeout(state.mapWatchdog);
       state.mapWatchdog=setTimeout(()=>{if(!mapHasRenderedTiles())useMapFallback()},2200);
     });
@@ -662,6 +662,117 @@ function voucherShopSvg(){
     <path d="M8.3 18.1V27h15.4v-8.9M12 27v-5.8h5.2V27M20 21.2h2.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
 }
+
+function onnuriShopSvg(){
+  return `<svg viewBox="0 0 32 32" aria-hidden="true">
+    <path d="M6 12.2 8.1 6h15.8l2.1 6.2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+    <path d="M5.2 12.2h21.6v3.1c0 1.7-1.4 3.1-3.1 3.1-1.3 0-2.4-.8-2.9-1.9-.5 1.1-1.6 1.9-2.9 1.9s-2.4-.8-2.9-1.9c-.5 1.1-1.6 1.9-2.9 1.9s-2.4-.8-2.9-1.9c-.5 1.1-1.6 1.9-2.9 1.9-1.7 0-3.1-1.4-3.1-3.1v-3.1Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+    <path d="M8.3 18.1V27h15.4v-8.9M12 27v-5.8h5.2V27M20 21.2h2.2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="24.2" cy="7.8" r="3.2" fill="currentColor"/>
+  </svg>`;
+}
+function clearOnnuriMarkers(){
+  for(const m of state.onnuriMarkers||[])try{m.remove()}catch{}
+  state.onnuriMarkers=[];
+}
+function openOnnuriStoreInfo(item){
+  showMapPlacePrompt({
+    name:item.name||'온누리상품권 가맹점',
+    address:item.address||'',
+    lng:Number(item.lng),lat:Number(item.lat),
+    onnuri:item
+  });
+}
+function clusterMapItemsByPixel(items,cell=64){
+  if(!state.map?.project||!state.map?.unproject)return items.map(it=>({lng:Number(it.lng),lat:Number(it.lat),count:1,items:[it]}));
+  const buckets=new Map();
+  for(const it of items){
+    let p;try{p=state.map.project([Number(it.lng),Number(it.lat)])}catch{continue}
+    if(!p||!Number.isFinite(p.x)||!Number.isFinite(p.y))continue;
+    const key=`${Math.floor(p.x/cell)}:${Math.floor(p.y/cell)}`;
+    if(!buckets.has(key))buckets.set(key,[]);
+    buckets.get(key).push({item:it,x:p.x,y:p.y});
+  }
+  const out=[];
+  for(const list of buckets.values()){
+    let sx=0,sy=0;for(const x of list){sx+=x.x;sy+=x.y}
+    let center=null;try{center=state.map.unproject([sx/list.length,sy/list.length])}catch{}
+    const first=list[0].item;
+    out.push({lng:center?.lng??Number(first.lng),lat:center?.lat??Number(first.lat),count:list.length,items:list.map(x=>x.item)});
+  }
+  return out;
+}
+function renderOnnuriShopMarkers(items){
+  for(const item of items||[]){
+    if(!Number.isFinite(Number(item.lng))||!Number.isFinite(Number(item.lat)))continue;
+    const el=document.createElement('button');
+    el.type='button';el.className='onnuri-shop-marker';
+    el.title=item.name||'온누리상품권 가맹점';
+    el.innerHTML=onnuriShopSvg();
+    el.onclick=e=>{e.stopPropagation();openOnnuriStoreInfo(item)};
+    try{state.onnuriMarkers.push(new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([Number(item.lng),Number(item.lat)]).addTo(state.map))}catch{}
+  }
+}
+function renderOnnuriClusterMarkers(clusters){
+  for(const c of clusters||[]){
+    const el=document.createElement('button');
+    el.type='button';
+    const size=c.count>=25?'large':c.count>=8?'medium':'small';
+    el.className=`onnuri-cluster-marker ${size}`;
+    el.title=`온누리상품권 가맹점 ${c.count}곳`;
+    el.innerHTML=`<strong>${c.count>99?'99+':c.count}</strong>`;
+    el.onclick=e=>{
+      e.stopPropagation();
+      const lngs=c.items.map(x=>Number(x.lng)).filter(Number.isFinite),lats=c.items.map(x=>Number(x.lat)).filter(Number.isFinite);
+      if(!lngs.length||!lats.length)return;
+      try{
+        if(lngs.length===1)state.map.easeTo({center:[lngs[0],lats[0]],zoom:Math.max(state.map.getZoom(),16.5),duration:420});
+        else state.map.fitBounds([[Math.min(...lngs),Math.min(...lats)],[Math.max(...lngs),Math.max(...lats)]],{padding:70,maxZoom:16.5,duration:420});
+      }catch{}
+    };
+    try{state.onnuriMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([c.lng,c.lat]).addTo(state.map))}catch{}
+  }
+}
+function renderOnnuriMarkers(data){
+  clearOnnuriMarkers();
+  if(!state.map||!maplibregl?.Marker||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
+  const items=(data?.items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,1500);
+  if(!items.length)return;
+  if(mapVisibleWidthMeters()<1000)renderOnnuriShopMarkers(items);
+  else renderOnnuriClusterMarkers(clusterMapItemsByPixel(items,68));
+}
+async function loadOnnuriMap({force=false}={}){
+  if(!state.map||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
+  const zoom=Number(state.map.getZoom?.()||0);
+  if(zoom<7.5){clearOnnuriMarkers();return}
+  const center=state.map.getCenter?.();if(!center)return;
+
+  if(state.onnuriData)renderOnnuriMarkers(state.onnuriData);
+  const moved=(()=>{
+    if(!state.onnuriLoadedCenter)return true;
+    const d=voucherGeoMeters(state.onnuriLoadedCenter.lat,state.onnuriLoadedCenter.lng,center.lat,center.lng);
+    const r=voucherVisibleRadiusMeters();
+    return d>=Math.max(600,Number.isFinite(r)?r*.35:1200);
+  })();
+  if(!force&&!moved&&state.onnuriData&&Date.now()-Number(state.onnuriLoadedAt||0)<90000)return;
+
+  try{
+    const b=state.map.getBounds?.(),u=new URL('/api/onnuri-voucher',location.origin);
+    u.searchParams.set('lng',center.lng);u.searchParams.set('lat',center.lat);
+    if(b){u.searchParams.set('west',b.getWest());u.searchParams.set('south',b.getSouth());u.searchParams.set('east',b.getEast());u.searchParams.set('north',b.getNorth())}
+    const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),12000);
+    let r;try{r=await fetch(u,{headers:{accept:'application/json'},signal:ctrl.signal,cache:'no-store'})}finally{clearTimeout(timer)}
+    if(!r.ok){console.warn('onnuri API unavailable',r.status);return}
+    const d=await r.json();
+    state.onnuriData=d;state.onnuriLoadedAt=Date.now();state.onnuriLoadedCenter={lat:center.lat,lng:center.lng};
+    renderOnnuriMarkers(d);
+  }catch(e){console.warn('onnuri map load failed',e)}
+}
+function scheduleOnnuriRefresh(){
+  clearTimeout(state.onnuriLoadTimer);
+  state.onnuriLoadTimer=setTimeout(()=>loadOnnuriMap(),520);
+}
+
 function voucherGeoMeters(aLat,aLng,bLat,bLng){
   const r=6371000,toRad=Math.PI/180,dLat=(bLat-aLat)*toRad,dLng=(bLng-aLng)*toRad;
   const aa=Math.sin(dLat/2)**2+Math.cos(aLat*toRad)*Math.cos(bLat*toRad)*Math.sin(dLng/2)**2;
@@ -673,6 +784,11 @@ function voucherVisibleRadiusMeters(){
     if(!b||!ctr)return Infinity;
     return voucherGeoMeters(ctr.lat,ctr.lng,ctr.lat,b.getEast());
   }catch{return Infinity}
+}
+
+function mapVisibleWidthMeters(){
+  const r=voucherVisibleRadiusMeters();
+  return Number.isFinite(r)?r*2:Infinity;
 }
 function voucherBuildingKey(item){
   return `${Number(item.lat).toFixed(6)}:${Number(item.lng).toFixed(6)}`;
@@ -2334,10 +2450,10 @@ function setView(view){
           if(u&&pointValid(u)&&state.map&&!state.homeSheetCollapsed)state.map.easeTo({center:[u.lng,u.lat],zoom:15.5,duration:380});
         }
       }catch{}
-      scheduleLocalVoucherRefresh();scheduleHomeCameraRefresh();
+      scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh();
     },320);
   }else{
-    $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearHomeCameraMarkers();
+    $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearOnnuriMarkers();clearHomeCameraMarkers();
   }
   if(view==='route')renderSavedWaypointCourses();
   if(view==='drive'){setTimeout(tryLandscapeFullscreen,80);setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),500)}
@@ -2358,7 +2474,7 @@ function initializeDriveSummary(){
   renderSpeedOrSignBadge(limit,[]);
 }
 function startNavigation(){
-  $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearHomeCameraMarkers();
+  $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearOnnuriMarkers();clearHomeCameraMarkers();
   if((state.waypoints||[]).filter(pointValid).length)saveCurrentWaypointCourse();if(!state.route||!state.destination)return;cancelAutoStart();state.tripStartedAt=Date.now();startDestinationCycle();logTrip('start');setView('drive');$('driveView')?.classList.toggle('walking-mode',state.routeMode==='walk');
   state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false};state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};state.routeLockedDistance=0;state.routeLockedAt=Date.now();state.offRouteHits=0;state.offRouteHeadingHits=0;state.offRouteSince=0;state.arrivalCandidateSince=0; // 새 주행마다 상보필터 상태 초기화
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
@@ -2797,12 +2913,63 @@ function mergeSafetyEvents(events,geometry){
   const seen=new Set(),out=[];for(const e of events){let lng=Number(e.lng),lat=Number(e.lat),idx=Number(e.routeIndex);if((!Number.isFinite(lng)||!Number.isFinite(lat))&&Number.isFinite(idx)){const rp=geometry[Math.max(0,Math.min(geometry.length-1,idx))];if(rp){lng=rp[0];lat=rp[1]}}if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;if(!Number.isFinite(idx))idx=nearestIndex(lng,lat,geometry);const p=geometry[idx];if(!p||hav(lat,lng,p[1],p[0])>320)continue;const k=`${e.type}:${Math.round(lat*10000)}:${Math.round(lng*10000)}`;if(seen.has(k))continue;seen.add(k);out.push({...e,lng,lat,routeIndex:idx})}return out.sort((a,b)=>a.routeIndex-b.routeIndex)
 }
 function clearSafetyMarkers(){for(const m of state.safetyMarkers||[])try{m.remove()}catch{}state.safetyMarkers=[]}
+
+function cameraClusterItemsByPixel(items){
+  return clusterMapItemsByPixel(items,62);
+}
+function renderCameraClusterMarkers(items){
+  const clusters=cameraClusterItemsByPixel(items);
+  for(const c of clusters){
+    // 단독 1개는 클러스터가 아니라 기존 CCTV 아이콘을 그대로 표시
+    if(c.count===1){
+      const e=c.items[0],limit=Number(e.maxspeed)||0,el=document.createElement('div');
+      el.className=`safety-map-marker camera camera-pin${e.type==='mobile_camera'?' mobile':''}`;
+      el.title='단속 카메라';
+      el.innerHTML=`<span class="camera-pin-icon">${cctvMarkerSvg()}</span>${limit>0?`<small class="camera-pin-speed">${Math.round(limit)}</small>`:''}`;
+      try{state.safetyMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map))}catch{}
+      continue;
+    }
+    const el=document.createElement('button');
+    el.type='button';
+    const size=c.count>=20?'large':c.count>=7?'medium':'small';
+    el.className=`camera-cluster-marker ${size}`;
+    el.title=`단속카메라 ${c.count}개`;
+    el.innerHTML=`<strong>${c.count>99?'99+':c.count}</strong>`;
+    el.onclick=e=>{
+      e.stopPropagation();
+      const lngs=c.items.map(x=>Number(x.lng)).filter(Number.isFinite),lats=c.items.map(x=>Number(x.lat)).filter(Number.isFinite);
+      if(!lngs.length||!lats.length)return;
+      try{state.map.fitBounds([[Math.min(...lngs),Math.min(...lats)],[Math.max(...lngs),Math.max(...lats)]],{padding:70,maxZoom:17,duration:420})}catch{}
+    };
+    try{state.safetyMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([c.lng,c.lat]).addTo(state.map))}catch{}
+  }
+}
+
 function renderSafetyMarkers(){
   if(!state.map||!maplibregl?.Marker)return;clearSafetyMarkers();
   const skip=['speed_limit','tunnel','curve_left','curve_right','double_curve'];
   const cameraTypes=new Set(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','bus_lane_camera','mobile_camera']);
-  for(const e of state.safetyEvents){
+  const cameraItems=[];
+  const otherItems=[];
+
+  for(const e of state.safetyEvents||[]){
     if(skip.includes(e.type))continue;
+    if(cameraTypes.has(e.type))cameraItems.push(e);else otherItems.push(e);
+  }
+
+  // 화면 가시폭이 1km 이상이면 CCTV는 숫자 클러스터로 묶어 캐릭터 주변에 한 줄처럼 쌓이는 현상을 없앤다.
+  if(mapVisibleWidthMeters()>=1000)renderCameraClusterMarkers(cameraItems);
+  else{
+    for(const e of cameraItems){
+      const el=document.createElement('div'),limit=Number(e.maxspeed)||0;
+      el.className=`safety-map-marker camera camera-pin${e.type==='mobile_camera'?' mobile':''}`;
+      el.title=e.type==='section_speed_camera'?'구간단속':e.type==='bus_lane_camera'?'버스전용차로 단속':e.type==='mobile_camera'?'이동식 단속카메라':'단속 카메라';
+      el.innerHTML=`<span class="camera-pin-icon">${cctvMarkerSvg()}</span>${limit>0?`<small class="camera-pin-speed">${Math.round(limit)}</small>`:''}`;
+      try{state.safetyMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map))}catch{}
+    }
+  }
+
+  for(const e of otherItems){
     const meta=e.type.startsWith('school')?['school','S','스쿨존/학교 주변']
       :e.type==='silver_zone'?['silver','실','노인 보호구역']
       :e.type==='disabled_zone'?['silver','보','장애인 보호구역']
@@ -2813,27 +2980,16 @@ function renderSafetyMarkers(){
       :e.type==='snow_ice_zone'?['weather','눈','눈·결빙 주의']
       :e.type==='chronic_congestion'?['stat','정','상습정체 구간']
       :e.type==='accident_hotspot'?['stat','다','사고다발지역']
-      :e.type==='section_speed_camera'?['camera','구','구간단속 시작']
-      :e.type==='bus_lane_camera'?['camera','버','버스전용차로 단속']
-      :e.type==='mobile_camera'?['mobile','M','이동식 단속카메라']
       :e.type==='crosswalk'?['warn','횡','횡단보도']
       :e.type==='railway_crossing'?['warn','건','철길 건널목']
       :e.type==='height_limit'?['truck','H','높이제한']
       :e.type==='weight_limit'?['truck','W','중량제한']
       :e.type==='width_limit'?['truck','폭','폭제한']
-      :['camera','📷','단속 카메라'];
-
+      :['warn','!','안전운전'];
     const el=document.createElement('div');
-    el.className=`safety-map-marker ${meta[0]}${cameraTypes.has(e.type)?' camera-pin':''}${e.type==='chronic_congestion'?' sign-badge':''}`;
+    el.className=`safety-map-marker ${meta[0]}${e.type==='chronic_congestion'?' sign-badge':''}`;
     el.title=meta[2];
-    if(cameraTypes.has(e.type)){
-      const limit=Number(e.maxspeed)||0;
-      el.innerHTML=`<span class="camera-pin-icon">${cctvMarkerSvg()}</span>${limit>0?`<small class="camera-pin-speed">${Math.round(limit)}</small>`:''}`;
-    }else if(e.type==='chronic_congestion'){
-      el.innerHTML=congestionMarkerSvg();
-    }else{
-      el.textContent=meta[1];
-    }
+    if(e.type==='chronic_congestion')el.innerHTML=congestionMarkerSvg();else el.textContent=meta[1];
     try{state.safetyMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map))}catch{}
   }
 }
@@ -3441,7 +3597,15 @@ function setHomeSheetCollapsed(collapsed){
 }
 function toggleHomeSheet(){setHomeSheetCollapsed(!state.homeSheetCollapsed)}
 
-function openHamburgerMenu(){$('hamburgerMenuModal')?.classList.remove('hidden')}
+function openHamburgerMenu(){
+  const modal=$('hamburgerMenuModal'),sheet=modal?.querySelector('.hamburger-sheet');
+  modal?.classList.remove('hidden');
+  if(sheet){
+    sheet.style.overflowY='scroll';
+    sheet.style.webkitOverflowScrolling='touch';
+    requestAnimationFrame(()=>{try{sheet.scrollTop=0}catch{}});
+  }
+}
 function closeHamburgerMenu(){$('hamburgerMenuModal')?.classList.add('hidden')}
 function openDestinationManager(){
   closeHamburgerMenu();openInfoModal('집·회사 위치 관리',`<div class="menu-choice-grid"><button id="manageHomeFromMenu"><b>집 위치 관리</b><small>${escapeHtml(state.savedPlaces.home?.name||'등록된 집 없음')}</small></button><button id="manageWorkFromMenu"><b>회사 위치 관리</b><small>${escapeHtml(state.savedPlaces.work?.name||'등록된 회사 없음')}</small></button></div>`);

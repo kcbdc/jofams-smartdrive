@@ -1281,3 +1281,56 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 #startBtn:disabled{
   pointer-events:none!important;
 }
+
+
+/* === 7.6.3.4 햄버거 끝까지 스크롤 === */
+.hamburger-menu-modal{overflow:hidden!important}
+.hamburger-sheet{
+  top:calc(var(--safeT) + 8px)!important;
+  bottom:calc(var(--safeB) + 8px)!important;
+  height:auto!important;
+  max-height:none!important;
+  overflow-x:hidden!important;
+  overflow-y:scroll!important;
+  -webkit-overflow-scrolling:touch!important;
+  touch-action:pan-y!important;
+  overscroll-behavior-y:auto!important;
+  padding-bottom:calc(44px + var(--safeB))!important;
+  scroll-padding-bottom:calc(44px + var(--safeB))!important;
+}
+.hamburger-menu-list{overflow:visible!important}
+.hamburger-scroll-spacer{
+  display:block!important;
+  width:100%!important;
+  height:calc(42px + var(--safeB))!important;
+  flex:0 0 auto!important;
+}
+
+/* === CCTV 1km 이상 클러스터 === */
+.camera-cluster-marker{
+  width:36px;height:36px;border:3px solid #fff;border-radius:50%;
+  background:#cf2634;color:#fff;display:grid;place-items:center;
+  box-shadow:0 4px 12px rgba(98,18,29,.34);font-weight:900;
+  pointer-events:auto;touch-action:manipulation;
+}
+.camera-cluster-marker.medium{width:42px;height:42px}
+.camera-cluster-marker.large{width:48px;height:48px}
+.camera-cluster-marker strong{font-size:12px;line-height:1}
+.camera-cluster-marker.large strong{font-size:13px}
+
+/* === 온누리상품권: 주황색 개별 SVG/클러스터 === */
+.onnuri-shop-marker{
+  width:38px;height:38px;border:2px solid #ef7d00;border-radius:12px;
+  background:#fff;color:#ef7d00;display:grid;place-items:center;padding:4px;
+  box-shadow:0 4px 12px rgba(116,62,0,.25);pointer-events:auto;touch-action:manipulation;
+}
+.onnuri-shop-marker svg{width:28px;height:28px;display:block}
+.onnuri-cluster-marker{
+  width:38px;height:38px;border:3px solid #fff;border-radius:50%;
+  background:#ef7d00;color:#fff;display:grid;place-items:center;
+  box-shadow:0 4px 12px rgba(134,67,0,.34);pointer-events:auto;touch-action:manipulation;
+}
+.onnuri-cluster-marker.medium{width:44px;height:44px}
+.onnuri-cluster-marker.large{width:50px;height:50px}
+.onnuri-cluster-marker strong{font-size:12px;font-weight:900;line-height:1}
+.onnuri-cluster-marker.large strong{font-size:13px}
