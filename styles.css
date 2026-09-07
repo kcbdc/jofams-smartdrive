@@ -1238,3 +1238,6 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 
 /* 홈 CCTV는 계속 숨김 */
 .home-camera-marker{display:none!important}
+
+/* 7.6.3.0 할인율 UI 완전 숨김 */
+#localVoucherBadge{display:none!important}
