@@ -772,7 +772,14 @@ async function loadOnnuriMap({force=false}={}){
     const d=await r.json();
     state.onnuriData=d;state.onnuriLoadedAt=Date.now();state.onnuriLoadedCenter={lat:center.lat,lng:center.lng};
     renderOnnuriMarkers(d);
-    if(!d.items?.length)console.warn('onnuri mapped rows 0',d.region,d.fetchMeta,d.fetchedRows,d.localRows);
+    if(!d.items?.length){
+      console.warn('onnuri mapped rows 0',d.region,d.fetchMeta,d.fetchedRows,d.localRows,d.mappedRows);
+      // 캐시/이전 0건 응답이 남은 경우 한 번만 즉시 재조회한다.
+      if(!force&&(!state.onnuriZeroRetryAt||Date.now()-Number(state.onnuriZeroRetryAt||0)>60000)){
+        state.onnuriZeroRetryAt=Date.now();
+        setTimeout(()=>loadOnnuriMap({force:true}),900);
+      }
+    }
   }catch(e){console.warn('onnuri map load failed',e)}
 }
 function scheduleOnnuriRefresh(){
