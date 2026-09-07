@@ -262,23 +262,31 @@ function validKoreaCoordinate(lat,lng){
 /* 완전 동일 좌표 반복이 아니어도, 좁은 경도/위도 밴드 안에 다수 지점이 몰려있으면서
    반대축으로는 광범위(약 30km 이상)하게 퍼져 있으면 지도에서 하나의 직선처럼 보인다.
    BIN 폭(약 0.02도 ≈ 2km) 단위로 좌표를 묶어 이런 준-직선 패턴을 찾아낸다. */
+// 7.6.1.9: "전체 후보 수 대비 5% 이상"이라는 비율 조건이 절대 개수 조건(MIN_COUNT)과 함께 AND로
+// 걸려 있어서, 넓은 bbox 요청으로 전체 후보 수가 많아지면(수백~수천 건) 실제로는 뚜렷한 일직선
+// (12~20곳 수준)이어도 비율 조건을 충족하지 못해 걸러지지 않는 문제가 있었다. 일직선 패턴은
+// 전체 데이터 규모와 무관한 기하학적 특성이므로 비율 조건을 제거하고 절대 개수만으로 판단한다.
+// 또한 고정 격자 하나만 쓰면 밴드 경계에 걸친 점들이 서로 다른 bin으로 갈라져 탐지를 놓칠 수 있어
+// 원래 격자와 반 칸(BIN/2) 밀린 격자를 모두 스캔해 합친다.
 function detectLinearArtifactBands(rows){
   const bad=new Set();
   const valid=rows.filter(x=>validKoreaCoordinate(x.lat,x.lng));
-  if(valid.length<8)return bad;
-  const BIN=0.02,MIN_COUNT=6,MIN_RATIO=.05,MIN_SPAN=.3;
+  const BIN=0.02,MIN_COUNT=6,MIN_SPAN=.3;
+  if(valid.length<MIN_COUNT)return bad;
   const scan=(getKey,getSpanValue)=>{
-    const bins=new Map();
-    for(const x of valid){
-      const k=Math.round(getKey(x)/BIN);
-      if(!bins.has(k))bins.set(k,[]);
-      bins.get(k).push(x);
-    }
-    for(const list of bins.values()){
-      if(list.length<MIN_COUNT||list.length/valid.length<MIN_RATIO)continue;
-      const values=list.map(getSpanValue);
-      if(Math.max(...values)-Math.min(...values)>=MIN_SPAN)
-        for(const x of list)bad.add(x);
+    for(const offset of [0,BIN/2]){
+      const bins=new Map();
+      for(const x of valid){
+        const k=Math.round((getKey(x)+offset)/BIN);
+        if(!bins.has(k))bins.set(k,[]);
+        bins.get(k).push(x);
+      }
+      for(const list of bins.values()){
+        if(list.length<MIN_COUNT)continue;
+        const values=list.map(getSpanValue);
+        if(Math.max(...values)-Math.min(...values)>=MIN_SPAN)
+          for(const x of list)bad.add(x);
+      }
     }
   };
   scan(x=>Number(x.lng),x=>Number(x.lat)); // 경도가 좁게 몰리고 위도가 길게 늘어진 세로 직선

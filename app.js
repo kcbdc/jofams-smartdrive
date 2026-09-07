@@ -19,7 +19,7 @@ const state = {
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
   savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:'B027',fuelData:null,fuelFetchedAt:0,fuelLoading:false,destinationSearchSort:'accuracy',lastDestinationQuery:'',routeMode:'car',carRouteOptions:[],walkingRoute:null,routeModeDurations:{car:null,walk:null},homeFacilityCategory:'주유소',homeFacilityItems:[],
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
-  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,homeSheetDrag:null,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherData:null,localVoucherRetryCount:0,localVoucherLastErrorAt:0,localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,homeCameraMarkers:[],homeCameraLoadTimer:0,
+  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapSatellite:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,homeSheetDrag:null,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherData:null,localVoucherRetryCount:0,localVoucherLastErrorAt:0,localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,localVoucherLoadedCenter:null,homeCameraMarkers:[],homeCameraLoadTimer:0,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,
   compassHeading:null,compassAt:0,compassReady:false,activeLaneGuideKey:'',nativeLocationAt:0,nativeLocationActive:false,imu:{at:0,yawRateDegS:0,accelMagnitude:0,headingDeg:null},mapMatch:{index:0,routeDistance:0,score:Infinity,confidence:0,at:0},offRouteHeadingHits:0,gpsFix:{lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false},
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
@@ -417,6 +417,39 @@ function rasterStyle(provider='osm'){
     : ['https://tile.openstreetmap.fr/hot/{z}/{x}/{y}.png'];
   return {version:8,sources:{base:{type:'raster',tiles,tileSize:256,attribution:'© OpenStreetMap contributors'}},layers:[{id:'base',type:'raster',source:'base',minzoom:0,maxzoom:20}]};
 }
+// 7.6.1.9: 위성 지도 보기. GPS 정확도 자체를 높이는 것은 브라우저 환경에서 불가능하지만(멀티위성/RTK 제어 불가),
+// 실제 항공/위성 사진 위에 현재 위치 마커를 겹쳐 보여주면 사용자가 눈으로 실제 도로/건물과 위치를
+// 대조해 오차를 직접 확인·보정하는 데 도움이 된다. 별도 API 키가 필요 없는 Esri 위성 타일을 사용한다.
+function satelliteStyle(){
+  return {version:8,sources:{
+    satBase:{type:'raster',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:19,attribution:'Esri, Maxar, Earthstar Geographics'},
+    satLabels:{type:'raster',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:19}
+  },layers:[
+    {id:'satBase',type:'raster',source:'satBase',minzoom:0,maxzoom:20},
+    {id:'satLabels',type:'raster',source:'satLabels',minzoom:0,maxzoom:20,paint:{'raster-opacity':.85}}
+  ]};
+}
+function currentBaseMapStyle(){
+  if(state.mapSatellite)return satelliteStyle();
+  return state.mapFallbackTried?rasterStyle(state.mapFallbackTried):COLOR_MAP_STYLE;
+}
+// setStyle()은 지도 위 레이어/소스(경로선 등)를 모두 초기화하므로, 스타일 전환 후 다시 그려준다.
+// (사용자 위치/목적지 마커 등 maplibregl.Marker는 별도 DOM 오버레이라 스타일 전환에 영향받지 않는다.)
+function toggleMapSatellite(){
+  if(!state.map)return;
+  state.mapSatellite=!state.mapSatellite;
+  try{
+    state.map.setStyle(currentBaseMapStyle());
+    state.map.once('styledata',()=>{
+      state.mapReady=true;enforce2DMap();
+      if(state.route)drawRoute(state.route,{fit:false});
+      if(state.routeMode&&state.tripStartedAt)loadSafetyEvents(state.route);
+      if(!state.mapSatellite){scheduleLocalVoucherRefresh();scheduleHomeCameraRefresh()}
+    });
+  }catch(e){console.warn('satellite toggle failed',e)}
+  const btn=$('mapSatelliteBtn');
+  if(btn){btn.classList.toggle('active',state.mapSatellite);btn.setAttribute('aria-pressed',String(state.mapSatellite));btn.textContent=state.mapSatellite?'일반':'위성'}
+}
 function mapHasRenderedTiles(){
   try{return Boolean(state.map?.getCanvas()?.width&&state.map?.getCanvas()?.height&&state.map?.isStyleLoaded()&&(typeof state.map.areTilesLoaded!=='function'||state.map.areTilesLoaded()))}catch{return false}
 }
@@ -641,22 +674,30 @@ function renderVoucherShopMarkers(items){
 
 // 완전 동일 좌표 반복이 아니어도, 좁은 경도/위도 밴드에 다수 지점이 몰리면서 반대축으로 넓게(약 30km+)
 // 퍼져있으면 지도에서는 하나의 직선처럼 보인다. 서버 필터를 통과한 데이터에 대한 2차 안전장치로 프론트에서도 확인한다.
+// 7.6.1.9: 기존에는 "전체 로드된 가맹점 수 대비 5% 이상"이라는 비율 조건이 함께 걸려 있어서,
+// 화면에 보이는 가맹점 전체 수가 많을 때(예: 1200개 근접) 실제로는 뚜렷한 일직선(12~20곳 수준)이어도
+// 비율 조건을 통과하지 못해 걸러지지 않는 문제가 있었다. 일직선 여부는 전체 데이터 규모와 무관한
+// 순수 기하학적 패턴이므로, 비율 조건을 제거하고 절대 개수(MIN_COUNT)만으로 판단한다.
+// 또한 고정 격자 하나만 쓰면 경계선에 걸친 점들이 서로 다른 bin으로 갈라져 밴드를 놓칠 수 있어,
+// 원래 격자와 반 칸(BIN/2) 밀린 격자를 모두 스캔해 겹쳐본다.
 function detectVoucherLineBands(rows){
   const bad=new Set();
-  if(rows.length<8)return bad;
-  const BIN=0.02,MIN_COUNT=6,MIN_RATIO=.05,MIN_SPAN=.3;
+  const BIN=0.02,MIN_COUNT=6,MIN_SPAN=.3;
+  if(rows.length<MIN_COUNT)return bad;
   const scan=(getKey,getSpanValue)=>{
-    const bins=new Map();
-    for(const x of rows){
-      const k=Math.round(getKey(x)/BIN);
-      if(!bins.has(k))bins.set(k,[]);
-      bins.get(k).push(x);
-    }
-    for(const list of bins.values()){
-      if(list.length<MIN_COUNT||list.length/rows.length<MIN_RATIO)continue;
-      const values=list.map(getSpanValue);
-      if(Math.max(...values)-Math.min(...values)>=MIN_SPAN)
-        for(const x of list)bad.add(x);
+    for(const offset of [0,BIN/2]){
+      const bins=new Map();
+      for(const x of rows){
+        const k=Math.round((getKey(x)+offset)/BIN);
+        if(!bins.has(k))bins.set(k,[]);
+        bins.get(k).push(x);
+      }
+      for(const list of bins.values()){
+        if(list.length<MIN_COUNT)continue;
+        const values=list.map(getSpanValue);
+        if(Math.max(...values)-Math.min(...values)>=MIN_SPAN)
+          for(const x of list)bad.add(x);
+      }
     }
   };
   scan(x=>Number(x.lng),x=>Number(x.lat));
@@ -701,7 +742,7 @@ function updateLocalVoucherBadge(data){
 }
 function readVoucherStaleCache(){
   try{
-    const raw=localStorage.getItem('jofams_local_voucher_cache_v8');
+    const raw=localStorage.getItem('jofams_local_voucher_cache_v9');
     if(!raw)return null;
     const d=JSON.parse(raw);
     if(!d?.payload||Date.now()-Number(d.savedAt||0)>6*60*60*1000)return null;
@@ -709,7 +750,7 @@ function readVoucherStaleCache(){
   }catch{return null}
 }
 function writeVoucherStaleCache(payload){
-  try{localStorage.setItem('jofams_local_voucher_cache_v8',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
+  try{localStorage.setItem('jofams_local_voucher_cache_v9',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
 }
 function scheduleVoucherReconnect(){
   clearTimeout(state.localVoucherReconnectTimer);
@@ -745,7 +786,20 @@ async function loadLocalVoucherMap({force=false}={}){
     }
   }
 
-  if(!force&&Date.now()-Number(state.localVoucherLoadedAt||0)<45000&&state.localVoucherData)return;
+  // 7.6.1.9: 기존에는 "마지막 로드 후 45초 이내"이면 지도를 동/서/남/북으로 얼마나 멀리 이동했든
+  // 무조건 새 요청 없이 이전 좌표 기준 데이터를 그대로 재사용했다. 그 결과 사용자가 지도를 옆으로
+  // 움직이면 새로 보이는 지역의 가맹점이 한동안 표시되지 않는 문제가 있었다. 지도 중심이 현재 화면
+  // 반경 대비 유의미하게 이동했다면(대략 화면 폭의 1/3 이상) 45초 제한과 무관하게 즉시 다시 불러온다.
+  const movedFarEnough=(()=>{
+    const last=state.localVoucherLoadedCenter;
+    if(!last)return true;
+    const dist=voucherGeoMeters(last.lat,last.lng,center.lat,center.lng);
+    const radius=voucherVisibleRadiusMeters();
+    const threshold=Number.isFinite(radius)&&radius>0?Math.max(800,radius*0.35):1500;
+    return dist>=threshold;
+  })();
+
+  if(!force&&!movedFarEnough&&Date.now()-Number(state.localVoucherLoadedAt||0)<45000&&state.localVoucherData)return;
 
   try{
     const b=state.map.getBounds?.();
@@ -785,6 +839,7 @@ async function loadLocalVoucherMap({force=false}={}){
 
     const d=await r.json();
     state.localVoucherLoadedAt=Date.now();
+    state.localVoucherLoadedCenter={lat:center.lat,lng:center.lng};
     state.localVoucherRegionCode=d.regionCode||'';
     state.localVoucherData=d;
     state.localVoucherRetryCount=0;
@@ -853,15 +908,28 @@ function ensureDriveCharacterAfterViewportChange(){
   }catch(e){console.warn('drive marker viewport recovery failed',e)}
 }
 
-function makeCarMarker(){const el=document.createElement('div');el.className='character-car-marker rear-version';el.innerHTML=`<img src="${characterDefs[state.character].rear||characterDefs[state.character].marker}" alt="${characterDefs[state.character].name} 자동차 후면">`;return new maplibregl.Marker({element:el,anchor:'center',rotationAlignment:'viewport'});}
-function updateCarMarkerImage(){const img=state.userMarker?.getElement()?.querySelector('img');if(img)img.src=characterDefs[state.character].rear||characterDefs[state.character].marker}
+// 7.6.1.9: 도보 안내에서는 자동차를 탄 캐릭터 대신, 걸어다니는 일반 캐릭터(아바타)를 사용한다.
+// characterDefs에는 도보용 별도 이미지가 없으므로, 캐릭터 아바타(avatar) 이미지를 그대로 사용한다.
+function isWalkingGuide(){return state.routeMode==='walk'}
+function characterGuideImage(kind){
+  const c=characterDefs[state.character];
+  if(isWalkingGuide())return c.avatar;
+  if(kind==='marker')return c.marker;
+  return c.rear||c.marker;
+}
+function makeCarMarker(){const el=document.createElement('div');el.className='character-car-marker rear-version';el.classList.toggle('walking-character-marker',isWalkingGuide());el.innerHTML=`<img src="${characterGuideImage('rear')}" alt="${characterDefs[state.character].name}">`;return new maplibregl.Marker({element:el,anchor:'center',rotationAlignment:'viewport'});}
+function updateCarMarkerImage(){
+  const el=state.userMarker?.getElement();if(!el)return;
+  el.classList.toggle('walking-character-marker',isWalkingGuide());
+  const img=el.querySelector('img');if(img)img.src=characterGuideImage('rear');
+}
 function makeDestMarker(){const el=document.createElement('div');el.className='destination-pin';return new maplibregl.Marker({element:el,anchor:'bottom'})}
 function updateUserMarkerMotion(){
   const moving=Boolean(state.tripStartedAt)&&Math.max(0,Number(state.user?.speed)||0)>.35;
   const el=state.userMarker?.getElement();if(el)el.classList.toggle('jofams-car-moving',moving);
   if(state.tripStartedAt)setTimeout(alignDriveCharacterWithSpeedLimit,0);
   const ar=$('driveArCharacter');if(ar)ar.classList.toggle('moving',moving&&state.arCameraMode);const arMarker=$('arCharacterMarker');if(arMarker)arMarker.classList.toggle('moving',moving&&state.arRunning);
-  const img=$('driveArCharacterImg');if(img)img.src=characterDefs[state.character].rear||characterDefs[state.character].marker;
+  const img=$('driveArCharacterImg');if(img)img.src=characterGuideImage('rear');
 }
 function ensureUserMarker(){if(!state.user||!state.map)return;if(!state.userMarker)state.userMarker=makeCarMarker().setLngLat([state.user.lng,state.user.lat]).addTo(state.map);else state.userMarker.setLngLat([state.user.lng,state.user.lat]);updateUserMarkerMotion()}
 function setDestinationMarker(){if(state.destMarker)state.destMarker.remove();if(state.destination&&state.map)state.destMarker=makeDestMarker().setLngLat([state.destination.lng,state.destination.lat]).addTo(state.map)}
@@ -1261,11 +1329,10 @@ async function chooseDestination(item,{autoGuide=true}={}){
   updateOriginUI();
 
   await loadRouteOptions();
-
-  if(autoGuide&&state.route&&state.destination){
-    cancelAutoStart();
-    startNavigation();
-  }
+  // 7.6.1.9: 목적지를 고르자마자 바로 주행을 시작하지 않는다. loadRouteOptions()가 경로를 표시하면서
+  // 이미 scheduleAutoStart()로 10초 카운트다운을 시작하므로, 여기서 바로 startNavigation()을 호출해
+  // 카운트다운을 건너뛰지 않는다. 사용자는 10초 안에 "안내 시작"을 눌러 즉시 시작하거나 취소할 수 있다.
+  void autoGuide;
 }
 async function startRouteGuidanceNow(){
   if(state.tripStartedAt)return;
@@ -1614,24 +1681,28 @@ async function startAR(){
   if(state.arRunning)return;
   if(!state.route||!state.destination){toast('먼저 길안내를 시작해 주세요.');return}
   if(!navigator.mediaDevices?.getUserMedia){toast('이 기기에서는 AR 카메라를 지원하지 않습니다.');return}
+  // 사용자 제스처(AR 버튼 탭) 컨텍스트를 벗어나기(getUserMedia await) 전에 먼저 전체화면을 요청해야 브라우저가 확실히 허용한다.
+  if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen();
   try{
     state.arStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
     $('arVideo').srcObject=state.arStream;state.arRunning=true;$('arView').classList.remove('hidden');$('bottomNav').classList.add('hidden');$('driveMenu').classList.add('hidden');
-    $('arCharacterCar').src=characterDefs[state.character].marker;updateAROverlay();drawARScene();
+    $('arCharacterCar').src=characterGuideImage('marker');updateAROverlay();drawARScene();
+    tryLandscapeFullscreen();
   }catch(e){console.warn(e);toast('카메라 권한을 허용해 주세요.',3000)}
 }
 function stopAR(){
   if(state.arFrame)cancelAnimationFrame(state.arFrame);state.arFrame=0;state.arRunning=false;$('arView')?.classList.add('hidden');
   if(state.arStream){state.arStream.getTracks().forEach(t=>t.stop());state.arStream=null}
   if(!$('driveView')?.classList.contains('hidden'))$('bottomNav')?.classList.add('hidden');
+  setTimeout(tryLandscapeFullscreen,60); // AR 종료 후에도 여전히 주행 중이면 주행 전체화면 유지, 아니면 전체화면 해제
 }
 function updateAROverlay(){
   if(!state.route||!state.user)return;const idx=state.currentRouteIndex||0,total=state.routeCumulative.at(-1)||state.route.distance||1,done=state.routeCumulative[idx]||0,remain=Math.max(0,total-done),ratio=Math.max(0,Math.min(1,remain/total)),remainSec=(state.route.duration||0)*ratio;
   const guides=(state.route.guides||[]).filter(x=>Number(x.routeIndex)>idx+1),g=guides[0];
   if(g){const d=distanceAlong(idx,g.routeIndex);$('arTurnIcon').innerHTML=turnSvg(g.type);$('arTurnDistance').textContent=km(d);$('arCenterDistance').textContent=km(d);$('arTurnRoad').textContent=g.name||g.guidance||'다음 안내'}
   else{$('arTurnIcon').innerHTML=turnSvg(0);$('arTurnDistance').textContent=km(remain);$('arCenterDistance').textContent=km(remain);$('arTurnRoad').textContent='목적지까지 직진'}
-  $('arSpeed').textContent=Math.max(0,Math.round((state.user.speed||0)*3.6));$('arEta').textContent=eta(remainSec);$('arRemain').textContent=km(remain);$('arCharacterCar').src=characterDefs[state.character].rear||characterDefs[state.character].marker;updateUserMarkerMotion();
-  const marker=$('arCharacterMarker');if(marker){const near=g?Math.max(0,Math.min(1,1-distanceAlong(idx,g.routeIndex)/650)):0;marker.classList.add('rear-facing');marker.style.setProperty('--ar-car-x','0px');marker.style.setProperty('--ar-car-y','-3vh')}
+  $('arSpeed').textContent=Math.max(0,Math.round((state.user.speed||0)*3.6));$('arEta').textContent=eta(remainSec);$('arRemain').textContent=km(remain);$('arCharacterCar').src=characterGuideImage('rear');updateUserMarkerMotion();
+  const marker=$('arCharacterMarker');if(marker){const near=g?Math.max(0,Math.min(1,1-distanceAlong(idx,g.routeIndex)/650)):0;marker.classList.toggle('rear-facing',!isWalkingGuide());marker.classList.toggle('walking-character-marker',isWalkingGuide());marker.style.setProperty('--ar-car-x','0px');marker.style.setProperty('--ar-car-y','-3vh')}
 }
 function drawARScene(){
   if(!state.arRunning)return;
@@ -1815,16 +1886,56 @@ const NOTICE_ITEMS=[
 ];
 async function openNotices(){try{const d=await fetch('/api/content?type=notices').then(r=>r.json());const items=Array.isArray(d.items)&&d.items.length?d.items:NOTICE_ITEMS;openInfoModal('공지사항',`<div class="notice-list">${items.map(x=>`<article><time>${escapeHtml(x.date||x.createdAt||'')}</time><b>${escapeHtml(x.title)}</b><p>${escapeHtml(x.body).replace(/\n/g,'<br>')}</p></article>`).join('')}</div>`)}catch{openInfoModal('공지사항',`<div class="notice-list">${NOTICE_ITEMS.map(x=>`<article><time>${escapeHtml(x.date)}</time><b>${escapeHtml(x.title)}</b><p>${escapeHtml(x.body)}</p></article>`).join('')}</div>`)}}
 function applyNightMode(){const h=new Date().getHours(),night=h>=19||h<6;document.body.classList.toggle('night-map',night);return night}
+/* 7.6.1.9: 가로 회전 시 실제 브라우저 전체화면(Fullscreen API)까지 적용한다.
+   - 기존에는 Chrome/WebView의 "전체화면 종료 방법" 안내 팝업을 피하려고 CSS 레이아웃 확장만 사용했지만,
+     그 결과 브라우저 주소창/탭 UI가 그대로 남아 사용자가 "화면만 돌아가고 전체화면이 되지 않는다"고
+     느끼는 문제가 있었다.
+   - requestFullscreen()은 브라우저 정책상 실제 사용자 제스처(탭) 컨텍스트 안에서 호출해야 확실히
+     허용되므로, 안내 시작 버튼(startNavigation)과 AR 시작 버튼(startAR) 클릭 시점에 함께 요청한다.
+   - orientationchange 시점에도 한 번 더 시도하되(일부 브라우저는 회전 자체도 허용), 실패해도 조용히
+     무시하고 기존 CSS 레이아웃 확장은 항상 적용해 최소한의 전체화면형 레이아웃은 보장한다.
+   - iOS Safari(아이폰)는 <html> 전체화면 API를 지원하지 않으므로 CSS 확장만 적용된다. */
+function fullscreenSupported(){
+  const el=document.documentElement;
+  return Boolean(el.requestFullscreen||el.webkitRequestFullscreen||el.msRequestFullscreen);
+}
+function isDocumentFullscreen(){
+  return Boolean(document.fullscreenElement||document.webkitFullscreenElement||document.msFullscreenElement);
+}
+async function enterAppFullscreen(){
+  if(isDocumentFullscreen())return;
+  const el=document.documentElement;
+  try{
+    if(el.requestFullscreen)await el.requestFullscreen({navigationUI:'hide'});
+    else if(el.webkitRequestFullscreen)el.webkitRequestFullscreen();
+    else if(el.msRequestFullscreen)el.msRequestFullscreen();
+  }catch(e){
+    // 사용자 제스처 컨텍스트 밖(예: orientationchange)에서는 브라우저가 거부할 수 있다. 무시하고 CSS 레이아웃으로 대체.
+    console.warn('fullscreen request failed',e?.message||e);
+  }
+}
+function exitAppFullscreen(){
+  if(!isDocumentFullscreen())return;
+  try{
+    if(document.exitFullscreen)document.exitFullscreen().catch(()=>{});
+    else if(document.webkitExitFullscreen)document.webkitExitFullscreen();
+    else if(document.msExitFullscreen)document.msExitFullscreen();
+  }catch{}
+}
 async function tryLandscapeFullscreen(){
   const landscape=matchMedia('(orientation: landscape)').matches;
+  const inDriveOrAR=!$('driveView')?.classList.contains('hidden')||state.arRunning;
   // 홈/경로/주행 어떤 화면이든 가로로 회전하면 전체화면처럼 전환한다.
   document.body.classList.toggle('landscape-full',landscape);
   // 주행/AR 화면은 기존처럼 전용 레이아웃(계기판 배치 등)까지 추가로 적용한다.
-  document.body.classList.toggle('landscape-drive',landscape&&(!$('driveView')?.classList.contains('hidden')||state.arRunning));
-  // 브라우저 Fullscreen API는 사용하지 않는다.
-  // 가로 회전 시 Chrome/WebView의 '전체화면 종료 방법' 안내 팝업이 뜨는 것을 방지한다.
+  document.body.classList.toggle('landscape-drive',landscape&&inDriveOrAR);
+  if(landscape&&inDriveOrAR)await enterAppFullscreen();
+  else if(!landscape||!inDriveOrAR)exitAppFullscreen();
   setTimeout(()=>state.map?.resize(),120);
 }
+// 시스템 뒤로가기/제스처 등으로 브라우저가 전체화면을 강제 종료했을 때도 레이아웃 상태를 맞춰준다.
+document.addEventListener('fullscreenchange',()=>{if(!isDocumentFullscreen())setTimeout(tryLandscapeFullscreen,60)});
+document.addEventListener('webkitfullscreenchange',()=>{if(!isDocumentFullscreen())setTimeout(tryLandscapeFullscreen,60)});
 
 function updateDriveCompass(){
   const btn=$('mapCompassBtn');if(!btn)return;
@@ -1983,6 +2094,7 @@ function startNavigation(){
   if((state.waypoints||[]).filter(pointValid).length)saveCurrentWaypointCourse();if(!state.route||!state.destination)return;cancelAutoStart();state.tripStartedAt=Date.now();startDestinationCycle();logTrip('start');setView('drive');$('driveView')?.classList.toggle('walking-mode',state.routeMode==='walk');
   state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false};state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};state.offRouteHits=0;state.offRouteHeadingHits=0; // 새 주행마다 상보필터 상태 초기화
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
+  if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 바로 요청해야 브라우저가 확실히 허용한다.
   initializeDriveSummary();startWatch();ensureUserMarker();updateCarMarkerImage();drawRoute(state.route,{fit:false});updateDriving(true);if(state.routeMode==='car')startLiveRouteRefresh();else stopLiveRouteRefresh();applyNightMode();setTimeout(tryLandscapeFullscreen,100);speak(state.routeMode==='walk'?'도보 안내를 시작합니다. 보행자 도로를 따라 이동하세요.':`${characterDefs[state.character].name}이 안내를 시작합니다.`)}
 function stopNavigation(){if($('laneAssistLayer'))$('laneAssistLayer').classList.add('hidden');
   const finishedDestination=state.destination?{...state.destination}:null;
@@ -2967,7 +3079,7 @@ function bindUI(){
     if($('fuelModalClose'))$('fuelModalClose').onclick=closeFuelModal;
     if($('fuelModal'))$('fuelModal').addEventListener('click',e=>{if(e.target===$('fuelModal'))closeFuelModal()});
   }catch(e){console.warn('fuel UI bind failed',e)}
-  try{$('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=recenterDriveMap;$('mapCompassBtn').onclick=resetDriveCompass;$('map3dBtn').onclick=e=>{e.stopPropagation();state.map3D=!state.map3D;applyDriveMapMode();toggleMapControls(true)};$('mapZoomInBtn').onclick=e=>{e.stopPropagation();state.map?.zoomIn({duration:180});toggleMapControls(true)};$('mapZoomOutBtn').onclick=e=>{e.stopPropagation();state.map?.zoomOut({duration:180});toggleMapControls(true)};$('driveView').addEventListener('click',e=>{if(e.target.closest('button,input,.maneuver-stack,.drive-bottom-card,.safety-alert,.traffic-status,.vms-banner,.lane-assist-layer'))return;toggleMapControls(true)});$('driveVoiceBtn').onclick=startVoiceCommand;$('arOpenBtn').onclick=startAR;$('driveArBtn').onclick=startAR;$('routeInfoBtn').onclick=openRouteInfo;$('driveSearchBtn').onclick=openDriveSearch;$('routeInfoClose').onclick=closeRouteInfo;$('routeInfoModal').addEventListener('click',e=>{if(e.target===$('routeInfoModal'))closeRouteInfo()});$('driveSearchClose').onclick=closeDriveSearch;$('driveSearchSubmit').onclick=()=>searchDriveDestinations($('driveSearchInput').value);$('driveSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchDriveDestinations(e.target.value)});$('driveSearchModal').addEventListener('click',e=>{if(e.target===$('driveSearchModal'))closeDriveSearch()});document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{closeDriveMenu();stopWatch();setView('route');loadRouteOptions()};$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;}catch(e){console.warn('UI bind section 9 failed',e)}
+  try{$('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=recenterDriveMap;$('mapCompassBtn').onclick=resetDriveCompass;$('map3dBtn').onclick=e=>{e.stopPropagation();state.map3D=!state.map3D;applyDriveMapMode();toggleMapControls(true)};$('mapSatelliteBtn').onclick=e=>{e.stopPropagation();toggleMapSatellite();toggleMapControls(true)};$('mapZoomInBtn').onclick=e=>{e.stopPropagation();state.map?.zoomIn({duration:180});toggleMapControls(true)};$('mapZoomOutBtn').onclick=e=>{e.stopPropagation();state.map?.zoomOut({duration:180});toggleMapControls(true)};$('driveView').addEventListener('click',e=>{if(e.target.closest('button,input,.maneuver-stack,.drive-bottom-card,.safety-alert,.traffic-status,.vms-banner,.lane-assist-layer'))return;toggleMapControls(true)});$('driveVoiceBtn').onclick=startVoiceCommand;$('arOpenBtn').onclick=startAR;$('driveArBtn').onclick=startAR;$('routeInfoBtn').onclick=openRouteInfo;$('driveSearchBtn').onclick=openDriveSearch;$('routeInfoClose').onclick=closeRouteInfo;$('routeInfoModal').addEventListener('click',e=>{if(e.target===$('routeInfoModal'))closeRouteInfo()});$('driveSearchClose').onclick=closeDriveSearch;$('driveSearchSubmit').onclick=()=>searchDriveDestinations($('driveSearchInput').value);$('driveSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchDriveDestinations(e.target.value)});$('driveSearchModal').addEventListener('click',e=>{if(e.target===$('driveSearchModal'))closeDriveSearch()});document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{closeDriveMenu();stopWatch();setView('route');loadRouteOptions()};$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;}catch(e){console.warn('UI bind section 9 failed',e)}
   try{$('guideVolume').oninput=e=>changeVolume(e.target.value);$('myGuideVolume').oninput=e=>changeVolume(e.target.value);$('myCloseBtn').onclick=closeMy;$('myModal').addEventListener('click',e=>{if(e.target===$('myModal'))closeMy()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;$('myFavoritesBtn').onclick=openFavoritesList;$('tripHistoryBtn').onclick=openTripHistory;$('noticeBtn').onclick=openNotices;if($('appPrivacyBtn'))$('appPrivacyBtn').onclick=openAppPrivacy;if($('permissionSettingBtn'))$('permissionSettingBtn').onclick=()=>toggleSettingPanel('permissionSettingBtn','permissionSettingPanel');if($('locationConsentToggle'))$('locationConsentToggle').onchange=e=>setPermissionPreference('location',e.target.checked);if($('cameraConsentToggle'))$('cameraConsentToggle').onchange=e=>setPermissionPreference('camera',e.target.checked);$('infoModalClose').onclick=closeInfoModal;$('infoModal').addEventListener('click',e=>{if(e.target===$('infoModal'))closeInfoModal()});}catch(e){console.warn('UI bind section 10 failed',e)}
   try{if($('hamburgerCloseBtn'))$('hamburgerCloseBtn').onclick=closeHamburgerMenu;if($('hamburgerMenuModal'))$('hamburgerMenuModal').addEventListener('click',e=>{if(e.target===$('hamburgerMenuModal'))closeHamburgerMenu()});}catch(e){console.warn('UI bind section 11 failed',e)}
   try{if($('hambPlaceManageBtn'))$('hambPlaceManageBtn').onclick=openDestinationManager;if($('hambRecentBtn'))$('hambRecentBtn').onclick=openRecentDestinationAll;if($('hambWaypointBtn'))$('hambWaypointBtn').onclick=openWaypointSaved;if($('hambTrafficBtn'))$('hambTrafficBtn').onclick=openTrafficDetail;if($('hambRoutePriorityBtn'))$('hambRoutePriorityBtn').onclick=openRoutePrioritySettings;if($('hambCameraSettingsBtn'))$('hambCameraSettingsBtn').onclick=openCameraAlertSettings;if($('hambSupportBtn'))$('hambSupportBtn').onclick=openSupportTerms;}catch(e){console.warn('UI bind section 12 failed',e)}
