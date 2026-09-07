@@ -377,17 +377,31 @@ async function fetchDiscountPolicies(keyCandidates,regionCodes,env){
   const endpoint=String(env.KOMSCO_SALES_POLICY_API_URL||SALES_POLICY_URL).trim();
   const codes=(Array.isArray(regionCodes)?regionCodes:[regionCodes]).filter(Boolean);
   const codeSet=new Set(codes);
-  const primaryCode=codes[0]||'';
-  const attempts=[
-    // 서버측 지역조건을 지원하면 해당 지역 데이터만 받아오므로 페이지 수를 최소화할 수 있어 먼저 시도.
-    {kind:'standard-cond',params:{page:'1',perPage:'1000','cond[usage_rgn_cd::EQ]':primaryCode,returnType:'JSON'}},
-    {kind:'standard-direct',params:{page:'1',perPage:'1000',usage_rgn_cd:primaryCode,returnType:'JSON'}},
-    {kind:'legacy-region',params:{pageNo:'1',numOfRows:'1000',type:'json',usageRegionCode:primaryCode}},
-    // 서버가 지역조건을 지원하지 않을 때를 대비한 전체조회 폴백(페이지네이션으로 전체 순회).
+  // 7.6.2.4: 기존에는 지역필터 요청(standard-cond/standard-direct/legacy-region)에
+  // resolveKomscoQueryCodes()가 반환한 후보 코드 중 "첫 번째(사용코드)"만 사용했다.
+  // 강원/전북처럼 최근 지역코드가 개편된 지역은 판매정책 API에 개편 "이전" 코드로만
+  // 등록돼 있는 경우가 있어, 사용코드(첫 번째 후보)로 필터링하면 서버가 0건을 반환하고
+  // 그대로 다음 요청형식으로 넘어가 버렸다. 그 결과 최종적으로 전체조회(all) 폴백까지
+  // 가더라도, 대상 지역 데이터가 MAX_POLICY_PAGES(15page x 1000건)보다 뒤쪽에 있으면
+  // 찾지 못해 할인율이 0%/미확인으로 표시됐다. 이를 막기 위해 사용코드 → 과거코드 →
+  // 원본 법정동코드 "모든" 후보 각각에 대해 지역필터 요청을 먼저 시도한 뒤에만
+  // 전체조회로 폴백한다.
+  const attempts=[];
+  for(const code of codes){
+    attempts.push({kind:`standard-cond:${code}`,params:{page:'1',perPage:'1000','cond[usage_rgn_cd::EQ]':code,returnType:'JSON'}});
+  }
+  for(const code of codes){
+    attempts.push({kind:`standard-direct:${code}`,params:{page:'1',perPage:'1000',usage_rgn_cd:code,returnType:'JSON'}});
+  }
+  for(const code of codes){
+    attempts.push({kind:`legacy-region:${code}`,params:{pageNo:'1',numOfRows:'1000',type:'json',usageRegionCode:code}});
+  }
+  // 서버가 지역조건을 지원하지 않을 때를 대비한 전체조회 폴백(페이지네이션으로 전체 순회).
+  attempts.push(
     {kind:'standard-all',params:{page:'1',perPage:'1000',returnType:'JSON'}},
     {kind:'standard-all-type',params:{page:'1',perPage:'1000',type:'json'}},
     {kind:'legacy-all',params:{pageNo:'1',numOfRows:'1000',type:'json'}}
-  ];
+  );
   const MAX_POLICY_PAGES=15;
 
   let lastDetail='',lastStatus='';

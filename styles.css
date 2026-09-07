@@ -839,23 +839,30 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 }
 
 
-/* === 7.5.9.3 section-speed camera === */
+/* === 7.5.9.3 section-speed camera ===
+   7.6.2.4: 기존에는 화면 상단 중앙에 별도로 떠 있어, "왼쪽 표시창(제한속도/현재속도가
+   보이는 좌측 하단 speed-panel)"에 표시해 달라는 요청과 어긋났다. 좌측 speed-panel과
+   같은 left 좌표를 쓰고 그 바로 위에 붙는 세로형 카드로 바꿔, 구간단속 진입~종료까지는
+   좌측에서 평균속도/제한속도/남은거리를 함께 확인할 수 있게 한다. */
 .section-speed-panel{
   position:absolute;
   z-index:36;
-  left:50%;
-  top:96px;
-  transform:translateX(-50%);
-  width:min(calc(100% - 30px),390px);
-  min-height:54px;
+  left:14px;
+  right:auto;
+  bottom:calc(var(--safeB) + 268px);
+  transform:none;
+  width:86px;
+  min-height:auto;
   display:grid;
-  grid-template-columns:auto 1fr 1fr auto;
+  grid-template-columns:none;
+  justify-items:center;
   align-items:center;
-  gap:9px;
-  padding:7px 10px;
+  gap:2px;
+  padding:8px 6px 9px;
   border-radius:16px;
   background:rgba(24,31,46,.94);
   color:#fff;
+  text-align:center;
   box-shadow:0 8px 24px rgba(0,0,0,.22);
   backdrop-filter:blur(10px);
   -webkit-backdrop-filter:blur(10px);
@@ -863,15 +870,19 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 }
 .section-speed-panel.hidden{display:none!important}
 .section-speed-panel>span{
-  padding:5px 7px;border-radius:9px;background:#f3b11a;color:#171717;font-size:9px;font-weight:900;white-space:nowrap
+  padding:3px 8px;border-radius:8px;background:#f3b11a;color:#171717;font-size:9px;font-weight:900;white-space:nowrap;margin-bottom:1px
 }
-.section-speed-panel div{display:grid;gap:1px;min-width:0}
+.section-speed-panel div{display:grid;justify-items:center;gap:0;min-width:0;width:100%}
 .section-speed-panel small{font-size:8px;opacity:.68;white-space:nowrap}
-.section-speed-panel b,.section-speed-panel strong{font-size:12px;white-space:nowrap}
-.section-speed-panel em{font-style:normal;font-size:9px;opacity:.82;white-space:nowrap}
+.section-speed-panel b,.section-speed-panel strong{font-size:15px;white-space:nowrap}
+.section-speed-panel em{font-style:normal;font-size:8px;opacity:.82;white-space:nowrap;margin-top:1px}
 .section-speed-panel.over{background:rgba(148,21,27,.96)}
+@media(max-width:420px) and (orientation:portrait){
+  .section-speed-panel{left:11px!important;width:78px!important;bottom:calc(var(--safeB) + 260px)!important}
+}
 @media (orientation:landscape){
-  .section-speed-panel{top:72px;width:min(48vw,360px);min-height:48px;padding:5px 9px}
+  body.landscape-drive .section-speed-panel{left:12px!important;width:72px!important;bottom:calc(var(--safeB) + 168px)!important;padding:6px 5px 7px!important}
+  body.landscape-drive .section-speed-panel b,body.landscape-drive .section-speed-panel strong{font-size:13px!important}
 }
 
 
@@ -1060,6 +1071,21 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   width:17px!important;
   height:17px!important;
   display:block!important;
+}
+/* 상습정체구간 표지판 아이콘: 실제 표지판처럼 적/황/흑 고유 색을 그대로 쓰므로,
+   다른 stat 마커(다크 배경 + currentColor)와 달리 흰색 칩 위에 올려 표지판 자체가
+   또렷이 보이도록 한다. */
+.safety-map-marker.stat.sign-badge{
+  background:#fff!important;border-color:#e2001a!important;
+}
+.safety-map-marker.stat.sign-badge svg{
+  width:23px!important;height:23px!important;
+}
+.safety-alert-icon.sign-icon{
+  background:#fff!important;
+}
+.safety-alert-icon.sign-icon svg{
+  width:26px!important;height:26px!important;
 }
 .home-camera-marker{
   width:30px!important;height:30px!important;

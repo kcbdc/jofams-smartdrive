@@ -574,26 +574,23 @@ function cctvMarkerSvg(){
     <path d="M19.4 11.1 24 8.9v7.4l-4.6-2.2M9.2 17.1l-1.4 4.1M16.6 17.1l1.3 4.1M5.7 21.2h13.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
 }
-// 상습정체 구간(chronic_congestion) 마커는 이전까지 '정'이라는 한 글자 텍스트로만 표시되어
-// 사용자가 그 의미를 알아보기 어려웠다. 정체 구간임을 직관적으로 알 수 있도록, CCTV 마커(cctvMarkerSvg)와
-// 동일한 톤(선화/currentColor 스트로크)으로 정차한 두 대의 차량 뒷모습 + 빨간 제동등을 그린 아이콘으로 대체한다.
-// 지도 위 마커와 길안내 좌측 하단 안전 배지(safety-alert, kind=stat) 양쪽에서 공통으로 사용된다.
+// 상습정체 구간(chronic_congestion) 아이콘: 실제 도로교통법 주의표지판인
+// "상습정체구간" 표지판(적색 역삼각형 테두리 + 백색 얇은 테 + 황색 바탕 + 정면에서 본
+// 차량 3대 실루엣)을 그대로 SVG 벡터로 옮겨 사용한다. 기존에는 currentColor 선화로 그린
+// 추상적인 "제동등 켜진 차량" 아이콘이었으나, 실제 표지판과 형태가 달라 사용자가 표지판을
+// 보고도 앱 안에서 같은 의미인지 알아보기 어려웠다. 지도 위 마커와 길안내 좌측 하단 안전
+// 배지(safety-alert, kind=stat) 양쪽에서 이 함수를 공통으로 사용한다.
 function congestionMarkerSvg(){
-  return `<svg viewBox="0 0 28 28" aria-hidden="true">
-    <path d="M2.6 21h9.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M15.8 21h9.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M4 20.3v-4.6c0-1 .35-1.55 1.25-1.8l.55-1.5c.2-.55.6-.8 1.15-.8h2.1c.55 0 .95.25 1.15.8l.55 1.5c.9.25 1.25.8 1.25 1.8v4.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M17.2 20.3v-4.6c0-1 .35-1.55 1.25-1.8l.55-1.5c.2-.55.6-.8 1.15-.8h2.1c.55 0 .95.25 1.15.8l.55 1.5c.9.25 1.25.8 1.25 1.8v4.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M4.55 17.3h4.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M17.75 17.3h4.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="5.5" cy="20.3" r="0.95" fill="currentColor"/>
-    <circle cx="8.5" cy="20.3" r="0.95" fill="currentColor"/>
-    <circle cx="18.7" cy="20.3" r="0.95" fill="currentColor"/>
-    <circle cx="21.7" cy="20.3" r="0.95" fill="currentColor"/>
-    <rect x="3.9" y="18.35" width="1.9" height="1.5" rx="0.5" fill="#ff3b30"/>
-    <rect x="8.15" y="18.35" width="1.9" height="1.5" rx="0.5" fill="#ff3b30"/>
-    <rect x="17.1" y="18.35" width="1.9" height="1.5" rx="0.5" fill="#ff3b30"/>
-    <rect x="21.35" y="18.35" width="1.9" height="1.5" rx="0.5" fill="#ff3b30"/>
+  return `<svg viewBox="0 0 100 100" aria-hidden="true">
+    <path d="M50 4 L95.5 90 L4.5 90 Z" fill="#e2001a"/>
+    <path d="M50 12.6 L88.7 84.3 L11.3 84.3 Z" fill="#fff"/>
+    <path d="M50 19 L84 82 L16 82 Z" fill="#ffd400"/>
+    <rect x="20" y="50" width="20" height="16" rx="7" fill="#111"/>
+    <rect x="60" y="50" width="20" height="16" rx="7" fill="#111"/>
+    <rect x="32" y="56" width="36" height="24" rx="10" fill="#111"/>
+    <rect x="41" y="44" width="18" height="14" rx="7" fill="#111"/>
+    <circle cx="38" cy="72" r="3.2" fill="#ffd400"/>
+    <circle cx="62" cy="72" r="3.2" fill="#ffd400"/>
   </svg>`;
 }
 function homeCameraLabel(row){
@@ -2353,6 +2350,13 @@ function recenterDriveMap(){
 }
 async function reroute(){if(!state.user||!state.destination)return;state.lastRerouteAt=Date.now();toast('경로를 다시 탐색합니다.');speak('경로를 다시 탐색합니다.');try{const spec=routePreferenceSpec(),r=await routeRequest(spec.priority,state.routeMode==='walk'?null:spec.avoid,remainingWaypointsForReroute(),state.routeMode);state.route={...r,_label:state.routeMode==='walk'?'도보 재탐색':`재탐색 · ${spec.label}`,_character:state.character};state.routeCumulative=buildCumulative(state.route);state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};drawRoute(state.route,{fit:false});loadSafetyEvents(state.route);updateDriving(true)}catch{toast('재탐색에 실패했습니다.') }}
 function checkOffRoute(idx){
+  // 7.6.2.4: 터널 안에서는 실제 GNSS가 멀티패스로 수십~수백 미터씩 튀는 경우가 흔한데,
+  // 그 경우도 "신호 없음"으로 분류되지 않아(fix 자체는 계속 들어옴) 기존 로직은 원시(raw)
+  // 좌표만 보고 이탈로 오판해 재탐색(reroute)을 걸었다. 그 결과 tunnelRouteLock이 화면상
+  // 캐릭터는 경로 위에 붙잡아 두고 있어도, 뒤에서 경로 자체가 다시 계산되며 캐릭터가
+  // 순간적으로 경로를 벗어난 것처럼 보이는 문제가 있었다. 터널 구간 락이 활성화된 동안은
+  // 이탈 판정 자체를 원천적으로 건너뛰어(값도 초기화) 터널 진입 중 불필요한 재탐색을 막는다.
+  if(state.tunnelRouteLock?.active){state.offRouteHits=0;state.offRouteHeadingHits=0;return}
   if(state.gpsEstimated||state.user?.estimated||Date.now()-state.lastRerouteAt<12000)return;const p=state.route.geometry[idx];if(!p)return;
   const lat=Number.isFinite(state.user.rawLat)?state.user.rawLat:state.user.lat,lng=Number.isFinite(state.user.rawLng)?state.user.rawLng:state.user.lng,d=hav(lat,lng,p[1],p[0]),accuracy=Math.max(0,Number(state.user.accuracy)||0);
   if(accuracy>85){state.offRouteHits=0;state.offRouteHeadingHits=0;return}
@@ -2441,7 +2445,7 @@ function renderSafetyMarkers(){
       :['camera','📷','단속 카메라'];
 
     const el=document.createElement('div');
-    el.className=`safety-map-marker ${meta[0]}${cameraTypes.has(e.type)?' camera-pin':''}`;
+    el.className=`safety-map-marker ${meta[0]}${cameraTypes.has(e.type)?' camera-pin':''}${e.type==='chronic_congestion'?' sign-badge':''}`;
     el.title=meta[2];
     if(cameraTypes.has(e.type)){
       const limit=Number(e.maxspeed)||0;
@@ -2548,7 +2552,7 @@ function computeSafetyCandidates(idx){
 }
 function updateSafetyUI(idx,candidates){
   candidates=candidates||computeSafetyCandidates(idx);
-  const e=candidates[0];if(!e){hideSafetyAlert();return}if(state.overspeedActive&&['speed_camera','signal_speed_camera','traffic_camera'].includes(e.type)){hideSafetyAlert();return}const info=safetyLabel(e),el=$('safetyAlert');el.className=`safety-alert ${info.kind}`;const iconEl=$('safetyAlertIcon');if(e.type==='chronic_congestion'){iconEl.innerHTML=congestionMarkerSvg()}else{iconEl.textContent=info.icon}$('safetyAlertTitle').textContent=info.title;$('safetyAlertText').textContent=info.text;$('safetyAlertDistance').textContent=km(e.d);state.activeSafetyId=e.id;
+  const e=candidates[0];if(!e){hideSafetyAlert();return}if(state.overspeedActive&&['speed_camera','signal_speed_camera','traffic_camera'].includes(e.type)){hideSafetyAlert();return}const info=safetyLabel(e),el=$('safetyAlert');el.className=`safety-alert ${info.kind}`;const iconEl=$('safetyAlertIcon');if(e.type==='chronic_congestion'){iconEl.innerHTML=congestionMarkerSvg();iconEl.classList.add('sign-icon')}else{iconEl.textContent=info.icon;iconEl.classList.remove('sign-icon')}$('safetyAlertTitle').textContent=info.title;$('safetyAlertText').textContent=info.text;$('safetyAlertDistance').textContent=km(e.d);state.activeSafetyId=e.id;
   const stage=e.d<=180?'near':e.d<=600?'far':'';if(stage){const key=`${e.id}:${stage}`;if(!state.lastSafetySpoken.has(key)){state.lastSafetySpoken.add(key);const meters=Math.max(100,Math.round(e.d/100)*100);
     if(e.type.startsWith('school'))speak(stage==='near'?'전방 어린이 보호구역입니다. 속도를 줄이고 주변을 확인하세요.':'전방에 스쿨존이 있습니다. 안전 운전하세요.');
     else if(e.type==='silver_zone')speak(`${meters}미터 앞 노인 보호구역이 있습니다. 속도를 줄이세요.`);
