@@ -639,6 +639,30 @@ function renderVoucherShopMarkers(items){
   }
 }
 
+// 완전 동일 좌표 반복이 아니어도, 좁은 경도/위도 밴드에 다수 지점이 몰리면서 반대축으로 넓게(약 30km+)
+// 퍼져있으면 지도에서는 하나의 직선처럼 보인다. 서버 필터를 통과한 데이터에 대한 2차 안전장치로 프론트에서도 확인한다.
+function detectVoucherLineBands(rows){
+  const bad=new Set();
+  if(rows.length<8)return bad;
+  const BIN=0.02,MIN_COUNT=6,MIN_RATIO=.05,MIN_SPAN=.3;
+  const scan=(getKey,getSpanValue)=>{
+    const bins=new Map();
+    for(const x of rows){
+      const k=Math.round(getKey(x)/BIN);
+      if(!bins.has(k))bins.set(k,[]);
+      bins.get(k).push(x);
+    }
+    for(const list of bins.values()){
+      if(list.length<MIN_COUNT||list.length/rows.length<MIN_RATIO)continue;
+      const values=list.map(getSpanValue);
+      if(Math.max(...values)-Math.min(...values)>=MIN_SPAN)
+        for(const x of list)bad.add(x);
+    }
+  };
+  scan(x=>Number(x.lng),x=>Number(x.lat));
+  scan(x=>Number(x.lat),x=>Number(x.lng));
+  return bad;
+}
 function sanitizeVoucherCoordinates(items){
   const rows=(items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat)));
   if(rows.length<5)return rows;
@@ -650,12 +674,14 @@ function sanitizeVoucherCoordinates(items){
   }
   const suspiciousLat=new Set([...latBins].filter(([,n])=>n>=5&&n/rows.length>=.18).map(([k])=>k));
   const suspiciousLng=new Set([...lngBins].filter(([,n])=>n>=5&&n/rows.length>=.18).map(([k])=>k));
-  if(!suspiciousLat.size&&!suspiciousLng.size)return rows;
+  const lineBad=detectVoucherLineBands(rows);
+  if(!suspiciousLat.size&&!suspiciousLng.size&&!lineBad.size)return rows;
   return rows.filter(x=>{
+    // 주소 기반으로 교정된 좌표는 유지하고, 원본 API에서 대량 일렬 반복/준-직선 패턴인 좌표만 제외한다.
+    if(x.coordinateSource==='kakao-address'||x.coordinateSource==='kakao-keyword')return true;
     const sameLat=suspiciousLat.has(Number(x.lat).toFixed(5));
     const sameLng=suspiciousLng.has(Number(x.lng).toFixed(5));
-    // 주소 기반으로 교정된 좌표는 유지하고, 원본 API에서 대량 일렬 반복되는 좌표만 제외한다.
-    return x.coordinateSource==='kakao-address'||x.coordinateSource==='kakao-keyword'||(!sameLat&&!sameLng);
+    return !sameLat&&!sameLng&&!lineBad.has(x);
   });
 }
 function renderLocalVoucherMarkers(data){
@@ -675,7 +701,7 @@ function updateLocalVoucherBadge(data){
 }
 function readVoucherStaleCache(){
   try{
-    const raw=localStorage.getItem('jofams_local_voucher_cache_v7');
+    const raw=localStorage.getItem('jofams_local_voucher_cache_v8');
     if(!raw)return null;
     const d=JSON.parse(raw);
     if(!d?.payload||Date.now()-Number(d.savedAt||0)>6*60*60*1000)return null;
@@ -683,7 +709,7 @@ function readVoucherStaleCache(){
   }catch{return null}
 }
 function writeVoucherStaleCache(payload){
-  try{localStorage.setItem('jofams_local_voucher_cache_v7',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
+  try{localStorage.setItem('jofams_local_voucher_cache_v8',JSON.stringify({savedAt:Date.now(),payload}))}catch{}
 }
 function scheduleVoucherReconnect(){
   clearTimeout(state.localVoucherReconnectTimer);
@@ -1033,11 +1059,24 @@ function fuelStationRows(data){
   const items=(data?.stations||[]).filter(x=>Number(x.price)>0);
   if(!items.length)return '<div class="fuel-empty">표시할 주유소 가격정보가 없습니다.</div>';
   const min=Math.min(...items.map(x=>Number(x.price)));
-  return items.map((x,i)=>`<div class="fuel-station-row">
+  return items.map((x,i)=>`<button type="button" class="fuel-station-row" data-fuel-station-index="${i}" aria-label="${escapeHtml(x.name||'주유소')} 길안내">
     <span class="fuel-rank ${i===0?'best':''}">${i===0?'최저':i+1}</span>
     <div class="fuel-station-copy"><b>${escapeHtml(x.name||'주유소')}</b><small>${escapeHtml(fuelBrandName(x.brand))}${x.address?` · ${escapeHtml(x.address)}`:''}</small></div>
     <div class="fuel-station-price"><b>${fuelWon(x.price)}</b><small>${Number(x.price)===min?'최저가':'L당'}</small></div>
-  </div>`).join('');
+  </button>`).join('');
+}
+// 주유소 목록 클릭 시 해당 주유소로 길안내(경로 계산 화면)를 시작한다.
+function bindFuelStationRowClicks(container,items){
+  if(!container)return;
+  container.querySelectorAll('[data-fuel-station-index]').forEach(btn=>{
+    btn.onclick=()=>{
+      const item=(items||[])[Number(btn.dataset.fuelStationIndex)];
+      if(!item){toast('주유소 정보를 확인할 수 없습니다.',2000);return}
+      if(!pointValid(item)){toast('이 주유소의 위치 정보를 찾을 수 없습니다.',2200);return}
+      closeFuelModal();
+      chooseDestination(item);
+    };
+  });
 }
 function renderFuelData(data){
   const area=data?.areaName||'현재 지역';
@@ -1048,8 +1087,8 @@ function renderFuelData(data){
   if($('fuelModalArea'))$('fuelModalArea').textContent=`${area} · ${FUEL_PRODUCT_NAMES[state.fuelProduct]||''}`;
   if($('fuelPriceSummary'))$('fuelPriceSummary').innerHTML=`<span>${escapeHtml(area)} ${escapeHtml(FUEL_PRODUCT_NAMES[state.fuelProduct]||'')}</span><b>${min?`최저 ${fuelWon(min)}`:'가격정보 없음'}${avg?` <small>평균 ${fuelWon(avg)}</small>`:''}</b>`;
   const rows=fuelStationRows(data);
-  if($('fuelStationList'))$('fuelStationList').innerHTML=rows;
-  if($('fuelModalList'))$('fuelModalList').innerHTML=rows;
+  if($('fuelStationList')){$('fuelStationList').innerHTML=rows;bindFuelStationRowClicks($('fuelStationList'),items)}
+  if($('fuelModalList')){$('fuelModalList').innerHTML=rows;bindFuelStationRowClicks($('fuelModalList'),items)}
   const chip=$('driveFuelChip');
   if(chip&&state.tripStartedAt&&items.length){
     $('driveFuelPrice').textContent=fuelWon(items[0].price);
@@ -1778,6 +1817,9 @@ async function openNotices(){try{const d=await fetch('/api/content?type=notices'
 function applyNightMode(){const h=new Date().getHours(),night=h>=19||h<6;document.body.classList.toggle('night-map',night);return night}
 async function tryLandscapeFullscreen(){
   const landscape=matchMedia('(orientation: landscape)').matches;
+  // 홈/경로/주행 어떤 화면이든 가로로 회전하면 전체화면처럼 전환한다.
+  document.body.classList.toggle('landscape-full',landscape);
+  // 주행/AR 화면은 기존처럼 전용 레이아웃(계기판 배치 등)까지 추가로 적용한다.
   document.body.classList.toggle('landscape-drive',landscape&&(!$('driveView')?.classList.contains('hidden')||state.arRunning));
   // 브라우저 Fullscreen API는 사용하지 않는다.
   // 가로 회전 시 Chrome/WebView의 '전체화면 종료 방법' 안내 팝업이 뜨는 것을 방지한다.
@@ -1892,10 +1934,13 @@ function stopLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.liveRo
 
 function setView(view){
   $('homeView').classList.toggle('hidden',view!=='home');$('routeView').classList.toggle('hidden',view!=='route');$('driveView').classList.toggle('hidden',view!=='drive');
+  setTimeout(tryLandscapeFullscreen,60); // 화면 전환/최초 진입 시에도 현재 가로/세로 상태에 맞게 전체화면 여부를 갱신
   $('bottomNav').classList.toggle('hidden',view==='drive'||state.arRunning);
   if(view==='home'){
     $('homeView')?.classList.remove('ui-hidden');
-    if(pointValid(state.user))setTimeout(()=>loadHomeFacility(state.homeFacilityCategory),120);
+    // 생활편의시설은 최초 진입 시에도 현재 위치를 자동으로 확인해 기본 탭(주유소) 목록을 바로 보여준다.
+    // loadHomeFacility 내부에서 위치가 없으면 locate(false)로 자동 확인하므로 위치 확보 여부와 무관하게 항상 호출한다.
+    if(!state.homeFacilityItems.length||pointValid(state.user))setTimeout(()=>loadHomeFacility(state.homeFacilityCategory),120);
     const header=document.querySelector('#homeView .home-header');if(header){header.style.removeProperty('display');header.style.removeProperty('visibility');header.style.removeProperty('opacity')}
   }
   document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.classList.toggle('active',b.dataset.bottomNav===view||(view==='drive'&&b.dataset.bottomNav==='realtime')));
@@ -1931,9 +1976,7 @@ function initializeDriveSummary(){
   if($('currentSpeed'))$('currentSpeed').textContent='0';
   const seg=(state.route.roadSegments||[])[0];
   const limit=Number(seg?.speedLimit)||0;
-  const circle=$('speedLimit')?.closest('.speed-limit');
-  if(circle)circle.style.setProperty('display','grid','important');
-  if($('speedLimit'))$('speedLimit').textContent=limit>0?String(Math.round(limit)):'--';
+  renderSpeedOrSignBadge(limit,[]);
 }
 function startNavigation(){
   $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearHomeCameraMarkers();
@@ -2056,12 +2099,25 @@ function updateProgressUI(idx){
   if(remain<28){speak('목적지에 도착했습니다.');setTimeout(stopNavigation,1400)}
 }
 /* 좌측 하단 원형 배지: 제한속도 정보가 있으면 기존처럼 제한속도를 표시하고,
-   없으면 원을 아예 숨긴 뒤 전방에서 가장 임박한 도로표지판(주의/보호구역/대형차 제한 등)을 대신 배지로 안내한다. */
+   없으면 원을 아예 숨긴 뒤 전방에서 가장 임박한 도로표지판(주의/보호구역/대형차 제한 등)이 있을 때만
+   그 배지를 대신 보여준다. 어느 쪽도 없으면 원/배지를 모두 숨기고, 현재속도(km/h)만 계속 표시한다. */
 function renderSpeedOrSignBadge(limit,candidates){
   const circle=$('speedLimit')?.closest('.speed-limit'),badge=$('roadSignBadge');
-  if(circle)circle.style.setProperty('display','grid','important');
-  if($('speedLimit'))$('speedLimit').textContent=Number(limit)>0?String(Math.round(Number(limit))):'--';
-  if(badge)badge.style.setProperty('display','none','important');
+  const hasLimit=Number(limit)>0;
+  if(circle)circle.style.setProperty('display',hasLimit?'grid':'none','important');
+  if($('speedLimit'))$('speedLimit').textContent=hasLimit?String(Math.round(Number(limit))):'--';
+  const sign=!hasLimit?(candidates||[]).find(e=>e&&e.type!=='speed_limit'&&e.type!=='tunnel'):null;
+  if(badge){
+    if(sign){
+      const info=safetyLabel(sign);
+      badge.className=`road-sign-badge ${info.kind}`;
+      badge.innerHTML=`<b>${escapeHtml(info.icon)}</b><small>${escapeHtml(km(sign.d))}</small>`;
+      badge.style.setProperty('display','grid','important');
+    }else{
+      badge.style.setProperty('display','none','important');
+      badge.className='road-sign-badge hidden';
+    }
+  }
 }
 function distanceAlong(a,b){const ca=state.routeCumulative[Math.max(0,a)]||0,cb=state.routeCumulative[Math.min(state.routeCumulative.length-1,b)]||ca;return Math.max(0,cb-ca)}
 function maybeSpeakGuide(g,d){const key=`${g.id||g.routeIndex}:${d<80?'near':'far'}`;if(key===state.lastGuideSpoken)return;if(d<320){state.lastGuideSpoken=key;speak(`${Math.max(30,Math.round(d/10)*10)}미터 앞 ${g.guidance||g.name||'방향 안내'}입니다.`)}}
