@@ -1197,7 +1197,7 @@ function scheduleSmoothDriveMarker(){
     if(!Number.isFinite(target))return;
     let rendered=Number(state.driveMarkerRenderedDistance);
     if(!Number.isFinite(rendered))rendered=target;
-    if(!state.simulationActive&&currentSpeed<=0.05){
+    if(!state.simulationActive&&(state.stationaryActive||currentSpeed<=0.05)){
       // 실제 속도가 0이면 목표 거리로 끌어가지 않고 현재 렌더링 위치에 완전히 고정한다.
       if(!Number.isFinite(rendered))rendered=Number(state.routeLockedDistance)||target;
       state.driveMarkerRenderedDistance=rendered;
@@ -1243,7 +1243,7 @@ function ensureUserMarker(){
   if(state.tripStartedAt&&state.route?.geometry?.length&&Number.isFinite(Number(state.user.routeDistance))){
     const incomingRouteDistance=Number(state.user?.routeDistance);
   const realSpeed=Math.max(0,Number(state.user?.speed)||0);
-  if(state.tripStartedAt&&!state.simulationActive&&realSpeed<=0.05&&Number.isFinite(Number(state.driveMarkerRenderedDistance))){
+  if(state.tripStartedAt&&!state.simulationActive&&(state.stationaryActive||realSpeed<=0.05)&&Number.isFinite(Number(state.driveMarkerRenderedDistance))){
     // 정지 중에는 GPS/맵매칭 오차가 앞쪽 점을 잡더라도 캐릭터 목표거리를 갱신하지 않는다.
     state.driveMarkerTargetDistance=Number(state.driveMarkerRenderedDistance);
   }else if(Number.isFinite(incomingRouteDistance)){
@@ -1347,6 +1347,35 @@ function applyGps(pos,fly=false){
   if(!pointValid(stateObj))return;
 
   const rawLat=stateObj.lat,rawLng=stateObj.lng,sampleTime=Number(pos?.timestamp)||now;
+  const reportedSpeed=Number(c.speed);
+  let forceStationary=false;
+
+  // 실제 GPS 속도가 0이고 최초 정지 GPS 기준 ±10m 안이면 캐릭터/경로 진행을 완전히 고정한다.
+  // 이 구간에서는 GPS 위치 흔들림으로 계산한 파생속도도 사용하지 않는다.
+  if(state.tripStartedAt&&!state.simulationActive&&Number.isFinite(reportedSpeed)&&reportedSpeed<=0.05){
+    if(!state.stationaryGpsAnchor){
+      state.stationaryGpsAnchor={
+        lat:rawLat,lng:rawLng,
+        routeDistance:Number.isFinite(Number(state.driveMarkerRenderedDistance))
+          ?Number(state.driveMarkerRenderedDistance)
+          :(Number.isFinite(Number(state.routeLockedDistance))
+            ?Number(state.routeLockedDistance)
+            :Number(state.user?.routeDistance))
+      };
+    }
+    const stationaryDrift=hav(state.stationaryGpsAnchor.lat,state.stationaryGpsAnchor.lng,rawLat,rawLng);
+    if(Number.isFinite(stationaryDrift)&&stationaryDrift<=10){
+      forceStationary=true;
+      state.stationaryActive=true;
+      stateObj.speed=0;
+    }else{
+      state.stationaryGpsAnchor=null;
+      state.stationaryActive=false;
+    }
+  }else if(Number.isFinite(reportedSpeed)&&reportedSpeed>0.05){
+    state.stationaryGpsAnchor=null;
+    state.stationaryActive=false;
+  }
   const prevSpeedSample=state.lastSpeedSample;
   if(prevSpeedSample&&sampleTime>prevSpeedSample.t){
     const dt=(sampleTime-prevSpeedSample.t)/1000;
@@ -1354,14 +1383,17 @@ function applyGps(pos,fly=false){
     if(dt>=.25&&dt<=5&&Number.isFinite(dist)){
       const jitter=Math.max(1.5,Math.min(6,((prevSpeedSample.accuracy||0)+(stateObj.accuracy||0))*.18));
       const derived=dist>=jitter?Math.min(70,dist/dt):(dist<1.5?0:NaN);
-      if(Number.isFinite(derived)&&(!Number.isFinite(stateObj.speed)||(stateObj.speed<.7&&derived>=.7)))stateObj.speed=derived;
-      else if(Number.isFinite(derived)&&Number.isFinite(stateObj.speed)&&stateObj.speed>=.7)stateObj.speed=stateObj.speed*.78+derived*.22;
+      if(!forceStationary){
+        if(Number.isFinite(derived)&&(!Number.isFinite(stateObj.speed)||(stateObj.speed<.7&&derived>=.7)))stateObj.speed=derived;
+        else if(Number.isFinite(derived)&&Number.isFinite(stateObj.speed)&&stateObj.speed>=.7)stateObj.speed=stateObj.speed*.78+derived*.22;
+      }else stateObj.speed=0;
     }
   }
   state.lastSpeedSample={lat:stateObj.lat,lng:stateObj.lng,t:sampleTime,accuracy:stateObj.accuracy};
   if(state.tripStartedAt&&now-sampleTime>4500)return;
 
-  if(Number.isFinite(stateObj.speed)&&stateObj.speed>=0)state.lastRealSpeedMps=stateObj.speed;
+  if(forceStationary)state.lastRealSpeedMps=0;
+  else if(Number.isFinite(stateObj.speed)&&stateObj.speed>=0)state.lastRealSpeedMps=stateObj.speed;
   if(Number.isFinite(stateObj.heading))state.lastRealHeading=stateObj.heading;
   state.lastRealGpsAt=now;state.lastGpsTickAt=now;state.deadReckoningLastAt=now;state.gpsEstimated=false;
   if(!Number.isFinite(stateObj.speed))stateObj.speed=state.lastRealSpeedMps||0;
@@ -1383,6 +1415,20 @@ function applyGps(pos,fly=false){
       }
     }
     if(locked){
+      if(forceStationary){
+        let fixedDistance=Number(state.stationaryGpsAnchor?.routeDistance);
+        if(!Number.isFinite(fixedDistance))fixedDistance=Number(state.driveMarkerRenderedDistance);
+        if(!Number.isFinite(fixedDistance))fixedDistance=Number(state.routeLockedDistance);
+        if(!Number.isFinite(fixedDistance))fixedDistance=Number(locked.distance);
+        const fixed=pointAtRouteDistance(fixedDistance);
+        if(fixed){
+          locked.lng=fixed.lng;locked.lat=fixed.lat;locked.heading=fixed.heading;
+          locked.index=fixed.index;locked.distance=fixed.distance;
+          state.stationaryGpsAnchor.routeDistance=fixed.distance;
+          state.routeLockedDistance=fixed.distance;
+          state.routeLockedAt=now;
+        }
+      }
       stateObj.lng=locked.lng;stateObj.lat=locked.lat;stateObj.heading=locked.heading;
       stateObj.mapSnapped=true;stateObj.routeIndex=locked.index;stateObj.routeDistance=locked.distance;
       stateObj.matchConfidence=Number(locked.confidence)||0;
@@ -1405,6 +1451,10 @@ function applyGps(pos,fly=false){
     stateObj.matchConfidence=Number(fused.matchConfidence)||0;
   }
 
+  if(forceStationary){
+    stateObj.speed=0;
+    stateObj.estimated=false;
+  }
   state.user=stateObj;
   if(Number.isFinite(stateObj.routeDistance))state.deadReckoningDistance=stateObj.routeDistance;
   else if(state.route?.geometry?.length&&state.routeCumulative?.length){
@@ -1486,6 +1536,14 @@ function simulatedTunnelSpeedMps(idx,baseSpeed){
 function deadReckoningTick(){
   if(!state.tripStartedAt||!state.route?.geometry?.length||!state.routeCumulative.length||!state.user)return;
   const now=Date.now(),sinceReal=now-(state.lastRealGpsAt||0);
+  // 실제 정지 상태에서는 마지막 주행속도를 재사용한 추정주행을 절대 시작하지 않는다.
+  if(state.stationaryActive||Math.max(0,Number(state.user?.speed)||0)<=0.05){
+    state.deadReckoningLastAt=now;
+    state.lastRealSpeedMps=0;
+    state.user.speed=0;
+    updateUserMarkerMotion();
+    return;
+  }
   if(sinceReal<2500||sinceReal>180000)return;
 
   if(!state.gpsEstimated){
@@ -2326,7 +2384,12 @@ function openFutureDeparture(){
   $('futurePredictionResult').classList.add('hidden');$('futurePredictionResult').innerHTML='';
   state.futureDateMode='today';document.querySelectorAll('[data-future-date]').forEach(b=>b.classList.toggle('active',b.dataset.futureDate==='today'));$('futureDateInput').classList.add('hidden');
   setFutureDefaultTime();
-  $('futureDepartureModal').classList.remove('hidden');const sheet=$('futureDepartureModal')?.querySelector('.simple-sheet,.future-departure-sheet');if(sheet)sheet.scrollTop=0;
+  $('futureDepartureModal').classList.remove('hidden');
+  const sheet=$('futureDepartureModal')?.querySelector('.future-departure-sheet');
+  if(sheet){
+    sheet.scrollTop=0;
+    requestAnimationFrame(()=>{sheet.scrollTop=0;});
+  }
   if(!state.user)locate(false).then(u=>{if(u&&!state.futureOrigin){state.futureOrigin={...u,name:'내 위치',address:'현재 GPS 위치'};$('futureOriginInput').value='내 위치'}});
 }
 function closeFutureDeparture(){$('futureDepartureModal').classList.add('hidden')}
@@ -3486,33 +3549,78 @@ function setSimulationSpeed(mult){
   updateSimulationControls();
 }
 function stopRouteSimulation({resumeGps=true}={}){
+  // 1) 모의주행 프레임을 가장 먼저 즉시 중단
   if(state.simulationRaf)cancelAnimationFrame(state.simulationRaf);
   state.simulationRaf=0;
   const wasActive=Boolean(state.simulationActive);
   state.simulationActive=false;
   state.simulationLastAt=0;
   state.simulationDistance=null;
+
+  // 2) GPS 응답을 기다리지 않고 모의주행 직전 실제 위치로 즉시 되돌린다.
+  if(wasActive&&state.preSimulationUser&&state.tripStartedAt){
+    state.user={...state.preSimulationUser};
+    state.user.speed=Math.max(0,Number(state.user.speed)||0);
+
+    const restoreDistance=Number(state.preSimulationRouteDistance);
+    if(Number.isFinite(restoreDistance)){
+      state.user.routeDistance=restoreDistance;
+      const p=pointAtRouteDistance(restoreDistance);
+      if(p){
+        state.user.lng=p.lng;state.user.lat=p.lat;
+        state.user.routeIndex=p.index;
+        if(!Number.isFinite(Number(state.user.heading)))state.user.heading=p.heading;
+      }
+      state.driveMarkerRenderedDistance=restoreDistance;
+      state.driveMarkerTargetDistance=restoreDistance;
+      state.routeLockedDistance=Number.isFinite(Number(state.preSimulationRouteLockedDistance))
+        ?Number(state.preSimulationRouteLockedDistance):restoreDistance;
+      state.deadReckoningDistance=restoreDistance;
+    }
+
+    state.stationaryActive=Boolean(state.preSimulationStationaryActive)||state.user.speed<=0.05;
+    state.stationaryGpsAnchor=state.preSimulationStationaryGpsAnchor
+      ?{...state.preSimulationStationaryGpsAnchor}:null;
+
+    ensureUserMarker();
+    const el=state.userMarker?.getElement?.();
+    if(el){el.style.opacity='1';el.style.visibility='visible';el.style.display='block'}
+
+    if(state.map){
+      state.lastUserMapInteractionAt=0;
+      state.userMapInteracting=false;
+      // 애니메이션 없이 즉시 실제 위치 복귀
+      state.map.jumpTo({
+        center:[state.user.lng,state.user.lat],
+        zoom:17.2,
+        pitch:state.map3D?55:0,
+        bearing:Number(state.user.heading)||0,
+        padding:driveCameraPadding()
+      });
+    }
+    updateDriving(false);
+  }
+
   updateSimulationControls();
 
+  // 3) 이후 GPS watch를 복구하여 실제 최신 위치만 갱신
   if(wasActive&&resumeGps&&state.tripStartedAt){
-    // GPS watch를 먼저 복구하고 현재 위치를 즉시 재조회한 뒤 지도/캐릭터를 즉시 현위치로 복귀.
     startWatch();
     locate(false).then(u=>{
-      if(!u||!state.tripStartedAt)return;
-      state.driveMarkerRenderedDistance=Number(state.user?.routeDistance);
-      state.driveMarkerTargetDistance=Number(state.user?.routeDistance);
+      if(!u||!state.tripStartedAt||state.simulationActive)return;
       ensureUserMarker();
       const el=state.userMarker?.getElement?.();
       if(el){el.style.opacity='1';el.style.visibility='visible';el.style.display='block'}
-      if(state.map){
-        state.lastUserMapInteractionAt=0;
-        state.userMapInteracting=false;
-        state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?55:0,bearing:Number(state.user.heading)||0,duration:180,padding:driveCameraPadding()});
-      }
-      updateDriving(true);
+      updateDriving(false);
     }).catch(()=>{});
-    toast('모의주행을 종료하고 현재 위치로 복귀합니다.',1500);
+    toast('모의주행 종료 · 현재 위치로 즉시 복귀했습니다.',1500);
   }
+
+  state.preSimulationUser=null;
+  state.preSimulationRouteDistance=null;
+  state.preSimulationRouteLockedDistance=null;
+  state.preSimulationStationaryActive=false;
+  state.preSimulationStationaryGpsAnchor=null;
 }
 function simulationTick(ts){
   state.simulationRaf=0;
@@ -3563,6 +3671,15 @@ function startRouteSimulation(){
   if(!state.tripStartedAt||!state.route?.geometry?.length)return toast('길안내가 시작된 뒤 모의주행을 사용할 수 있습니다.');
   if(state.routeMode!=='car')return toast('모의주행은 자동차 경로에서 사용할 수 있습니다.');
   if(state.simulationActive){stopRouteSimulation({resumeGps:true});return}
+
+  // 종료 즉시 되돌아올 실제 위치를 모의주행 전에 보존한다.
+  state.preSimulationUser=state.user?{...state.user}:null;
+  state.preSimulationRouteDistance=Number.isFinite(Number(state.driveMarkerRenderedDistance))
+    ?Number(state.driveMarkerRenderedDistance)
+    :Number(state.user?.routeDistance);
+  state.preSimulationRouteLockedDistance=Number(state.routeLockedDistance);
+  state.preSimulationStationaryActive=Boolean(state.stationaryActive);
+  state.preSimulationStationaryGpsAnchor=state.stationaryGpsAnchor?{...state.stationaryGpsAnchor}:null;
 
   stopWatch();
   stopDeadReckoning();

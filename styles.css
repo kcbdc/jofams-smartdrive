@@ -1483,3 +1483,36 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   font-size:clamp(15px,3.9vw,24px)!important;
   letter-spacing:-0.07em!important;
 }
+
+
+/* 7.6.4.3 - 다른시간 출발: Android/WebView 안전영역까지 완전 스크롤 */
+#futureDepartureModal{
+  overflow:hidden!important;
+  padding:0!important;
+}
+#futureDepartureModal .future-departure-sheet{
+  top:max(calc(var(--safeT) + 6px),6px)!important;
+  bottom:max(calc(var(--safeB) + 6px),6px)!important;
+  height:auto!important;
+  max-height:none!important;
+  min-height:0!important;
+  box-sizing:border-box!important;
+  overflow-x:hidden!important;
+  overflow-y:scroll!important;
+  -webkit-overflow-scrolling:touch!important;
+  overscroll-behavior-y:contain!important;
+  scroll-padding-bottom:120px!important;
+  padding-bottom:max(calc(96px + var(--safeB)),112px)!important;
+}
+#futureDepartureModal .future-departure-sheet::after{
+  content:""!important;
+  display:block!important;
+  width:100%!important;
+  height:max(calc(72px + var(--safeB)),88px)!important;
+  min-height:max(calc(72px + var(--safeB)),88px)!important;
+  pointer-events:none!important;
+}
+#futureDepartureModal .future-predict-btn,
+#futureDepartureModal .future-prediction-result{
+  scroll-margin-bottom:120px!important;
+}
