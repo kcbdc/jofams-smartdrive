@@ -4498,13 +4498,83 @@ async function loadPublicContent(){try{const r=await fetch('/api/content?type=co
 function updateAdminUI(){const btn=$('adminModeBtn');if(btn)btn.classList.toggle('hidden',!isAdminUser())}
 function openAdminMode(){if(!isAdminUser())return toast('관리자 계정만 이용할 수 있습니다.');$('adminAccountLabel').textContent=state.firebase.user.email;$('adminModal').classList.remove('hidden');switchAdminTab('notices')}
 function closeAdminMode(){$('adminModal')?.classList.add('hidden')}
-function switchAdminTab(tab){document.querySelectorAll('[data-admin-tab]').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===tab));['notices','content','inquiries'].forEach(k=>$(`admin${k[0].toUpperCase()+k.slice(1)}Panel`)?.classList.toggle('hidden',k!==tab));if(tab==='notices')loadAdminNotices();if(tab==='content')loadAdminContent();if(tab==='inquiries')loadAdminInquiries()}
+function switchAdminTab(tab){document.querySelectorAll('[data-admin-tab]').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===tab));['notices','content','inquiries','onnuri'].forEach(k=>$(`admin${k[0].toUpperCase()+k.slice(1)}Panel`)?.classList.toggle('hidden',k!==tab));if(tab==='notices')loadAdminNotices();if(tab==='content')loadAdminContent();if(tab==='inquiries')loadAdminInquiries();if(tab==='onnuri')loadOnnuriBatchStatus()}
 async function adminContentRequest(type,method='GET',body=null){const u=new URL('/api/content',location.origin);u.searchParams.set('type',type);const opt={method,headers:{'content-type':'application/json'}};if(body)opt.body=JSON.stringify(body);const r=method==='GET'?await fetch(u):await authFetch(u,opt);const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`HTTP ${r.status}`);return d}
 async function loadAdminNotices(){try{const d=await adminContentRequest('notices');state.adminNotices=d.items||[];const box=$('adminNoticeList');box.innerHTML=state.adminNotices.length?state.adminNotices.map(x=>`<article><div><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.createdAt||'')}</small></div><button data-admin-notice-delete="${x.id}">삭제</button><p>${escapeHtml(x.body).replace(/\n/g,'<br>')}</p></article>`).join(''):'<div class="inquiry-empty">등록된 공지가 없습니다.</div>';box.querySelectorAll('[data-admin-notice-delete]').forEach(b=>b.onclick=()=>deleteAdminNotice(b.dataset.adminNoticeDelete))}catch{toast('공지 목록을 불러오지 못했습니다.')}}
 async function saveAdminNotice(){const title=$('adminNoticeTitle').value.trim(),body=$('adminNoticeBody').value.trim();if(title.length<2||body.length<2)return toast('공지 제목과 내용을 입력해 주세요.');const btn=$('adminNoticeSaveBtn');btn.disabled=true;try{await adminContentRequest('notices','POST',{title,body});$('adminNoticeTitle').value='';$('adminNoticeBody').value='';showPlaceConfirmPopup('공지사항이 등록되었습니다.');loadAdminNotices()}catch{toast('공지 등록에 실패했습니다.')}finally{btn.disabled=false}}
 async function deleteAdminNotice(id){if(!confirm('이 공지를 삭제할까요?'))return;try{await adminContentRequest('notices','DELETE',{id});showPlaceConfirmPopup('공지사항이 삭제되었습니다.');loadAdminNotices()}catch{toast('공지 삭제에 실패했습니다.')}}
 async function loadAdminContent(){try{const d=await adminContentRequest('content');const c=d.content||{};$('adminAppInfoText').value=c.appInfo||'';$('adminPrivacyText').value=c.privacy||''}catch{toast('콘텐츠를 불러오지 못했습니다.')}}
 async function saveAdminContent(){const btn=$('adminContentSaveBtn');btn.disabled=true;try{await adminContentRequest('content','PUT',{appInfo:$('adminAppInfoText').value,privacy:$('adminPrivacyText').value});showPlaceConfirmPopup('앱정보와 개인정보처리방침이 수정되었습니다.')}catch{toast('수정 내용 저장에 실패했습니다.')}finally{btn.disabled=false}}
+
+let onnuriBatchRunning=false;
+let onnuriBatchCursor=0;
+
+async function loadOnnuriBatchStatus(){
+  const status=$('onnuriBatchStatus');if(status)status.textContent='D1 캐시 상태를 확인하는 중입니다.';
+  try{
+    const r=await authFetch('/api/onnuri-geocode-batch');
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'status failed');
+    $('onnuriBatchTotal').textContent=Number(d.total||0).toLocaleString();
+    $('onnuriBatchCached').textContent=Number(d.cached||0).toLocaleString();
+    if(!onnuriBatchRunning){
+      onnuriBatchCursor=Math.min(Number(d.cached||0),Number(d.total||0));
+      updateOnnuriBatchProgress(onnuriBatchCursor,Number(d.total||0));
+    }
+    if(status)status.textContent=`D1 캐시 ${Number(d.cached||0).toLocaleString()}건 · 개별 점포 좌표 ${Number(d.precise||0).toLocaleString()}건`;
+  }catch(e){
+    if(status)status.textContent=`상태 확인 실패: ${e?.message||'서버 설정을 확인해 주세요.'}`;
+  }
+}
+function updateOnnuriBatchProgress(done,total){
+  const pct=total?Math.min(100,Math.round(done/total*100)):0;
+  if($('onnuriBatchProgress'))$('onnuriBatchProgress').textContent=`${pct}%`;
+  if($('onnuriBatchBar'))$('onnuriBatchBar').style.width=`${pct}%`;
+}
+async function startOnnuriBatch(){
+  if(onnuriBatchRunning)return;
+  onnuriBatchRunning=true;
+  $('onnuriBatchStartBtn').disabled=true;
+  $('onnuriBatchStopBtn').disabled=false;
+  const status=$('onnuriBatchStatus');
+  try{
+    const rs=await authFetch('/api/onnuri-geocode-batch'),sd=await rs.json();
+    if(!rs.ok)throw new Error(sd.error||'status failed');
+    const total=Number(sd.total||0);
+    // cursor는 처리 위치이며, 기존 캐시 개수와 반드시 동일하지 않으므로 0부터 훑는다.
+    onnuriBatchCursor=0;
+    while(onnuriBatchRunning && onnuriBatchCursor<total){
+      if(status)status.textContent=`${onnuriBatchCursor.toLocaleString()} / ${total.toLocaleString()} 처리 중…`;
+      const r=await authFetch('/api/onnuri-geocode-batch',{
+        method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({cursor:onnuriBatchCursor,limit:20})
+      });
+      const d=await r.json();
+      if(!r.ok)throw new Error(d.error||'batch failed');
+      onnuriBatchCursor=Number(d.nextCursor||onnuriBatchCursor);
+      updateOnnuriBatchProgress(onnuriBatchCursor,total);
+      if($('onnuriBatchCached'))$('onnuriBatchCached').textContent=(Number(sd.cached||0)+onnuriBatchCursor).toLocaleString();
+      if(status)status.textContent=`${onnuriBatchCursor.toLocaleString()} / ${total.toLocaleString()} · 신규성공 ${d.success||0} · 캐시통과 ${d.cachedHits||0} · 실패 ${d.failed||0}`;
+      if(d.done)break;
+      await new Promise(resolve=>setTimeout(resolve,450));
+    }
+    if(onnuriBatchRunning && status)status.textContent='온누리 주소 좌표화 배치가 완료되었습니다. D1 캐시를 갱신합니다.';
+  }catch(e){
+    if(status)status.textContent=`배치 중단: ${e?.message||'서버 오류'}`;
+  }finally{
+    onnuriBatchRunning=false;
+    if($('onnuriBatchStartBtn'))$('onnuriBatchStartBtn').disabled=false;
+    if($('onnuriBatchStopBtn'))$('onnuriBatchStopBtn').disabled=true;
+    loadOnnuriBatchStatus();
+  }
+}
+function stopOnnuriBatch(){
+  onnuriBatchRunning=false;
+  if($('onnuriBatchStatus'))$('onnuriBatchStatus').textContent='사용자가 배치를 중지했습니다. 이미 저장된 D1 좌표는 유지됩니다.';
+  if($('onnuriBatchStartBtn'))$('onnuriBatchStartBtn').disabled=false;
+  if($('onnuriBatchStopBtn'))$('onnuriBatchStopBtn').disabled=true;
+}
+
 async function loadAdminInquiries(){try{const r=await authFetch('/api/inquiries?admin=1'),d=await r.json();if(!r.ok)throw new Error();const box=$('adminInquiryList'),items=d.items||[];box.innerHTML=items.length?items.map(x=>`<button data-admin-inquiry="${x.id}" class="inquiry-row"><span><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.email||'')} · ${escapeHtml(x.createdAt||'')}</small></span><em class="${x.status==='answered'?'answered':''}">${inquiryStatusLabel(x.status)}</em></button>`).join(''):'<div class="inquiry-empty">접수된 문의가 없습니다.</div>';box.querySelectorAll('[data-admin-inquiry]').forEach(b=>b.onclick=()=>openAdminInquiry(b.dataset.adminInquiry))}catch{toast('문의 목록을 불러오지 못했습니다.')}}
 async function openAdminInquiry(id){try{const r=await authFetch(`/api/inquiries?id=${encodeURIComponent(id)}&admin=1`),d=await r.json();if(!r.ok)throw new Error();const x=d.item,box=$('adminInquiryDetail');box.innerHTML=`<button id="adminInquiryBack" class="inquiry-back">← 문의 목록</button><h3>${escapeHtml(x.title)}</h3><div class="inquiry-meta"><span>${escapeHtml(x.email||'')}</span><b>${inquiryStatusLabel(x.status)}</b></div><section><b>문의 내용</b><p>${escapeHtml(x.body).replace(/\n/g,'<br>')}</p></section><label><b>답변</b><textarea id="adminInquiryAnswer" rows="7" maxlength="5000">${escapeHtml(x.answer||'')}</textarea></label><button id="adminInquiryAnswerBtn" class="primary-btn">답변 저장</button>`;$('adminInquiryList').classList.add('hidden');box.classList.remove('hidden');$('adminInquiryBack').onclick=()=>{box.classList.add('hidden');$('adminInquiryList').classList.remove('hidden');loadAdminInquiries()};$('adminInquiryAnswerBtn').onclick=()=>saveAdminInquiryAnswer(id)}catch{toast('문의 내용을 열 수 없습니다.')}}
 async function saveAdminInquiryAnswer(id){const answer=$('adminInquiryAnswer').value.trim();if(answer.length<2)return toast('답변 내용을 입력해 주세요.');try{const r=await authFetch('/api/inquiries',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({id,answer})});if(!r.ok)throw new Error();showPlaceConfirmPopup('1:1 문의 답변이 등록되었습니다.');openAdminInquiry(id)}catch{toast('답변 저장에 실패했습니다.')}}
@@ -4701,7 +4771,7 @@ function bindUI(){
   try{if($('routePriorityClose'))$('routePriorityClose').onclick=()=>$('routePriorityModal').classList.add('hidden');document.querySelectorAll('[data-route-pref]').forEach(b=>b.onclick=()=>chooseRoutePreference(b.dataset.routePref));}catch(e){console.warn('UI bind section 13 failed',e)}
   try{if($('cameraAlertClose'))$('cameraAlertClose').onclick=()=>$('cameraAlertModal').classList.add('hidden');if($('speedCameraAlertToggle'))$('speedCameraAlertToggle').onchange=e=>updateCameraAlertSetting('speed',e.target.checked);if($('signalCameraAlertToggle'))$('signalCameraAlertToggle').onchange=e=>updateCameraAlertSetting('signal',e.target.checked);}catch(e){console.warn('UI bind section 14 failed',e)}
   try{if($('inquiryCloseBtn'))$('inquiryCloseBtn').onclick=closeInquiryModal;if($('newInquiryBtn'))$('newInquiryBtn').onclick=startInquiryCompose;if($('inquiryComposeBack'))$('inquiryComposeBack').onclick=backInquiryList;if($('inquirySubmitBtn'))$('inquirySubmitBtn').onclick=submitInquiry;}catch(e){console.warn('UI bind section 15 failed',e)}
-  try{if($('adminModeBtn'))$('adminModeBtn').onclick=openAdminMode;if($('adminCloseBtn'))$('adminCloseBtn').onclick=closeAdminMode;document.querySelectorAll('[data-admin-tab]').forEach(b=>b.onclick=()=>switchAdminTab(b.dataset.adminTab));if($('adminNoticeSaveBtn'))$('adminNoticeSaveBtn').onclick=saveAdminNotice;if($('adminContentSaveBtn'))$('adminContentSaveBtn').onclick=saveAdminContent;}catch(e){console.warn('UI bind section 16 failed',e)}
+  try{if($('adminModeBtn'))$('adminModeBtn').onclick=openAdminMode;if($('adminCloseBtn'))$('adminCloseBtn').onclick=closeAdminMode;document.querySelectorAll('[data-admin-tab]').forEach(b=>b.onclick=()=>switchAdminTab(b.dataset.adminTab));if($('adminNoticeSaveBtn'))$('adminNoticeSaveBtn').onclick=saveAdminNotice;if($('adminContentSaveBtn'))$('adminContentSaveBtn').onclick=saveAdminContent;if($('onnuriBatchStartBtn'))$('onnuriBatchStartBtn').onclick=startOnnuriBatch;if($('onnuriBatchStopBtn'))$('onnuriBatchStopBtn').onclick=stopOnnuriBatch;}catch(e){console.warn('UI bind section 16 failed',e)}
   try{if($('waypointSearchClose'))$('waypointSearchClose').onclick=()=>closeWaypointSearch(true);if($('waypointSearchSubmit'))$('waypointSearchSubmit').onclick=()=>searchWaypointPlaces($('waypointSearchInput').value);if($('waypointSearchInput'))$('waypointSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchWaypointPlaces(e.target.value)});if($('waypointSearchModal'))$('waypointSearchModal').addEventListener('click',e=>{if(e.target===$('waypointSearchModal'))closeWaypointSearch(true)});if($('drivePlaceChoiceClose'))$('drivePlaceChoiceClose').onclick=closeDrivePlaceChoice;if($('drivePlaceAsWaypoint'))$('drivePlaceAsWaypoint').onclick=()=>applyDrivePlaceChoice('waypoint');if($('drivePlaceAsDestination'))$('drivePlaceAsDestination').onclick=()=>applyDrivePlaceChoice('destination');if($('drivePlaceChoiceModal'))$('drivePlaceChoiceModal').addEventListener('click',e=>{if(e.target===$('drivePlaceChoiceModal'))closeDrivePlaceChoice()});}catch(e){console.warn('UI bind section waypoint/permission failed',e)}
   try{$('originModalClose').onclick=closeOriginModal;$('useCurrentOriginBtn').onclick=useCurrentOrigin;$('originSearchBtn').onclick=()=>searchOrigins($('originSearchInput').value);$('originSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchOrigins(e.target.value)});$('originModal').addEventListener('click',e=>{if(e.target===$('originModal'))closeOriginModal()});$('arCloseBtn').onclick=stopAR;document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.bottomNav;closeBottomPanels(nav);if(nav==='home'){cancelAutoStart();setView('home')}else if(nav==='where'){setView('home');openWhereTo()}else if(nav==='saved'){setView('home');openSavedPlaces()}else if(nav==='my')openMy()});$('placeModalClose').onclick=()=>$('placeModal').classList.add('hidden');if($('useCurrentPlaceBtn'))$('useCurrentPlaceBtn').onclick=saveCurrentLocationAsPlace;if($('placeSaveBtn'))$('placeSaveBtn').onclick=confirmRegisteredPlace;if($('whereToClose'))$('whereToClose').onclick=closeWhereTo;
 if($('whereToRefresh'))$('whereToRefresh').onclick=refreshWhereTo;

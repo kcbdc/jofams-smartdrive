@@ -1650,3 +1650,16 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .where-to-zone-item .where-to-info em{
   color:#d56600!important;
 }
+
+/* 7.6.5.1 온누리 주소 관리자 배치 */
+.onnuri-batch-admin{gap:14px}
+.onnuri-batch-admin h3{margin:0;font-size:18px}
+.onnuri-batch-admin p{margin:0;line-height:1.5;opacity:.78}
+.onnuri-batch-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.onnuri-batch-stats span{padding:10px;border-radius:12px;background:rgba(127,127,127,.08);font-size:12px;text-align:center}
+.onnuri-batch-stats b{display:block;font-size:16px;margin-top:3px}
+.onnuri-batch-progress{height:9px;border-radius:999px;background:rgba(127,127,127,.16);overflow:hidden}
+.onnuri-batch-progress i{display:block;width:0;height:100%;background:currentColor;border-radius:999px;transition:width .25s ease}
+.onnuri-batch-actions{display:grid;grid-template-columns:1fr auto;gap:8px}
+.onnuri-batch-actions button{min-height:44px}
+#onnuriBatchStatus{display:block;line-height:1.45;opacity:.75}
