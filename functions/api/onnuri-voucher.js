@@ -1,4 +1,4 @@
-import { ONNURI_EXACT_SEED, ONNURI_MARKET_SEED, ONNURI_UNRESOLVED_SEED } from './onnuri-seed-data.js';
+import {ONNURI_EXACT,ONNURI_MARKET,ONNURI_UNRESOLVED} from '../data/onnuri-seed.js';
 const JSON_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'public, max-age=300'};
 const OFFICIAL_ONNURI_2025_URL='https://api.odcloud.kr/api/3060079/v1/uddi:7ffa42f8-01d1-4329-aa94-aefb67c53cf1';
 
@@ -107,9 +107,8 @@ function detailedAddress(v){
   if(/^(대전|대전광역시|세종|세종특별자치시)$/.test(s))return false;
   return /\d/.test(s) || /(로|길|대로|번길|동|읍|면|구)\b/.test(s);
 }
-async function loadBundledOnnuri(request){
-  const lists=[ONNURI_EXACT_SEED,ONNURI_MARKET_SEED,ONNURI_UNRESOLVED_SEED];
-  return lists.flat().map(x=>({
+function loadBundledOnnuri(){
+  return [...ONNURI_EXACT,...ONNURI_MARKET,...ONNURI_UNRESOLVED].map(x=>({
     '가맹점명':x.merchant||'',
     '소속 시장명(또는 상점가)':x.market||'',
     '소재지':x.address||x.region||'',
@@ -179,7 +178,7 @@ export async function onRequestGet({request,env}){
 
     // 7.6.5.4: 앱에 내장된 대전·세종 주소 데이터 3종을 항상 우선 병합한다.
     // 공공데이터 API 키/조건검색 오류가 있어도 실제주소·대표주소·미확인 목록을 사용할 수 있다.
-    const bundledRows=await loadBundledOnnuri(request);
+    const bundledRows=loadBundledOnnuri();
     if(bundledRows.length)rows=[...bundledRows,...rows];
 
     const normalized=rows.map(row=>({

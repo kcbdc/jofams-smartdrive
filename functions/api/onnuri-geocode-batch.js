@@ -1,4 +1,4 @@
-import { ONNURI_EXACT_SEED, ONNURI_MARKET_SEED, ONNURI_UNRESOLVED_SEED } from './onnuri-seed-data.js';
+import {ONNURI_EXACT,ONNURI_MARKET,ONNURI_UNRESOLVED} from '../data/onnuri-seed.js';
 const ADMIN_EMAIL='churchoffire@gmail.com';
 const TABLE='onnuri_geocode_cache_v1';
 
@@ -9,9 +9,9 @@ export async function onRequest({request,env}){
   if(String(user.email||'').toLowerCase()!==ADMIN_EMAIL)return json({ok:false,error:'admin required'},403);
 
   await ensureSchema(env.DB);
-  const exact=ONNURI_EXACT_SEED;
-  const market=ONNURI_MARKET_SEED;
-  const unresolved=ONNURI_UNRESOLVED_SEED;
+  const exact=ONNURI_EXACT;
+  const market=ONNURI_MARKET;
+  const unresolved=ONNURI_UNRESOLVED;
 
   if(request.method==='GET'){
     const cached=await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${TABLE}`).first();
