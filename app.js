@@ -512,6 +512,9 @@ async function initMap(){
       state.map.on('click',e=>{if(state.tripStartedAt)toggleMapControls(true);else handleHomeMapClick(e)});
       state.map.on('touchend',()=>{if(state.tripStartedAt)toggleMapControls(true)});
       state.map.on('rotate',updateDriveCompass);
+      state.map.on('dragstart',markMapManualExplore);
+      state.map.on('zoomstart',markMapManualExplore);
+      state.map.on('rotatestart',markMapManualExplore);
       state.map.on('zoomend',()=>{if(state.onnuriData)renderOnnuriMarkers(state.onnuriData);if(state.localVoucherData)renderLocalVoucherMarkers(state.localVoucherData);if(state.tripStartedAt&&state.safetyEvents?.length)renderSafetyMarkers()});
       state.map.on('moveend',()=>{scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh();if(state.tripStartedAt&&state.safetyEvents?.length)renderSafetyMarkers()});
       if(state.pendingRouteDraw){const p=state.pendingRouteDraw;state.pendingRouteDraw=null;drawRoute(p.route,p.options)}
@@ -2441,6 +2444,8 @@ async function liveRouteRefresh(){
 function startLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.lastLiveRouteAt=0;setTimeout(liveRouteRefresh,12000);state.liveRouteTimer=setInterval(liveRouteRefresh,75000)}
 function stopLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.liveRouteTimer=0}
 
+function markMapManualExplore(){if(state.tripStartedAt)state.mapManualExploreUntil=Date.now()+12000}
+function canAutoRecenterMap(){return !state.mapManualExploreUntil||Date.now()>=state.mapManualExploreUntil}
 function setView(view){
   $('homeView').classList.toggle('hidden',view!=='home');$('routeView').classList.toggle('hidden',view!=='route');$('driveView').classList.toggle('hidden',view!=='drive');
   setTimeout(tryLandscapeFullscreen,60); // 화면 전환/최초 진입 시에도 현재 가로/세로 상태에 맞게 전체화면 여부를 갱신
@@ -2517,6 +2522,7 @@ function driveCameraPadding(){
   return landscape?{top:Math.round(h*.68),bottom:42,left:0,right:0}:{top:Math.round(h*.56),bottom:90,left:0,right:0};
 }
 function updateDriving(force=false){
+  refreshVslSpeedLimit();
   if(!state.user||!state.route?.geometry?.length)return;const g=state.route.geometry;let idx=Number(state.user.routeIndex);if(!Number.isFinite(idx)){const match=probabilisticRouteMatch({lng:state.user.lng,lat:state.user.lat,heading:state.user.heading,speed:state.user.speed,accuracy:state.user.accuracy},Date.now());idx=match?.index??nearestIndex(state.user.lng,state.user.lat,g)}idx=Math.max(0,Math.min(g.length-1,Math.round(idx)));state.currentRouteIndex=idx;updateTunnelRouteLock(idx);ensureUserMarker();
   const nextPoint=g[Math.min(g.length-1,idx+3)],heading=Number.isFinite(state.user.heading)?state.user.heading:(nextPoint?bearing(state.user.lat,state.user.lng,nextPoint[1],nextPoint[0]):0);state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?55:0,bearing:heading,duration:force?0:650,padding:driveCameraPadding()});updateProgressUI(idx);if(state.arRunning)updateAROverlay();checkOffRoute(idx);
 }
@@ -2585,7 +2591,24 @@ async function loadItsTraffic(route){
   }catch(e){console.warn('ITS traffic merge failed',e)}
 }
 
+
+async function refreshVslSpeedLimit(){
+  if(!state.tripStartedAt||state.routeMode!=='car'||!Number.isFinite(state.user?.lat)||!Number.isFinite(state.user?.lng))return;
+  if(Date.now()-Number(state.vslLoadedAt||0)<15000)return;state.vslLoadedAt=Date.now();
+  try{
+    const r=await fetch(`/api/its-vsl?lat=${encodeURIComponent(state.user.lat)}&lng=${encodeURIComponent(state.user.lng)}`);if(!r.ok)return;
+    const d=await r.json();let best=null,bestD=Infinity;
+    for(const x of d.items||[]){
+      if(!cameraMatchesRouteRoad(x,state.route?.geometry||[],state.currentRouteIndex,38))continue;
+      const dd=hav(state.user.lat,state.user.lng,Number(x.lat),Number(x.lng));
+      if(dd<bestD){best=x;bestD=dd}
+    }
+    if(best&&bestD<=700){state.vslSpeedLimit=best.speedLimit;state.vslSpeedLimitAt=Date.now();state.vslRoadSectionId=best.roadSectionId||''}
+  }catch(e){console.warn('VSL refresh failed',e)}
+}
+
 function effectiveSpeedLimit(idx,seg){
+  if(Number.isFinite(Number(state.vslSpeedLimit))&&Date.now()-Number(state.vslSpeedLimitAt||0)<45000)return Number(state.vslSpeedLimit);
   // 1순위: 라우팅 공급자가 현재 도로 세그먼트에 직접 제공한 법정/도로 제한속도
   const direct=normalizeSpeedLimitValue(seg?.speedLimit);
   if(direct>0)return stableSpeedLimit(direct,idx,'route-road-detail');
@@ -2652,6 +2675,15 @@ function updateSectionAverageSpeed(idx){
   if($('sectionRemainDistance'))$('sectionRemainDistance').textContent=`${km(remain)} 남음`;
   panel?.classList.toggle('over',Number(e.maxspeed)>0&&avg>Number(e.maxspeed));
 }
+
+
+function isGenericInstitutionDestination(dest){
+  const t=`${dest?.name||''} ${dest?.address||''} ${dest?.category||''}`;
+  const specific=/(후문|동문|서문|북문|남문|주차장|별관|본관|관사|연구동|사업소|센터동|사무동|제\d+.*건물|정문)/;
+  const institution=/(공사|공단|청|시청|도청|군청|구청|대학교|대학|병원|연구원|박물관|기관|학교|법원|검찰청|경찰서|소방서)/;
+  return institution.test(t)&&!specific.test(t);
+}
+function arrivalRadiusMeters(dest){return isGenericInstitutionDestination(dest)?90:45}
 
 function checkArrival(routeRemain){
   if(!state.tripStartedAt||!state.destination||!state.route?.geometry?.length)return false;
@@ -2907,6 +2939,24 @@ function normalizeRouteSafety(route){
   for(const seg of (route?.roadSegments||[])){if(Number(seg.trafficState)===6){const ri=Math.max(0,Number(seg.startIndex)||0),p=route.geometry?.[ri];if(p)out.push({id:`traffic-accident:${ri}`,type:'accident',lng:p[0],lat:p[1],routeIndex:ri,name:seg.name?`${seg.name} 사고/통행주의`:'사고 또는 통행 제한 구간',source:'Kakao traffic_state 6'})}}
   return out
 }
+
+function pointToRouteSegmentMeters(cam,a,b){
+  const p={lat:Number(cam.lat),lng:Number(cam.lng)};
+  const aa={lat:Number(a[1]),lng:Number(a[0])},bb={lat:Number(b[1]),lng:Number(b[0])};
+  const lat0=p.lat*Math.PI/180,sx=111320*Math.cos(lat0),sy=110540;
+  const px=p.lng*sx,py=p.lat*sy,ax=aa.lng*sx,ay=aa.lat*sy,bx=bb.lng*sx,by=bb.lat*sy;
+  const vx=bx-ax,vy=by-ay,wx=px-ax,wy=py-ay,vv=vx*vx+vy*vy,t=vv?Math.max(0,Math.min(1,(wx*vx+wy*vy)/vv)):0;
+  return Math.hypot(px-(ax+t*vx),py-(ay+t*vy));
+}
+function cameraMatchesRouteRoad(cam,geometry,index=null,maxMeters=38){
+  if(!cam||!Array.isArray(geometry)||geometry.length<2)return false;
+  let s=0,e=geometry.length-2;
+  if(Number.isFinite(Number(index))){s=Math.max(0,Number(index)-12);e=Math.min(geometry.length-2,Number(index)+240)}
+  let best=Infinity;
+  for(let i=s;i<=e;i++){const d=pointToRouteSegmentMeters(cam,geometry[i],geometry[i+1]);if(d<best)best=d;if(best<=16)break}
+  return best<=maxMeters;
+}
+
 async function loadSafetyEvents(route){
   const seq=++state.safetyRequestSeq;state.safetyEvents=[];state.lastSafetySpoken=new Set();hideSafetyAlert();clearSafetyMarkers();if(!route?.geometry?.length)return;
   const primary=normalizeRouteSafety(route);
@@ -2924,7 +2974,7 @@ async function loadSafetyEvents(route){
   renderSafetyMarkers();if(state.currentRouteIndex>=0)updateSafetyUI(state.currentRouteIndex)
 }
 function mergeSafetyEvents(events,geometry){
-  const seen=new Set(),out=[];for(const e of events){let lng=Number(e.lng),lat=Number(e.lat),idx=Number(e.routeIndex);if((!Number.isFinite(lng)||!Number.isFinite(lat))&&Number.isFinite(idx)){const rp=geometry[Math.max(0,Math.min(geometry.length-1,idx))];if(rp){lng=rp[0];lat=rp[1]}}if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;if(!Number.isFinite(idx))idx=nearestIndex(lng,lat,geometry);const p=geometry[idx];if(!p||hav(lat,lng,p[1],p[0])>320)continue;const k=`${e.type}:${Math.round(lat*10000)}:${Math.round(lng*10000)}`;if(seen.has(k))continue;seen.add(k);out.push({...e,lng,lat,routeIndex:idx})}return out.sort((a,b)=>a.routeIndex-b.routeIndex)
+  const seen=new Set(),out=[];for(const e of events){let lng=Number(e.lng),lat=Number(e.lat),idx=Number(e.routeIndex);if((!Number.isFinite(lng)||!Number.isFinite(lat))&&Number.isFinite(idx)){const rp=geometry[Math.max(0,Math.min(geometry.length-1,idx))];if(rp){lng=rp[0];lat=rp[1]}}if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;if(!Number.isFinite(idx))idx=nearestIndex(lng,lat,geometry);const p=geometry[idx];if(!p||hav(lat,lng,p[1],p[0])>(String(e.type||'').includes('camera')?55:320))continue;const k=`${e.type}:${Math.round(lat*10000)}:${Math.round(lng*10000)}`;if(seen.has(k))continue;seen.add(k);out.push({...e,lng,lat,routeIndex:idx})}return out.sort((a,b)=>a.routeIndex-b.routeIndex)
 }
 function clearSafetyMarkers(){for(const m of state.safetyMarkers||[])try{m.remove()}catch{}state.safetyMarkers=[]}
 
@@ -2968,7 +3018,7 @@ function renderSafetyMarkers(){
 
   for(const e of state.safetyEvents||[]){
     if(skip.includes(e.type))continue;
-    if(cameraTypes.has(e.type))cameraItems.push(e);else otherItems.push(e);
+    if(cameraTypes.has(e.type)){if(!state.tripStartedAt||cameraMatchesRouteRoad(e,state.route?.geometry||[],state.currentRouteIndex,38))cameraItems.push(e)}else otherItems.push(e);
   }
 
   // 화면 가시폭이 1km 이상이면 CCTV는 숫자 클러스터로 묶어 캐릭터 주변에 한 줄처럼 쌓이는 현상을 없앤다.
@@ -3100,6 +3150,11 @@ function computeSafetyCandidates(idx){
   }).sort((a,b)=>(SAFETY_PRIORITY[a.type]??9)-(SAFETY_PRIORITY[b.type]??9)||a.d-b.d);
 }
 function updateSafetyUI(idx,candidates){
+  const routeFilteredSafetyEvents=(routeFilteredSafetyEvents).filter(e=>{
+    const isCam=['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','bus_lane_camera','mobile_camera'].includes(e.type);
+    return !isCam||cameraMatchesRouteRoad(e,state.route?.geometry||[],state.currentRouteIndex,38);
+  });
+
   candidates=candidates||computeSafetyCandidates(idx);
   const e=candidates[0];
   if(!e){hideSafetyAlert();return}
