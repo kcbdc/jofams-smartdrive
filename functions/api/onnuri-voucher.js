@@ -1,6 +1,65 @@
 const JSON_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'public, max-age=300'};
 const OFFICIAL_ONNURI_2025_URL='https://api.odcloud.kr/api/3060079/v1/uddi:7ffa42f8-01d1-4329-aa94-aefb67c53cf1';
 
+
+const ONNURI_CACHE_TABLE='onnuri_geocode_cache_v1';
+
+async function ensureOnnuriCacheTable(env){
+  const db=env?.DB||env?.D1||env?.JOFAMS_DB;
+  if(!db)return null;
+  try{
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS ${ONNURI_CACHE_TABLE} (
+        cache_key TEXT PRIMARY KEY,
+        region TEXT,
+        market TEXT,
+        merchant TEXT,
+        lng REAL NOT NULL,
+        lat REAL NOT NULL,
+        precision TEXT,
+        matched_place_name TEXT,
+        matched_address TEXT,
+        geocoded_at TEXT NOT NULL
+      )
+    `).run();
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_${ONNURI_CACHE_TABLE}_market ON ${ONNURI_CACHE_TABLE}(market)`).run();
+    return db;
+  }catch(e){
+    console.warn('onnuri cache table init failed',e);
+    return null;
+  }
+}
+function onnuriCacheKey(region,market,merchant){
+  return normalizeText([region,market,merchant].filter(Boolean).join('|'));
+}
+async function readOnnuriCache(db,key){
+  if(!db||!key)return null;
+  try{
+    return await db.prepare(`SELECT * FROM ${ONNURI_CACHE_TABLE} WHERE cache_key=?1`).bind(key).first();
+  }catch{return null}
+}
+async function writeOnnuriCache(db,row){
+  if(!db||!row?.cache_key||!validKorea(row.lat,row.lng))return;
+  try{
+    await db.prepare(`
+      INSERT INTO ${ONNURI_CACHE_TABLE}
+      (cache_key,region,market,merchant,lng,lat,precision,matched_place_name,matched_address,geocoded_at)
+      VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)
+      ON CONFLICT(cache_key) DO UPDATE SET
+        lng=excluded.lng,
+        lat=excluded.lat,
+        precision=excluded.precision,
+        matched_place_name=excluded.matched_place_name,
+        matched_address=excluded.matched_address,
+        geocoded_at=excluded.geocoded_at
+    `).bind(
+      row.cache_key,row.region||'',row.market||'',row.merchant||'',
+      row.lng,row.lat,row.precision||'',row.matched_place_name||'',row.matched_address||'',
+      row.geocoded_at||new Date().toISOString()
+    ).run();
+  }catch(e){console.warn('onnuri cache write failed',e)}
+}
+
 export async function onRequestGet({request,env}){
   const q=new URL(request.url);
   const west=num(q.searchParams.get('west')),south=num(q.searchParams.get('south'));
@@ -9,6 +68,7 @@ export async function onRequestGet({request,env}){
   const source=String(env.ONNURI_MERCHANT_DATA_URL||OFFICIAL_ONNURI_2025_URL).trim();
   const serviceKey=normalizeServiceKey(env.PUBLIC_DATA_SERVICE_KEY||env.DATA_GO_KR_SERVICE_KEY||env.ONNURI_SERVICE_KEY||'');
   const kakaoKey=String(env.KAKAO_REST_API_KEY||'').trim();
+  const geocodeDb=await ensureOnnuriCacheTable(env);
 
   if(!serviceKey)return json({ok:false,configured:false,code:'ONNURI_KEY_MISSING',error:'공공데이터포털 인증키가 서버에 연결되지 않았습니다.',required:'PUBLIC_DATA_SERVICE_KEY'},503);
 
@@ -134,7 +194,17 @@ export async function onRequestGet({request,env}){
       let matchedAddress='';
       let searchQuery='';
 
-      if(kakaoKey && merchant){
+      const cacheKey=onnuriCacheKey(regionFull,market,merchant);
+      const cached=await readOnnuriCache(geocodeDb,cacheKey);
+      if(cached&&validKorea(num(cached.lat),num(cached.lng))){
+        point={lng:num(cached.lng),lat:num(cached.lat)};
+        precision=String(cached.precision||'cached');
+        matchedPlaceName=String(cached.matched_place_name||'');
+        matchedAddress=String(cached.matched_address||'');
+        searchQuery='D1_CACHE';
+      }
+
+      if(!point && kakaoKey && merchant){
         const queries=[
           [regionFull,market,merchant].filter(Boolean).join(' '),
           [regionMid,market,merchant].filter(Boolean).join(' '),
@@ -197,6 +267,21 @@ export async function onRequestGet({request,env}){
         if(point.lng<west-pad||point.lng>east+pad||point.lat<south-pad||point.lat>north+pad)return null;
       }
 
+      if(searchQuery!=='D1_CACHE' && precision && validKorea(point.lat,point.lng)){
+        await writeOnnuriCache(geocodeDb,{
+          cache_key:cacheKey,
+          region:regionFull,
+          market,
+          merchant,
+          lng:point.lng,
+          lat:point.lat,
+          precision,
+          matched_place_name:matchedPlaceName,
+          matched_address:matchedAddress,
+          geocoded_at:new Date().toISOString()
+        });
+      }
+
       return {
         id:x.id||`${merchant}:${market}`,
         name:merchant||'온누리상품권 가맹점',
@@ -218,7 +303,37 @@ export async function onRequestGet({request,env}){
       };
     });
 
-    const items=mapped.filter(Boolean);
+    let items=mapped.filter(Boolean);
+
+    // 최소 가시성 보장:
+    // 정상 좌표화가 0건이어도 현재 조회 지역에 온누리 원천 행이 있다면
+    // 행정구역 대표좌표에 최소 1건의 '구역 대표' 항목을 만들어 지도/목록이 완전히 비지 않게 한다.
+    if(!items.length && local.length){
+      const a=await adminCenter();
+      if(a&&validKorea(a.lat,a.lng)){
+        const sample=local[0];
+        items=[{
+          id:`fallback:${region?.city||''}:${region?.district||''}:${region?.town||''}`,
+          name:sample?.market||`${region?.town||region?.district||region?.city||'현재 지역'} 온누리상품권`,
+          market:sample?.market||'',
+          address:'',
+          category:'',
+          paper:false,
+          digital:false,
+          registeredYear:'',
+          lng:a.lng,
+          lat:a.lat,
+          precision:'admin-zone',
+          coordinateSource:'admin-zone',
+          matchedPlaceName:[region?.city,region?.district,region?.town].filter(Boolean).join(' '),
+          matchedAddress:[region?.city,region?.district,region?.town].filter(Boolean).join(' '),
+          searchQuery:'MIN_VISIBLE_FALLBACK',
+          approximate:true,
+          source:'semas-onnuri-2025',
+          fallbackCount:local.length
+        }];
+      }
+    }
 
     // 상점가 대표 fallback을 사용한 점포는 같은 좌표로 다수 겹칠 수 있으므로
     // 시장/상점가별 구역 집계도 함께 제공한다.
@@ -252,6 +367,8 @@ export async function onRequestGet({request,env}){
       mappedRows:items.length,
       preciseMerchantCount:items.filter(x=>x.precision==='merchant-keyword'||x.precision==='merchant-keyword-relaxed'||x.precision==='source-coordinate').length,
       fallbackZoneCount:items.filter(x=>x.precision==='market-zone'||x.precision==='admin-zone').length,
+      cacheEnabled:Boolean(geocodeDb),
+      minimumVisibleFallback:items.some(x=>x.searchQuery==='MIN_VISIBLE_FALLBACK'),
       locationPrecision:'mixed',
       notice:'상세주소가 없는 가맹점은 지역+상점가+가맹점명 키워드 검색으로 좌표화하고, 실패 시 시장·상점가 또는 행정구역 대표 위치를 사용합니다.',
       fetchMeta,
