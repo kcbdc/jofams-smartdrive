@@ -1,3 +1,4 @@
+import { ONNURI_EXACT_SEED, ONNURI_MARKET_SEED, ONNURI_UNRESOLVED_SEED } from './onnuri-seed-data.js';
 const JSON_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'public, max-age=300'};
 const OFFICIAL_ONNURI_2025_URL='https://api.odcloud.kr/api/3060079/v1/uddi:7ffa42f8-01d1-4329-aa94-aefb67c53cf1';
 
@@ -107,19 +108,7 @@ function detailedAddress(v){
   return /\d/.test(s) || /(로|길|대로|번길|동|읍|면|구)\b/.test(s);
 }
 async function loadBundledOnnuri(request){
-  const paths=[
-    '/data/onnuri-exact-address-daejeon-sejong-20250731.json',
-    '/data/onnuri-market-fallback-daejeon-sejong-20250731.json',
-    '/data/onnuri-unresolved-daejeon-sejong-20250731.json'
-  ];
-  const lists=await Promise.all(paths.map(async p=>{
-    try{
-      const r=await fetch(new URL(p,request.url).toString(),{headers:{accept:'application/json'}});
-      if(!r.ok)return [];
-      const d=await r.json();
-      return Array.isArray(d)?d:[];
-    }catch{return []}
-  }));
+  const lists=[ONNURI_EXACT_SEED,ONNURI_MARKET_SEED,ONNURI_UNRESOLVED_SEED];
   return lists.flat().map(x=>({
     '가맹점명':x.merchant||'',
     '소속 시장명(또는 상점가)':x.market||'',

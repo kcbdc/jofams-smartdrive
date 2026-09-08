@@ -1,8 +1,6 @@
+import { ONNURI_EXACT_SEED, ONNURI_MARKET_SEED, ONNURI_UNRESOLVED_SEED } from './onnuri-seed-data.js';
 const ADMIN_EMAIL='churchoffire@gmail.com';
 const TABLE='onnuri_geocode_cache_v1';
-const EXACT_PATH='/data/onnuri-exact-address-daejeon-sejong-20250731.json';
-const MARKET_PATH='/data/onnuri-market-fallback-daejeon-sejong-20250731.json';
-const UNRESOLVED_PATH='/data/onnuri-unresolved-daejeon-sejong-20250731.json';
 
 export async function onRequest({request,env}){
   if(!env.DB)return json({ok:false,error:'D1 binding DB is not configured'},503);
@@ -11,10 +9,9 @@ export async function onRequest({request,env}){
   if(String(user.email||'').toLowerCase()!==ADMIN_EMAIL)return json({ok:false,error:'admin required'},403);
 
   await ensureSchema(env.DB);
-  const [exact,market,unresolved]=await Promise.all([
-    loadJson(request,EXACT_PATH),loadJson(request,MARKET_PATH),loadJson(request,UNRESOLVED_PATH)
-  ]);
-  if(!exact||!market||!unresolved)return json({ok:false,error:'seed data unavailable'},503);
+  const exact=ONNURI_EXACT_SEED;
+  const market=ONNURI_MARKET_SEED;
+  const unresolved=ONNURI_UNRESOLVED_SEED;
 
   if(request.method==='GET'){
     const cached=await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${TABLE}`).first();
@@ -212,14 +209,6 @@ function nameScore(place,merchant,market){
 function cacheKey(region,market,merchant){return normalize([region,market,merchant].filter(Boolean).join('|'))}
 function normalize(v){return String(v||'').replace(/\s+/g,'').replace(/[()·ㆍ\-_]/g,'').toLowerCase()}
 function valid(lat,lng){return Number.isFinite(lat)&&Number.isFinite(lng)&&lat>=32&&lat<=40.5&&lng>=123&&lng<=133}
-async function loadJson(request,path){
-  try{
-    const r=await fetch(new URL(path,request.url).toString(),{headers:{accept:'application/json'}});
-    if(!r.ok)return null;
-    const d=await r.json();
-    return Array.isArray(d)?d:null;
-  }catch{return null}
-}
 async function ensureSchema(db){
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS ${TABLE}(
