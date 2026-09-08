@@ -1334,3 +1334,9 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .onnuri-cluster-marker.large{width:50px;height:50px}
 .onnuri-cluster-marker strong{font-size:12px;font-weight:900;line-height:1}
 .onnuri-cluster-marker.large strong{font-size:13px}
+
+
+/* 7.6.3.9 navigation smoothness */
+.road-sign-badge svg{width:28px!important;height:28px!important;display:block!important}
+.character-car-marker.rear-version.jofams-car-moving img{will-change:transform}
+.safety-map-marker.camera{will-change:transform}
