@@ -1340,3 +1340,89 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .road-sign-badge svg{width:28px!important;height:28px!important;display:block!important}
 .character-car-marker.rear-version.jofams-car-moving img{will-change:transform}
 .safety-map-marker.camera{will-change:transform}
+
+
+/* 7.6.4.0 route start actions: other-time : start = 1 : 3 */
+.route-start-actions{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) minmax(0,3fr)!important;
+  gap:10px!important;
+  align-items:stretch!important;
+  margin-top:12px!important;
+}
+.route-start-actions>button{min-height:58px!important;border-radius:16px!important;font-weight:800!important}
+.route-future-btn{
+  border:1px solid #d7deea!important;
+  background:#fff!important;
+  color:#344054!important;
+  font-size:12px!important;
+  line-height:1.15!important;
+  padding:8px 4px!important;
+}
+.route-start-main-btn{
+  margin:0!important;
+  width:100%!important;
+  min-width:0!important;
+}
+
+/* route information simulation */
+.route-info-sheet{
+  max-height:min(88vh,760px)!important;
+  overflow-y:auto!important;
+  -webkit-overflow-scrolling:touch!important;
+}
+.route-simulation-panel{
+  margin-top:18px!important;
+  padding-top:16px!important;
+  border-top:1px solid #e7ebf1!important;
+}
+.route-simulation-head{
+  display:flex!important;
+  justify-content:space-between!important;
+  align-items:center!important;
+  gap:12px!important;
+}
+.route-simulation-head>div{display:flex!important;flex-direction:column!important;gap:3px!important}
+.route-simulation-head b{font-size:16px!important}
+.route-simulation-head small{font-size:11px!important;color:#7a8493!important}
+#simulationStatus{
+  flex:0 0 auto!important;
+  padding:5px 9px!important;
+  border-radius:999px!important;
+  background:#eef3fb!important;
+  color:#52606f!important;
+  font-size:11px!important;
+  font-weight:800!important;
+}
+#simulationStatus.running{background:#e8f2ff!important;color:#1769d2!important}
+.simulation-speed-row{
+  display:grid!important;
+  grid-template-columns:repeat(4,1fr)!important;
+  gap:7px!important;
+  margin-top:13px!important;
+}
+.simulation-speed-row button{
+  height:38px!important;
+  border:1px solid #d8dfeb!important;
+  background:#fff!important;
+  color:#445066!important;
+  border-radius:11px!important;
+  font-weight:800!important;
+}
+.simulation-speed-row button.active{
+  background:#edf5ff!important;
+  border-color:#3981eb!important;
+  color:#1769d2!important;
+}
+.simulation-start-btn{
+  width:100%!important;
+  min-height:48px!important;
+  margin-top:10px!important;
+  border:0!important;
+  border-radius:13px!important;
+  background:#1769d2!important;
+  color:#fff!important;
+  font-size:15px!important;
+  font-weight:900!important;
+}
+.simulation-start-btn.stop{background:#2f3744!important}
