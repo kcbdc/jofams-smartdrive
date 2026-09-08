@@ -8,7 +8,7 @@ export async function onRequest({request,env}){
 }
 function normalizeEmail(v){return String(v||'').trim().toLowerCase()}
 async function requireFirebaseUser(request,env){
-  const key=env.FIREBASE_WEB_API_KEY;
+  const key=env.FIREBASE_WEB_API_KEY||request.headers.get('x-firebase-api-key')||'';
   const h=request.headers.get('authorization')||'';
   const token=h.startsWith('Bearer ')?h.slice(7):'';
   if(!key||!token)return null;

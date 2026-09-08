@@ -231,7 +231,7 @@ async function ensureSchema(db){
   await db.prepare(`CREATE INDEX IF NOT EXISTS idx_${TABLE}_market ON ${TABLE}(market)`).run();
 }
 async function requireFirebaseUser(request,env){
-  const key=env.FIREBASE_WEB_API_KEY,h=request.headers.get('authorization')||'',token=h.startsWith('Bearer ')?h.slice(7):'';
+  const key=env.FIREBASE_WEB_API_KEY||request.headers.get('x-firebase-api-key')||'',h=request.headers.get('authorization')||'',token=h.startsWith('Bearer ')?h.slice(7):'';
   if(!key||!token)return null;
   const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(key)}`,{
     method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idToken:token})

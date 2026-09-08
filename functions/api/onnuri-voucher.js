@@ -91,6 +91,47 @@ async function writeOnnuriCache(db,row){
   }catch(e){console.warn('onnuri cache write failed',e)}
 }
 
+
+function cityAliases(city){
+  const c=String(city||'').trim();
+  if(!c)return [];
+  if(c.includes('대전'))return ['대전광역시','대전'];
+  if(c.includes('세종'))return ['세종특별자치시','세종'];
+  return [c];
+}
+function detailedAddress(v){
+  const s=String(v||'').trim();
+  if(!s)return false;
+  // 단순 시·도명("대전", "세종")은 상세주소로 취급하지 않는다.
+  if(/^(대전|대전광역시|세종|세종특별자치시)$/.test(s))return false;
+  return /\d/.test(s) || /(로|길|대로|번길|동|읍|면|구)\b/.test(s);
+}
+async function loadBundledOnnuri(request){
+  const paths=[
+    '/data/onnuri-exact-address-daejeon-sejong-20250731.json',
+    '/data/onnuri-market-fallback-daejeon-sejong-20250731.json',
+    '/data/onnuri-unresolved-daejeon-sejong-20250731.json'
+  ];
+  const lists=await Promise.all(paths.map(async p=>{
+    try{
+      const r=await fetch(new URL(p,request.url).toString(),{headers:{accept:'application/json'}});
+      if(!r.ok)return [];
+      const d=await r.json();
+      return Array.isArray(d)?d:[];
+    }catch{return []}
+  }));
+  return lists.flat().map(x=>({
+    '가맹점명':x.merchant||'',
+    '소속 시장명(또는 상점가)':x.market||'',
+    '소재지':x.address||x.region||'',
+    '지류형 가맹 여부':x.paper?'Y':'N',
+    '디지털형 가맹 여부':x.digital?'Y':'N',
+    '__addressSource':x.addressSource||'unresolved',
+    '__region':x.region||'',
+    '__bundled':true
+  }));
+}
+
 export async function onRequestGet({request,env}){
   const q=new URL(request.url);
   const west=num(q.searchParams.get('west')),south=num(q.searchParams.get('south'));
@@ -101,15 +142,14 @@ export async function onRequestGet({request,env}){
   const kakaoKey=String(env.KAKAO_REST_API_KEY||'').trim();
   const geocodeDb=await ensureOnnuriCacheTable(env);
 
-  if(!serviceKey)return json({ok:false,configured:false,code:'ONNURI_KEY_MISSING',error:'공공데이터포털 인증키가 서버에 연결되지 않았습니다.',required:'PUBLIC_DATA_SERVICE_KEY'},503);
-
   try{
     const region=(await resolveRegion(lat,lng,kakaoKey))||coarseRegionFromCoordinate(lat,lng);
-    const regionWords=[region?.district,region?.city].filter(Boolean);
-    const locality=region?.district||region?.city||'';
+    const aliases=cityAliases(region?.city);
+    const regionWords=[region?.district,region?.town,...aliases].filter(Boolean);
+    const locality=region?.district||aliases[0]||region?.city||'';
     let rows=[],fetchMeta={mode:'none',pages:0,totalCount:0,query:''};
 
-    if(/api\.odcloud\.kr/i.test(new URL(source).hostname) && locality){
+    if(serviceKey && /api\.odcloud\.kr/i.test(new URL(source).hostname) && locality){
       const filtered=await fetchOdcloudFiltered(source,serviceKey,locality);
 
       // ODCLOUD 자동변환 API의 Swagger에는 page/perPage/returnType만 명시되어 있고,
@@ -136,7 +176,7 @@ export async function onRequestGet({request,env}){
     // 서버측 조건검색이 실제로 적용되지 않으면 전국 데이터를 페이지 단위로 스캔한다.
     // 전체 행을 한 번에 누적하지 않고 8페이지씩 병렬 조회 후 현재 시/군/구 주소만 모으고,
     // 충분한 지역 데이터가 확보되면 즉시 종료한다.
-    if(!rows.length){
+    if(serviceKey && !rows.length){
       const all=await scanOdcloudForRegion(source,serviceKey,{
         regionWords,
         maxPages:220,
@@ -146,6 +186,12 @@ export async function onRequestGet({request,env}){
       });
       rows=all.rows;fetchMeta=all.meta;
     }
+
+
+    // 7.6.5.4: 앱에 내장된 대전·세종 주소 데이터 3종을 항상 우선 병합한다.
+    // 공공데이터 API 키/조건검색 오류가 있어도 실제주소·대표주소·미확인 목록을 사용할 수 있다.
+    const bundledRows=await loadBundledOnnuri(request);
+    if(bundledRows.length)rows=[...bundledRows,...rows];
 
     const normalized=rows.map(row=>({
       raw:row,
@@ -158,16 +204,38 @@ export async function onRequestGet({request,env}){
       digital:yes(pick(row,['디지털형 가맹 여부','디지털형가맹여부','디지털취급여부','충전식카드','모바일','digital','card'])),
       registeredYear:String(pick(row,['등록년도','등록연도','year'])||'').trim(),
       lng:num(pick(row,['경도','longitude','lng','x','X'])),
-      lat:num(pick(row,['위도','latitude','lat','y','Y']))
+      lat:num(pick(row,['위도','latitude','lat','y','Y'])),
+      addressSource:String(row.__addressSource||''),
+      bundled:Boolean(row.__bundled),
+      bundledRegion:String(row.__region||'')
     })).filter(x=>x.name||x.address);
 
     let local=normalized;
     if(regionWords.length){
       local=normalized.filter(x=>{
-        const t=`${x.address} ${x.market}`;
+        const t=`${x.address} ${x.market} ${x.bundledRegion}`;
         return regionWords.some(w=>w&&t.includes(w));
       });
     }
+
+    // 번들 실주소를 우선하고 동일 상점가+가맹점 중복 제거.
+    const dedup=new Map();
+    for(const x of local){
+      const k=`${normalizeText(x.market)}|${normalizeText(x.name)}`;
+      if(!dedup.has(k) || (x.bundled && !dedup.get(k)?.bundled))dedup.set(k,x);
+    }
+    local=[...dedup.values()];
+    const localTerms=[region?.town,region?.district].filter(Boolean);
+    local.sort((a,b)=>{
+      const score=x=>{
+        const t=`${x.address} ${x.market}`;
+        if(localTerms.some(w=>w&&t.includes(w)))return 0;
+        if(x.addressSource==='legacy-merchant-exact'||x.addressSource==='user-confirmed')return 1;
+        if(x.addressSource==='official-market'||x.addressSource==='market-reference')return 2;
+        return 3;
+      };
+      return score(a)-score(b);
+    });
 
     // 7.6.4.8: 상세 도로명주소가 누락된 온누리 원천데이터를
     // [지역 + 상점가명 + 가맹점명] 중심의 다단계 Kakao Keyword Search로 좌표화한다.
@@ -183,7 +251,7 @@ export async function onRequestGet({request,env}){
       if(!dup)local.unshift({...forced});
     }
 
-    local=local.slice(0,900);
+    local=local.slice(0,260);
 
     const marketCenterCache=new Map();
     const adminCenterCache=new Map();
@@ -241,14 +309,16 @@ export async function onRequestGet({request,env}){
 
       // 강제등록/상세주소 보유 행은 주소 지오코딩을 최우선 적용한다.
       // Kakao 주소검색으로 성공하면 정확주소 좌표로 분류하고 D1에 저장한다.
-      if(x.address && kakaoKey){
-        const g=await geocode(String(x.address).replace(/\([^)]*\)/g,' ').replace(/\s+/g,' ').trim(),kakaoKey);
+      if(detailedAddress(x.address) && kakaoKey){
+        const addressQuery=String(x.address).replace(/\([^)]*\)/g,' ').replace(/\s+/g,' ').trim();
+        const g=await geocode(addressQuery,kakaoKey);
         if(g&&validKorea(g.lat,g.lng)){
           point={lng:g.lng,lat:g.lat};
-          precision='exact-address-geocode';
-          matchedPlaceName=merchant;
+          const isMarketFallback=x.addressSource==='official-market'||x.addressSource==='market-reference';
+          precision=isMarketFallback?'market-zone':'exact-address-geocode';
+          matchedPlaceName=isMarketFallback?(market||merchant):merchant;
           matchedAddress=x.address;
-          searchQuery='ADDRESS_GEOCODE';
+          searchQuery=isMarketFallback?'MARKET_ADDRESS_GEOCODE':'ADDRESS_GEOCODE';
         }
       }
 
@@ -417,7 +487,9 @@ export async function onRequestGet({request,env}){
     return json({
       ok:true,
       configured:true,
-      provider:'소상공인시장진흥공단 전국 온누리상품권 가맹점 현황 2025-07-31',
+      publicDataConfigured:Boolean(serviceKey),
+      bundledDataEnabled:true,
+      provider:'소상공인시장진흥공단 전국 온누리상품권 가맹점 현황 2025-07-31 + 앱 내장 주소보완 데이터',
       datasetUrl:OFFICIAL_ONNURI_2025_URL,
       region:{city:region?.city||'',district:region?.district||'',town:region?.town||''},
       fetchedRows:rows.length,
