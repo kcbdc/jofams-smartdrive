@@ -20,7 +20,7 @@ const state = {
   savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:'B027',fuelData:null,fuelFetchedAt:0,fuelLoading:false,destinationSearchSort:'accuracy',lastDestinationQuery:'',routeMode:'car',carRouteOptions:[],walkingRoute:null,routeModeDurations:{car:null,walk:null},homeFacilityCategory:'주유소',homeFacilityItems:[],
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
   tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapSatellite:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,homeSheetDrag:null,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherData:null,localVoucherRetryCount:0,localVoucherLastErrorAt:0,localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,localVoucherLoadedCenter:null,onnuriMarkers:[],onnuriData:null,onnuriLoadedAt:0,onnuriLoadedCenter:null,onnuriLoadTimer:0,homeCameraMarkers:[],homeCameraLoadTimer:0,
-  futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,simulationActive:false,simulationSpeed:1,simulationDistance:null,simulationLastAt:0,simulationRaf:0,
+  futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,adminVerified:false,adminVerifiedEmail:'',loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,simulationActive:false,simulationSpeed:1,simulationDistance:null,simulationLastAt:0,simulationRaf:0,
   compassHeading:null,compassAt:0,compassReady:false,activeLaneGuideKey:'',nativeLocationAt:0,nativeLocationActive:false,imu:{at:0,yawRateDegS:0,accelMagnitude:0,headingDeg:null},mapMatch:{index:0,routeDistance:0,score:Infinity,confidence:0,at:0},offRouteHeadingHits:0,gpsFix:{lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false},
   whereToTab:'local',wakeLock:null,savedPlaceGroups:[],savedPlaceGroupMap:{},activeSavedGroup:'all',firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
 };
@@ -4385,7 +4385,7 @@ async function initFirebase(){
     const [appMod,authMod,fsMod]=await Promise.all([import('https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js')]);
     const app=appMod.initializeApp(firebaseConfig()),auth=authMod.getAuth(app),db=fsMod.getFirestore(app);await authMod.setPersistence(auth,authMod.browserLocalPersistence);state.firebase={...state.firebase,ready:true,auth,db,mods:{authMod,fsMod}};
     installNativeGoogleAuthHandlers();
-    authMod.onAuthStateChanged(auth,async user=>{state.firebase.user=user||null;resetLoginButton();renderProfile();if(user){state.loginPending=false;await hydrateAuthenticatedUser()}else{loadLocal();loadLocalUserSettings();await Promise.all([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents(),loadUserSettings()]);updateFavoriteButtonState()}})
+    authMod.onAuthStateChanged(auth,async user=>{state.firebase.user=user||null;state.adminVerified=false;state.adminVerifiedEmail='';resetLoginButton();renderProfile();if(user){state.loginPending=false;await verifyAdminAccess();await hydrateAuthenticatedUser()}else{loadLocal();loadLocalUserSettings();await Promise.all([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents(),loadUserSettings()]);updateFavoriteButtonState()}})
   }catch(e){console.warn('Firebase init failed',e);resetLoginButton()}
 }
 function resetLoginButton(){const btn=$('googleLoginBtn');if(!btn)return;btn.disabled=false;btn.textContent='Google 로그인'}
@@ -4398,7 +4398,7 @@ function installNativeGoogleAuthHandlers(){
       if(!state.firebase.ready)throw new Error('Firebase가 준비되지 않았습니다.');
       const idToken=e?.detail?.idToken;if(!idToken)throw new Error('Google ID Token이 없습니다.');
       const {authMod}=state.firebase.mods,credential=authMod.GoogleAuthProvider.credential(idToken);
-      const result=await authMod.signInWithCredential(state.firebase.auth,credential);state.firebase.user=result.user;state.loginPending=false;renderProfile();await hydrateAuthenticatedUser();toast('로그인되었습니다.');
+      const result=await authMod.signInWithCredential(state.firebase.auth,credential);state.firebase.user=result.user;state.loginPending=false;renderProfile();await verifyAdminAccess();await hydrateAuthenticatedUser();toast('로그인되었습니다.');
     }catch(err){console.warn('native google credential failed',err);toast('Google 로그인 처리에 실패했습니다.',3000)}finally{resetLoginButton()}
   });
   window.addEventListener('jofams-native-google-error',e=>{state.loginPending=false;resetLoginButton();toast(e?.detail?.message||'Google 로그인에 실패했습니다.',3500)});
@@ -4413,13 +4413,13 @@ async function loginGoogle(){
     if(nativeAuthAvailable()){window.JofamsAuthBridge.signInGoogle();return}
     const {authMod}=state.firebase.mods,provider=new authMod.GoogleAuthProvider();
     const result=await Promise.race([authMod.signInWithPopup(state.firebase.auth,provider),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),12000))]);
-    state.firebase.user=result.user;state.loginPending=false;renderProfile();await hydrateAuthenticatedUser();toast('로그인되었습니다.');
+    state.firebase.user=result.user;state.loginPending=false;renderProfile();await verifyAdminAccess();await hydrateAuthenticatedUser();toast('로그인되었습니다.');
   }catch(e){state.loginPending=false;if(e.code==='auth/popup-blocked'||e.message==='timeout')toast('로그인 창을 다시 열어 주세요.');else toast('Google 로그인에 실패했습니다.');resetLoginButton()}
 }
 async function logout(){
   if(!state.firebase.ready){state.firebase.user=null;renderProfile();return}
   try{await state.firebase.mods.authMod.signOut(state.firebase.auth)}catch(e){console.warn('Firebase logout failed',e)}
-  state.firebase.user=null;state.loginPending=false;resetLoginButton();renderProfile();
+  state.firebase.user=null;state.adminVerified=false;state.adminVerifiedEmail='';state.loginPending=false;resetLoginButton();renderProfile();
 }
 function renderProfile(){
   const u=state.firebase.user,wrap=$('profilePhoto')?.closest('.profile-photo');
@@ -4492,11 +4492,56 @@ function startVoiceCommand(){
 window.addEventListener('jofams-native-voice-result',e=>handleVoiceCommandText(e.detail?.text||e.detail||''));
 
 
-function isAdminUser(){return String(state.firebase.user?.email||'').toLowerCase()===ADMIN_EMAIL}
-async function authFetch(url,opt={}){const token=await firebaseIdToken();if(!token)throw new Error('LOGIN_REQUIRED');const headers={...(opt.headers||{}),'authorization':`Bearer ${token}`};return fetch(url,{...opt,headers})}
+function normalizedEmail(v){return String(v||'').trim().toLowerCase()}
+function localAdminEmail(){
+  const u=state.firebase.user;
+  return normalizedEmail(u?.email||u?.providerData?.find?.(p=>p?.email)?.email||'');
+}
+function isAdminUser(){
+  return localAdminEmail()===normalizedEmail(ADMIN_EMAIL) || state.adminVerified===true;
+}
+async function authFetch(url,opt={}){
+  const token=await firebaseIdToken();
+  if(!token)throw new Error('LOGIN_REQUIRED');
+  const headers={...(opt.headers||{}),'authorization':`Bearer ${token}`};
+  return fetch(url,{...opt,headers});
+}
+async function verifyAdminAccess(){
+  if(!state.firebase.user){
+    state.adminVerified=false;
+    state.adminVerifiedEmail='';
+    updateAdminUI();
+    return false;
+  }
+  if(localAdminEmail()===normalizedEmail(ADMIN_EMAIL)){
+    state.adminVerified=true;
+    state.adminVerifiedEmail=localAdminEmail();
+    updateAdminUI();
+    return true;
+  }
+  try{
+    const r=await authFetch('/api/admin-access',{cache:'no-store'});
+    const d=await r.json().catch(()=>({}));
+    state.adminVerified=Boolean(r.ok&&d?.isAdmin);
+    state.adminVerifiedEmail=normalizedEmail(d?.email||'');
+    updateAdminUI();
+    return state.adminVerified;
+  }catch(e){
+    state.adminVerified=false;
+    state.adminVerifiedEmail='';
+    updateAdminUI();
+    return false;
+  }
+}
 async function loadPublicContent(){try{const r=await fetch('/api/content?type=content'),d=await r.json();return d.content||{}}catch{return {appInfo:'MVP 7.5.4',privacy:'개인정보처리방침이 준비 중입니다.'}}}
 function updateAdminUI(){const btn=$('adminModeBtn');if(btn)btn.classList.toggle('hidden',!isAdminUser())}
-function openAdminMode(){if(!isAdminUser())return toast('관리자 계정만 이용할 수 있습니다.');$('adminAccountLabel').textContent=state.firebase.user.email;$('adminModal').classList.remove('hidden');switchAdminTab('notices')}
+async function openAdminMode(){
+  if(!isAdminUser())await verifyAdminAccess();
+  if(!isAdminUser())return toast(`관리자 계정만 이용할 수 있습니다.${localAdminEmail()?` (현재: ${localAdminEmail()})`:''}`);
+  $('adminAccountLabel').textContent=state.adminVerifiedEmail||localAdminEmail()||ADMIN_EMAIL;
+  $('adminModal').classList.remove('hidden');
+  switchAdminTab('notices');
+}
 function closeAdminMode(){$('adminModal')?.classList.add('hidden')}
 function switchAdminTab(tab){document.querySelectorAll('[data-admin-tab]').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===tab));['notices','content','inquiries','onnuri'].forEach(k=>$(`admin${k[0].toUpperCase()+k.slice(1)}Panel`)?.classList.toggle('hidden',k!==tab));if(tab==='notices')loadAdminNotices();if(tab==='content')loadAdminContent();if(tab==='inquiries')loadAdminInquiries();if(tab==='onnuri')loadOnnuriBatchStatus()}
 async function adminContentRequest(type,method='GET',body=null){const u=new URL('/api/content',location.origin);u.searchParams.set('type',type);const opt={method,headers:{'content-type':'application/json'}};if(body)opt.body=JSON.stringify(body);const r=method==='GET'?await fetch(u):await authFetch(u,opt);const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`HTTP ${r.status}`);return d}
