@@ -1397,7 +1397,7 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 #simulationStatus.running{background:#e8f2ff!important;color:#1769d2!important}
 .simulation-speed-row{
   display:grid!important;
-  grid-template-columns:repeat(4,1fr)!important;
+  grid-template-columns:repeat(5,1fr)!important;
   gap:7px!important;
   margin-top:13px!important;
 }
@@ -1426,3 +1426,31 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   font-weight:900!important;
 }
 .simulation-start-btn.stop{background:#2f3744!important}
+
+
+/* 7.6.4.1 future departure modal full scroll */
+#futureDepartureModal .simple-sheet,
+#futureDepartureModal .future-departure-sheet,
+.future-departure-sheet{
+  max-height:88vh!important;
+  overflow-y:auto!important;
+  -webkit-overflow-scrolling:touch!important;
+  overscroll-behavior:contain!important;
+  padding-bottom:calc(28px + env(safe-area-inset-bottom))!important;
+}
+#futureDepartureModal .simple-sheet::after,
+#futureDepartureModal .future-departure-sheet::after{
+  content:""!important;
+  display:block!important;
+  height:28px!important;
+  flex:0 0 28px!important;
+}
+
+.safety-alert .safety-cctv-svg{
+  width:34px!important;
+  height:34px!important;
+  display:block!important;
+}
+.safety-alert .safety-cctv-svg *{
+  vector-effect:non-scaling-stroke;
+}

@@ -625,6 +625,16 @@ function cctvMarkerSvg(){
 // 옮겼으나, 요청에 따라 다른 안전 마커들과 통일감 있는 "원형 배지 + 흰색 라인 아이콘"
 // 스타일로 다시 단순화했다. 지도 위 마커와 길안내 좌측 하단 안전 배지(safety-alert,
 // kind=stat) 양쪽에서 이 함수를 공통으로 사용한다.
+function safetyCctvSvg(){
+  return `<svg viewBox="0 0 64 64" aria-hidden="true" class="safety-cctv-svg">
+    <g fill="none" stroke="#1f6fd8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 22h29l10 9-10 9H10z"/>
+      <circle cx="24" cy="31" r="5"/>
+      <path d="M40 40l7 8M47 48h8M13 43v8M9 51h12"/>
+    </g>
+  </svg>`;
+}
+
 function congestionMarkerSvg(){
   return `<svg viewBox="0 0 100 100" aria-hidden="true">
     <circle cx="50" cy="50" r="47" fill="#e2001a"/>
@@ -1182,10 +1192,16 @@ function scheduleSmoothDriveMarker(){
   const frame=(ts)=>{
     state.driveMarkerRaf=0;
     if(!state.tripStartedAt||!state.userMarker||!state.route?.geometry?.length)return;
+    const currentSpeed=Math.max(0,Number(state.user?.speed)||0);
     const target=Number(state.driveMarkerTargetDistance);
     if(!Number.isFinite(target))return;
     let rendered=Number(state.driveMarkerRenderedDistance);
     if(!Number.isFinite(rendered))rendered=target;
+    if(currentSpeed<.35&&!state.simulationActive){
+      state.driveMarkerRenderedDistance=target;
+      const stopped=pointAtRouteDistance(target);if(stopped)state.userMarker.setLngLat([stopped.lng,stopped.lat]);
+      return;
+    }
     const last=Number(state.driveMarkerFrameAt)||ts;
     const dt=Math.max(.008,Math.min(.08,(ts-last)/1000));
     state.driveMarkerFrameAt=ts;
@@ -2299,7 +2315,7 @@ function openFutureDeparture(){
   $('futurePredictionResult').classList.add('hidden');$('futurePredictionResult').innerHTML='';
   state.futureDateMode='today';document.querySelectorAll('[data-future-date]').forEach(b=>b.classList.toggle('active',b.dataset.futureDate==='today'));$('futureDateInput').classList.add('hidden');
   setFutureDefaultTime();
-  $('futureDepartureModal').classList.remove('hidden');
+  $('futureDepartureModal').classList.remove('hidden');const sheet=$('futureDepartureModal')?.querySelector('.simple-sheet,.future-departure-sheet');if(sheet)sheet.scrollTop=0;
   if(!state.user)locate(false).then(u=>{if(u&&!state.futureOrigin){state.futureOrigin={...u,name:'내 위치',address:'현재 GPS 위치'};$('futureOriginInput').value='내 위치'}});
 }
 function closeFutureDeparture(){$('futureDepartureModal').classList.add('hidden')}
@@ -2945,13 +2961,13 @@ function renderSpeedOrSignBadge(limit,candidates){
   if(circle)circle.style.setProperty('display',hasLimit?'grid':'none','important');
   if($('speedLimit'))$('speedLimit').textContent=hasLimit?String(Math.round(Number(syncedLimit))):'--';
 
-  const sign=camera||(!hasLimit?(candidates||[]).find(e=>e&&e.type!=='speed_limit'&&e.type!=='tunnel'):null);
+  // 좌측에는 제한속도만 표시. CCTV 아이콘은 중간 안전안내 레이어와 지도에서만 표시.
   if(badge){
+    const sign=(!camera&&!hasLimit)?(candidates||[]).find(e=>e&&e.type!=='speed_limit'&&e.type!=='tunnel'):null;
     if(sign){
       const info=safetyLabel(sign);
       badge.className=`road-sign-badge ${info.kind}`;
-      const marker=camera?cctvMarkerSvg():`<b>${escapeHtml(info.icon)}</b>`;
-      badge.innerHTML=`${marker}<small>${escapeHtml(km(Math.max(0,Number(sign.d)||0)))}</small>`;
+      badge.innerHTML=`<b>${escapeHtml(info.icon)}</b><small>${escapeHtml(km(Math.max(0,Number(sign.d)||0)))}</small>`;
       badge.style.setProperty('display','grid','important');
     }else{
       badge.style.setProperty('display','none','important');
@@ -3372,7 +3388,7 @@ function updateSafetyUI(idx,candidates){
   el.className=`safety-alert ${info.kind}`;
   const iconEl=$('safetyAlertIcon');
   if(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','mobile_camera','bus_lane_camera'].includes(e.type)){
-    iconEl.innerHTML=cctvMarkerSvg();iconEl.classList.add('sign-icon');
+    iconEl.innerHTML=safetyCctvSvg();iconEl.classList.add('sign-icon');
   }else if(e.type==='chronic_congestion'){
     iconEl.innerHTML=congestionMarkerSvg();iconEl.classList.add('sign-icon');
   }else{
@@ -3442,7 +3458,7 @@ function updateSimulationControls(){
   }
 }
 function setSimulationSpeed(mult){
-  const n=[1,2,4,8].includes(Number(mult))?Number(mult):1;
+  const n=[1,2,4,8,10].includes(Number(mult))?Number(mult):1;
   state.simulationSpeed=n;
   state.simulationLastAt=performance.now();
   updateSimulationControls();
@@ -3453,11 +3469,27 @@ function stopRouteSimulation({resumeGps=true}={}){
   const wasActive=Boolean(state.simulationActive);
   state.simulationActive=false;
   state.simulationLastAt=0;
+  state.simulationDistance=null;
   updateSimulationControls();
+
   if(wasActive&&resumeGps&&state.tripStartedAt){
+    // GPS watch를 먼저 복구하고 현재 위치를 즉시 재조회한 뒤 지도/캐릭터를 즉시 현위치로 복귀.
     startWatch();
-    locate(false).catch(()=>{});
-    toast('모의주행을 종료하고 실제 위치 안내로 복귀합니다.',1800);
+    locate(false).then(u=>{
+      if(!u||!state.tripStartedAt)return;
+      state.driveMarkerRenderedDistance=Number(state.user?.routeDistance);
+      state.driveMarkerTargetDistance=Number(state.user?.routeDistance);
+      ensureUserMarker();
+      const el=state.userMarker?.getElement?.();
+      if(el){el.style.opacity='1';el.style.visibility='visible';el.style.display='block'}
+      if(state.map){
+        state.lastUserMapInteractionAt=0;
+        state.userMapInteracting=false;
+        state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?55:0,bearing:Number(state.user.heading)||0,duration:180,padding:driveCameraPadding()});
+      }
+      updateDriving(true);
+    }).catch(()=>{});
+    toast('모의주행을 종료하고 현재 위치로 복귀합니다.',1500);
   }
 }
 function simulationTick(ts){
@@ -3513,6 +3545,10 @@ function startRouteSimulation(){
   stopWatch();
   stopDeadReckoning();
   state.simulationActive=true;
+  if(state.userMarker){
+    const el=state.userMarker.getElement?.();
+    if(el){el.style.opacity='1';el.style.visibility='visible';el.style.display='block'}
+  }
   state.simulationSpeed=Number(state.simulationSpeed)||1;
   let current=Number(state.user?.routeDistance);
   const total=Number(state.routeCumulative?.at(-1))||0;
