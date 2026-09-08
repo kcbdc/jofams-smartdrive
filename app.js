@@ -4132,18 +4132,60 @@ function speak(text,retry=0){
 function ownerSuffix(){return state.firebase.user?.uid||'guest'}
 function settingsKey(){return state.firebase.user?`${SETTINGS}.${state.firebase.user.uid}`:SETTINGS}
 
+const SAVED_GROUPS_LEGACY='jofams-navi.saved-groups.v1';
+const SAVED_GROUPS_DEVICE='jofams-navi.saved-groups.device.v1';
+
 function savedGroupsStorageKey(){
-  return state.firebase.user?`jofams-navi.saved-groups.v1.${state.firebase.user.uid}`:'jofams-navi.saved-groups.v1';
+  return state.firebase.user?`${SAVED_GROUPS_LEGACY}.${state.firebase.user.uid}`:SAVED_GROUPS_LEGACY;
+}
+function normalizeSavedGroupsPayload(d){
+  const groups=Array.isArray(d?.groups)?d.groups.filter(x=>x&&x.id&&x.name).map(x=>({id:String(x.id),name:String(x.name)})):[];
+  const map=d?.map&&typeof d.map==='object'?{...d.map}:{};
+  return {groups,map};
+}
+function mergeSavedGroupsPayloads(...payloads){
+  const groups=[],seen=new Set(),map={};
+  for(const payload of payloads){
+    const d=normalizeSavedGroupsPayload(payload);
+    for(const g of d.groups){
+      if(seen.has(g.id))continue;
+      seen.add(g.id);groups.push(g);
+    }
+    Object.assign(map,d.map);
+  }
+  return {groups,map};
 }
 function loadSavedPlaceGroups(){
-  const d=readJson(savedGroupsStorageKey(),null);
-  state.savedPlaceGroups=Array.isArray(d?.groups)?d.groups.filter(x=>x&&x.id&&x.name):[];
-  state.savedPlaceGroupMap=d?.map&&typeof d.map==='object'?d.map:{};
+  const primaryKey=savedGroupsStorageKey();
+  const primary=readJson(primaryKey,null);
+  const device=readJson(SAVED_GROUPS_DEVICE,null);
+  const legacy=readJson(SAVED_GROUPS_LEGACY,null);
+
+  // 로그인 전 생성한 그룹(legacy/device)을 로그인 후 UID 전용 저장소로 자동 승계한다.
+  // 기존 UID 전용 데이터가 있으면 그것을 우선하면서 기기 백업의 누락 그룹만 병합한다.
+  const merged=mergeSavedGroupsPayloads(primary,device,legacy);
+  state.savedPlaceGroups=merged.groups;
+  state.savedPlaceGroupMap=merged.map;
+
   if(!state.savedPlaceGroups.length)state.savedPlaceGroups=[{id:'favorites',name:'즐겨찾기'}];
-  if(!state.activeSavedGroup)state.activeSavedGroup='all';
+  if(!state.savedPlaceGroups.some(g=>g.id==='favorites')){
+    state.savedPlaceGroups.unshift({id:'favorites',name:'즐겨찾기'});
+  }
+  if(!state.activeSavedGroup||(
+    state.activeSavedGroup!=='all'&&!state.savedPlaceGroups.some(g=>g.id===state.activeSavedGroup)
+  ))state.activeSavedGroup='all';
+
+  // 발견된 기존 데이터를 현재 사용자 키와 기기 백업에 즉시 복구 저장.
+  if(primary||device||legacy)persistSavedPlaceGroups();
 }
 function persistSavedPlaceGroups(){
-  try{localStorage.setItem(savedGroupsStorageKey(),JSON.stringify({groups:state.savedPlaceGroups,map:state.savedPlaceGroupMap}))}catch(e){console.warn('saved groups persist failed',e)}
+  const payload=JSON.stringify({groups:state.savedPlaceGroups,map:state.savedPlaceGroupMap});
+  try{
+    localStorage.setItem(savedGroupsStorageKey(),payload);
+    localStorage.setItem(SAVED_GROUPS_DEVICE,payload);
+    // 비로그인/구버전과의 호환을 위해 legacy 키도 유지한다.
+    if(!state.firebase.user)localStorage.setItem(SAVED_GROUPS_LEGACY,payload);
+  }catch(e){console.warn('saved groups persist failed',e)}
 }
 function savedGroupName(id){
   return state.savedPlaceGroups.find(g=>g.id===id)?.name||'즐겨찾기';
@@ -4224,6 +4266,7 @@ function loadUserScopedLocal(){
   const p=readJson(settingsKey(),{});if(p.character&&characterDefs[p.character])state.character=p.character;if(Number.isFinite(Number(p.voiceVolume)))state.voiceVolume=Number(p.voiceVolume);
   state.savedPlaces.home=p.home||null;state.savedPlaces.work=p.work||null;
   state.favorites=readJson(favoritesStorageKey(),[]);state.recentDestinations=readJson(recentsStorageKey(),[]);
+  loadSavedPlaceGroups();
   syncCharacterUI();updateSavedLabels();updateVolumeUI();renderRecentDestinations();
 }
 function saveLocalSettings(){const payload=JSON.stringify({character:state.character,voiceVolume:state.voiceVolume,home:state.savedPlaces.home,work:state.savedPlaces.work});try{localStorage.setItem(settingsKey(),payload);if(!state.firebase.user)localStorage.setItem(SETTINGS,payload)}catch(e){console.warn('local settings save failed',e)}}
@@ -4305,11 +4348,14 @@ async function persistCurrentUserDataIfDbEmpty(placeResult,favResult,recentResul
   if(recentResult?.ok&&recentResult.count===0){for(const p of state.recentDestinations.slice(0,20))await dbRecentRequest('POST',p).catch(()=>{})}
 }
 async function hydrateAuthenticatedUser(){
-  loadUserScopedLocal();loadLocalUserSettings();
+  loadUserScopedLocal();
+  loadSavedPlaceGroups();
+  loadLocalUserSettings();
   await Promise.all([loadCloudPrefs(),loadCloudFavorites(),loadUserSettings()]);
   const [places,favs,recents]=await Promise.all([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents()]);
   await persistCurrentUserDataIfDbEmpty(places,favs,recents);
   updateSavedLabels();renderRecentDestinations();updateFavoriteButtonState();
+  if(!$('savedPlacesModal')?.classList.contains('hidden'))renderSavedGroups();
 }
 
 function syncCharacterUI(){
