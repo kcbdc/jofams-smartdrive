@@ -1516,3 +1516,25 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 #futureDepartureModal .future-prediction-result{
   scroll-margin-bottom:120px!important;
 }
+
+
+/* 7.6.4.4 - 다른시간 출발: 앱 상단 고정바를 덮지 않음 */
+#futureDepartureModal{
+  z-index:1200!important;
+}
+#futureDepartureModal .future-departure-sheet{
+  /* 앱 상단 고정바 높이 + safe area 아래에서 시작 */
+  top:calc(var(--safeT) + 64px)!important;
+  bottom:max(calc(var(--safeB) + 6px),6px)!important;
+  border-top-left-radius:22px!important;
+  border-top-right-radius:22px!important;
+}
+#futureDepartureModal .future-departure-sheet>header{
+  top:0!important;
+}
+
+@media (max-height:720px){
+  #futureDepartureModal .future-departure-sheet{
+    top:calc(var(--safeT) + 56px)!important;
+  }
+}

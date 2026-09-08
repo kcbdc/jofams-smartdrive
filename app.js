@@ -2634,21 +2634,26 @@ function stopLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.liveRo
 
 function markMapManualExplore(active=true){
   if(!state.tripStartedAt)return;
+  if(state.simulationActive)return;
   const now=Date.now();
   state.userMapInteracting=Boolean(active);
   state.lastUserMapInteractionAt=now;
 }
 function noteMapManualInput(){
   if(!state.tripStartedAt)return;
+  if(state.simulationActive)return;
   state.lastUserMapInteractionAt=Date.now();
 }
 function endMapManualExplore(){
   if(!state.tripStartedAt)return;
+  if(state.simulationActive)return;
   state.userMapInteracting=false;
   state.lastUserMapInteractionAt=Date.now();
 }
 function canAutoRecenterMap(){
   if(!state.tripStartedAt)return true;
+  // 모의주행 중에는 사용자가 지도를 건드려도 항상 캐릭터 추종을 유지한다.
+  if(state.simulationActive)return true;
   if(state.userMapInteracting)return false;
   const last=Number(state.lastUserMapInteractionAt||0);
   return !last||Date.now()-last>=10000;
@@ -3658,6 +3663,23 @@ function simulationTick(ts){
     };
     ensureUserMarker();
     updateDriving(false);
+  // 모의주행은 항상 캐릭터 중심으로 화면을 추종한다.
+  if(state.map&&state.simulationActive){
+    state.userMapInteracting=false;
+    state.lastUserMapInteractionAt=0;
+    const now=performance.now();
+    if(!state.lastSimulationCameraAt||now-state.lastSimulationCameraAt>=120){
+      state.lastSimulationCameraAt=now;
+      state.map.easeTo({
+        center:[state.user.lng,state.user.lat],
+        zoom:17.2,
+        pitch:state.map3D?55:0,
+        bearing:Number(state.user.heading)||0,
+        duration:140,
+        padding:driveCameraPadding()
+      });
+    }
+  }
   }
 
   if(dist>=total-1){
@@ -3684,6 +3706,9 @@ function startRouteSimulation(){
   stopWatch();
   stopDeadReckoning();
   state.simulationActive=true;
+  state.userMapInteracting=false;
+  state.lastUserMapInteractionAt=0;
+  state.lastSimulationCameraAt=0;
   if(state.userMarker){
     const el=state.userMarker.getElement?.();
     if(el){el.style.opacity='1';el.style.visibility='visible';el.style.display='block'}
