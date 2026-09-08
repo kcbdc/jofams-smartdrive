@@ -780,9 +780,13 @@ function clearOnnuriMarkers(){
   state.onnuriMarkers=[];
 }
 function openOnnuriStoreInfo(item){
+  const approx=item?.approximate||item?.precision==='market-zone'||item?.precision==='admin-zone';
+  const baseAddress=item.matchedAddress||item.address||'';
   showMapPlacePrompt({
     name:item.name||'온누리상품권 가맹점',
-    address:item.address||'',
+    address:approx
+      ? `${item.market||baseAddress||'시장·상점가 구역'} · 개별 점포 위치를 찾지 못해 대표 구역으로 표시`
+      : `${baseAddress||item.market||''}${item.market?` · ${item.market}`:''}`,
     lng:Number(item.lng),lat:Number(item.lat),
     onnuri:item
   });
@@ -850,55 +854,58 @@ function merchantDistanceSorted(items){
     .sort((a,b)=>a._distance-b._distance);
 }
 function currentWhereItems(){
-  if(state.whereToTab==='onnuri'){
-    // 온누리 원천자료는 개별 점포의 정확한 좌표가 아니라 소속 시장/상점가 중심의 위치정보이므로
-    // 점포 단위가 아닌 시장/상점가 구역 단위로 안내한다.
-    return merchantDistanceSorted(state.onnuriData?.zones||[]).slice(0,100);
-  }
-  return merchantDistanceSorted(state.localVoucherData?.items||[]).slice(0,100);
+  const source=state.whereToTab==='onnuri'?state.onnuriData:state.localVoucherData;
+  return merchantDistanceSorted(source?.items||[]).slice(0,100);
 }
 function renderWhereToList(){
   const box=$('whereToList');if(!box)return;
   document.querySelectorAll('[data-where-tab]').forEach(b=>b.classList.toggle('active',b.dataset.whereTab===state.whereToTab));
   const items=currentWhereItems();
   if(!items.length){
-    box.innerHTML=`<div class="where-to-empty">${state.whereToTab==='onnuri'?'온누리상품권 시장·상점가 구역':'지역사랑상품권 가맹점'}을 불러오는 중이거나 주변 검색결과가 없습니다.</div>`;
+    box.innerHTML=`<div class="where-to-empty">${state.whereToTab==='onnuri'?'온누리상품권':'지역사랑상품권'} 가맹점을 불러오는 중이거나 주변 검색결과가 없습니다.</div>`;
     return;
   }
 
-  if(state.whereToTab==='onnuri'){
-    box.innerHTML=items.map((x,i)=>`<button type="button" class="where-to-item where-to-zone-item" data-where-index="${i}">
-      <span class="where-to-rank">${i+1}</span>
-      <span class="where-to-info">
-        <b>${escapeHtml(x.name||x.market||'온누리상품권 구역')}</b>
-        <small>${escapeHtml(x.regionLabel||'소속 시장·상점가 기준 구역')}</small>
-        <em>온누리상품권 · 가맹점 ${Number(x.count||x.merchantCount||0).toLocaleString()}곳 · 정확한 개별 위치 미제공</em>
-      </span>
-      <strong>약 ${whereDistanceLabel(x._distance)}</strong>
-    </button>`).join('');
-  }else{
-    box.innerHTML=items.map((x,i)=>{
-      const use=voucherUseFlags(x).join(' · ');
-      return `<button type="button" class="where-to-item" data-where-index="${i}">
+  box.innerHTML=items.map((x,i)=>{
+    if(state.whereToTab==='onnuri'){
+      const approx=x.approximate||x.precision==='market-zone'||x.precision==='admin-zone';
+      const loc=approx
+        ? `${x.market||x.matchedAddress||'시장·상점가 대표 위치'}`
+        : `${x.matchedAddress||x.address||x.market||'위치 확인됨'}`;
+      const tag=approx?'대표 구역 위치':'가맹점 위치 확인';
+      return `<button type="button" class="where-to-item ${approx?'where-to-zone-item':''}" data-where-index="${i}">
         <span class="where-to-rank">${i+1}</span>
-        <span class="where-to-info"><b>${escapeHtml(x.name||'가맹점')}</b><small>${escapeHtml(x.address||'주소 정보 없음')}</small><em>${escapeHtml(use||'지역사랑상품권')}</em></span>
+        <span class="where-to-info">
+          <b>${escapeHtml(x.name||'온누리상품권 가맹점')}</b>
+          <small>${escapeHtml(loc)}</small>
+          <em>온누리상품권 · ${escapeHtml(x.market||'상점가 미상')} · ${tag}</em>
+        </span>
         <strong>${whereDistanceLabel(x._distance)}</strong>
       </button>`;
-    }).join('');
-  }
+    }
+    const use=voucherUseFlags(x).join(' · ');
+    return `<button type="button" class="where-to-item" data-where-index="${i}">
+      <span class="where-to-rank">${i+1}</span>
+      <span class="where-to-info"><b>${escapeHtml(x.name||'가맹점')}</b><small>${escapeHtml(x.address||'주소 정보 없음')}</small><em>${escapeHtml(use||'지역사랑상품권')}</em></span>
+      <strong>${whereDistanceLabel(x._distance)}</strong>
+    </button>`;
+  }).join('');
 
   box.querySelectorAll('[data-where-index]').forEach(btn=>btn.onclick=async()=>{
     const p=currentWhereItems()[Number(btn.dataset.whereIndex)];
     if(!p)return;
     closeWhereTo();
     if(state.whereToTab==='onnuri'){
+      const approx=p.approximate||p.precision==='market-zone'||p.precision==='admin-zone';
       await chooseDestination({
-        name:p.name||p.market||'온누리상품권 시장·상점가',
-        address:`${p.regionLabel||'시장·상점가 구역'} · 온누리 가맹점 ${Number(p.count||p.merchantCount||0)}곳`,
+        name:p.name||'온누리상품권 가맹점',
+        address:approx
+          ? `${p.market||p.matchedAddress||'시장·상점가 대표 위치'} · 개별 점포 위치 미확인`
+          : (p.matchedAddress||p.address||p.market||''),
         lng:Number(p.lng),lat:Number(p.lat),
-        onnuriZone:true
+        onnuri:p
       });
-      toast('온누리상품권은 개별 점포 위치가 아닌 시장·상점가 대표 구역으로 안내합니다.',3000);
+      if(approx)toast('개별 가맹점 좌표를 찾지 못해 시장·상점가 대표 위치로 안내합니다.',3000);
     }else{
       await chooseDestination({name:p.name||'가맹점',address:p.address||'',lng:Number(p.lng),lat:Number(p.lat)});
     }
@@ -971,10 +978,28 @@ function renderOnnuriZoneMarkers(zones){
 function renderOnnuriMarkers(data){
   clearOnnuriMarkers();
   if(!state.map||!maplibregl?.Marker||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
-  const zones=(data?.zones||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,500);
-  if(!zones.length)return;
-  // 정확한 점포 좌표로 오인하지 않도록 확대 수준과 관계없이 시장/상점가 '구역' 마커만 표시한다.
-  renderOnnuriZoneMarkers(zones);
+  const items=(data?.items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,1500);
+  if(!items.length)return;
+
+  const precise=items.filter(x=>!x.approximate && x.precision!=='market-zone' && x.precision!=='admin-zone');
+  const fallback=items.filter(x=>x.approximate || x.precision==='market-zone' || x.precision==='admin-zone');
+
+  // 정확히 찾은 점포는 기존 개별 가맹점 마커로 표시
+  if(precise.length){
+    if(mapVisibleWidthMeters()<1200)renderOnnuriShopMarkers(precise);
+    else renderOnnuriClusterMarkers(clusterMapItemsByPixel(precise,68));
+  }
+
+  // 좌표를 못 찾은 점포는 시장/상점가 대표 구역 단위로만 표시
+  if(fallback.length){
+    const groups=new Map();
+    for(const x of fallback){
+      const key=x.market||x.matchedAddress||'온누리상품권 구역';
+      if(!groups.has(key))groups.set(key,{name:key,market:key,count:0,lng:Number(x.lng),lat:Number(x.lat),regionLabel:x.matchedAddress||'',locationPrecision:x.precision});
+      groups.get(key).count++;
+    }
+    renderOnnuriZoneMarkers([...groups.values()]);
+  }
 }
 function readOnnuriStaleCache(){
   try{
