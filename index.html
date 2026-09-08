@@ -11,7 +11,7 @@
   <title>조팸스 내비</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.5.1" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.5.2" />
 </head>
 <body>
   <main id="app">
@@ -432,9 +432,12 @@
         <section id="adminOnnuriPanel" class="admin-panel hidden">
           <div class="admin-form onnuri-batch-admin">
             <h3>온누리 가맹점 주소 좌표화</h3>
-            <p>대전·세종 주소 미확인 가맹점을 카카오 장소검색으로 순차 확인하고 성공 좌표를 D1에 저장합니다. 이미 저장된 가맹점은 다시 검색하지 않습니다.</p>
+            <p>대전·세종 가맹점 중 이미 확보한 실제주소는 주소 지오코딩으로, 상점가 대표주소는 대표 구역으로, 나머지는 장소검색으로 순차 좌표화하여 D1에 저장합니다. 이미 저장된 가맹점은 다시 검색하지 않습니다.</p>
             <div class="onnuri-batch-stats">
-              <span>대상 <b id="onnuriBatchTotal">-</b></span>
+              <span>전체 <b id="onnuriBatchTotal">-</b></span>
+              <span>실주소 <b id="onnuriBatchExact">-</b></span>
+              <span>대표주소 <b id="onnuriBatchMarket">-</b></span>
+              <span>미확인 <b id="onnuriBatchUnresolved">-</b></span>
               <span>캐시 <b id="onnuriBatchCached">-</b></span>
               <span>현재 <b id="onnuriBatchProgress">0%</b></span>
             </div>
@@ -684,8 +687,8 @@
     <div id="toast" class="toast hidden"></div>
   </main>
 
-  <script>window.__JOFAMS_BUILD__="7.6.5.1";</script>
+  <script>window.__JOFAMS_BUILD__="7.6.5.2";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.5.1"></script>
+  <script type="module" src="/app.js?v=7.6.5.2"></script>
 </body>
 </html>

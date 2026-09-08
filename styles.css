@@ -1663,3 +1663,5 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .onnuri-batch-actions{display:grid;grid-template-columns:1fr auto;gap:8px}
 .onnuri-batch-actions button{min-height:44px}
 #onnuriBatchStatus{display:block;line-height:1.45;opacity:.75}
+
+@media(max-width:560px){.onnuri-batch-stats{grid-template-columns:repeat(2,1fr)}}
