@@ -1549,3 +1549,42 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .safety-alert .safety-cctv-svg circle{
   stroke:#cf2634!important;
 }
+
+
+/* 7.6.4.6 어디갈까 / 저장 */
+.where-to-sheet,.saved-places-sheet{
+  max-height:calc(100dvh - var(--safeT) - var(--safeB) - 18px)!important;
+  overflow-y:auto!important;
+  -webkit-overflow-scrolling:touch!important;
+  padding-bottom:calc(100px + var(--safeB))!important;
+}
+.where-to-location{
+  display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:10px;align-items:center;
+  margin:4px 0 12px;padding:12px;border:1px solid #e4e9f2;border-radius:16px;background:#f8faff;
+}
+.where-to-location>span{width:24px;height:24px;color:#3478e5}.where-to-location b{display:block;font-size:14px}.where-to-location small{display:block;margin-top:3px;color:#748095;font-size:10px}
+.where-to-location button{height:34px;padding:0 10px;border:0;border-radius:10px;background:#e9f2ff;color:#2166cb;font-weight:900;font-size:11px}
+.where-to-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;border-radius:14px;background:#eef2f7;position:sticky;top:64px;z-index:2}
+.where-to-tabs button{min-height:42px;border:0;border-radius:11px;background:transparent;color:#6d788b;font-size:11px;font-weight:900;word-break:keep-all}
+.where-to-tabs button.active{background:#fff;color:#1769d2;box-shadow:0 3px 10px rgba(20,45,85,.10)}
+.where-to-list{display:grid;gap:8px;padding-top:10px}
+.where-to-item{width:100%;display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;padding:13px 10px;border:1px solid #e7ebf2;border-radius:15px;background:#fff;text-align:left}
+.where-to-rank{width:26px;height:26px;display:grid;place-items:center;border-radius:9px;background:#eef5ff;color:#2871da;font-size:11px;font-weight:900}
+.where-to-info{min-width:0}.where-to-info b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.where-to-info small{display:block;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#788397;font-size:10px}.where-to-info em{display:block;margin-top:5px;color:#3d78cb;font-size:9px;font-style:normal}
+.where-to-item>strong{color:#1769d2;font-size:12px;white-space:nowrap}
+.where-to-empty,.saved-places-empty{padding:36px 14px;text-align:center;color:#7a8597;font-size:12px;line-height:1.55}
+
+.saved-group-create{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin:4px 0 12px}
+.saved-group-create input{height:44px;padding:0 12px;border:1px solid #dbe2ed;border-radius:12px;font:inherit}
+.saved-group-create button{height:44px;padding:0 13px;border:0;border-radius:12px;background:#1769d2;color:#fff;font-weight:900}
+.saved-group-tabs{display:flex;gap:7px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none}.saved-group-tabs::-webkit-scrollbar{display:none}
+.saved-group-tabs button{flex:0 0 auto;height:36px;padding:0 12px;border:1px solid #dce3ed;border-radius:18px;background:#fff;color:#596678;font-weight:900;font-size:11px}
+.saved-group-tabs button.active{border-color:#2b73df;background:#edf5ff;color:#1769d2}.saved-group-tabs small{margin-left:3px;font-size:9px}
+.saved-places-list{display:grid;gap:9px}
+.saved-place-card{padding:13px;border:1px solid #e6ebf2;border-radius:16px;background:#fff}
+.saved-place-main{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:center}.saved-place-main>span{width:20px;height:20px;color:#f0ad00}.saved-place-main b{display:block;font-size:14px}.saved-place-main small{display:block;margin-top:4px;color:#7a8494;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.saved-place-controls{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;margin-top:11px}
+.saved-place-controls select,.saved-place-controls button{height:36px;border-radius:10px;font:inherit;font-size:10px;font-weight:900}
+.saved-place-controls select{min-width:0;padding:0 8px;border:1px solid #dce3ed;background:#fff;color:#485568}
+.saved-place-controls button{border:0;padding:0 11px;background:#eaf2ff;color:#1763c7}.saved-place-controls button.danger{background:#fff0f0;color:#c82f36}
+@media(max-width:390px){.saved-place-controls{grid-template-columns:1fr 1fr}.saved-place-controls select{grid-column:1/-1}}

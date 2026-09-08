@@ -11,7 +11,7 @@
   <title>조팸스 내비</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.4.5" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.4.6" />
 </head>
 <body>
   <main id="app">
@@ -602,11 +602,38 @@
 
     <nav id="bottomNav" class="bottom-nav" aria-label="주요 메뉴">
       <button type="button" data-bottom-nav="home" class="active"><span data-icon="home"></span><b>홈</b></button>
-      <button type="button" data-bottom-nav="route"><span data-icon="routes"></span><b>길찾기</b></button>
-      <button type="button" data-bottom-nav="realtime"><span data-icon="car"></span><b>실시간</b></button>
+      <button type="button" data-bottom-nav="where"><span data-icon="routes"></span><b>어디갈까</b></button>
+      <button type="button" data-bottom-nav="saved"><span data-icon="star-outline"></span><b>저장</b></button>
       <button type="button" data-bottom-nav="my"><span data-icon="user"></span><b>MY</b></button>
     </nav>
 
+
+
+    <!-- 어디갈까: 주변 상품권 가맹점 -->
+    <div id="whereToModal" class="modal hidden">
+      <section class="simple-sheet where-to-sheet">
+        <header><b>어디갈까</b><button id="whereToClose" class="circle-btn" type="button"><span data-icon="close"></span></button></header>
+        <div class="where-to-location"><span data-icon="location"></span><div><b>내 주변 가맹점</b><small id="whereToLocationLabel">현재 위치 확인 중</small></div><button id="whereToRefresh" type="button">새로고침</button></div>
+        <div class="where-to-tabs" role="tablist" aria-label="가맹점 종류">
+          <button type="button" class="active" data-where-tab="local">지역사랑상품권 가맹점</button>
+          <button type="button" data-where-tab="onnuri">온누리상품권 가맹점</button>
+        </div>
+        <div id="whereToList" class="where-to-list"><div class="where-to-empty">현재 위치 주변 가맹점을 불러오는 중입니다.</div></div>
+      </section>
+    </div>
+
+    <!-- 저장: 장소 그룹 관리 -->
+    <div id="savedPlacesModal" class="modal hidden">
+      <section class="simple-sheet saved-places-sheet">
+        <header><b>저장</b><button id="savedPlacesClose" class="circle-btn" type="button"><span data-icon="close"></span></button></header>
+        <div class="saved-group-create">
+          <input id="savedGroupNameInput" maxlength="24" placeholder="새 그룹 이름 (예: 맛집, 여행)" />
+          <button id="savedGroupAddBtn" type="button">그룹 추가</button>
+        </div>
+        <div id="savedGroupTabs" class="saved-group-tabs"></div>
+        <div id="savedPlacesList" class="saved-places-list"></div>
+      </section>
+    </div>
 
     <!-- FIRST-RUN PERMISSIONS -->
     <div id="permissionGate" class="permission-gate hidden" role="dialog" aria-modal="true" aria-labelledby="permissionTitle">
@@ -639,8 +666,8 @@
     <div id="toast" class="toast hidden"></div>
   </main>
 
-  <script>window.__JOFAMS_BUILD__="7.6.4.5";</script>
+  <script>window.__JOFAMS_BUILD__="7.6.4.6";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.4.5"></script>
+  <script type="module" src="/app.js?v=7.6.4.6"></script>
 </body>
 </html>
