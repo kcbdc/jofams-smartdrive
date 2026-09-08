@@ -1666,29 +1666,32 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 
 @media(max-width:560px){.onnuri-batch-stats{grid-template-columns:repeat(2,1fr)}}
 
-/* 7.6.5.5 MY 페이지 끝까지 스크롤 복구 */
-#profileView,
-#myView,
-.view.profile-view,
-.view.my-view,
-.page.profile-page,
-.page.my-page,
-[data-view="profile"],
-[data-view="my"]{
-  overflow-y:auto !important;
-  overflow-x:hidden !important;
-  -webkit-overflow-scrolling:touch;
-  overscroll-behavior-y:contain;
-  min-height:0;
-  padding-bottom:calc(120px + env(safe-area-inset-bottom)) !important;
-  scroll-padding-bottom:calc(120px + env(safe-area-inset-bottom));
+
+/* === 7.6.5.5 MY 화면 끝까지 스크롤 복구 === */
+#myModal{
+  overflow:hidden!important;
+  touch-action:pan-y!important;
 }
-#profileView .view-body,
-#myView .view-body,
-.profile-scroll,
-.my-scroll{
-  min-height:0;
-  overflow:visible !important;
-  padding-bottom:calc(120px + env(safe-area-inset-bottom));
+#myModal .my-sheet{
+  top:max(calc(var(--safeT) + 6px),6px)!important;
+  bottom:max(calc(var(--safeB) + 6px),6px)!important;
+  height:auto!important;
+  max-height:none!important;
+  min-height:0!important;
+  overflow-x:hidden!important;
+  overflow-y:scroll!important;
+  -webkit-overflow-scrolling:touch!important;
+  overscroll-behavior-y:contain!important;
+  touch-action:pan-y!important;
+  padding-bottom:max(calc(84px + var(--safeB)),96px)!important;
+  scroll-padding-bottom:max(calc(84px + var(--safeB)),96px)!important;
 }
-html,body{overscroll-behavior-y:none;}
+#myModal .my-sheet::after{
+  content:""!important;
+  display:block!important;
+  width:100%!important;
+  height:max(calc(44px + var(--safeB)),56px)!important;
+}
+#myModal .setting-list{
+  overflow:visible!important;
+}
