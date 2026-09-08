@@ -4133,59 +4133,67 @@ function ownerSuffix(){return state.firebase.user?.uid||'guest'}
 function settingsKey(){return state.firebase.user?`${SETTINGS}.${state.firebase.user.uid}`:SETTINGS}
 
 const SAVED_GROUPS_LEGACY='jofams-navi.saved-groups.v1';
-const SAVED_GROUPS_DEVICE='jofams-navi.saved-groups.device.v1';
 
 function savedGroupsStorageKey(){
-  return state.firebase.user?`${SAVED_GROUPS_LEGACY}.${state.firebase.user.uid}`:SAVED_GROUPS_LEGACY;
+  return state.firebase.user?.uid
+    ?`${SAVED_GROUPS_LEGACY}.${state.firebase.user.uid}`
+    :SAVED_GROUPS_LEGACY;
 }
 function normalizeSavedGroupsPayload(d){
-  const groups=Array.isArray(d?.groups)?d.groups.filter(x=>x&&x.id&&x.name).map(x=>({id:String(x.id),name:String(x.name)})):[];
+  const groups=Array.isArray(d?.groups)
+    ?d.groups.filter(x=>x&&x.id&&x.name).map(x=>({id:String(x.id),name:String(x.name)}))
+    :[];
   const map=d?.map&&typeof d.map==='object'?{...d.map}:{};
   return {groups,map};
 }
-function mergeSavedGroupsPayloads(...payloads){
-  const groups=[],seen=new Set(),map={};
-  for(const payload of payloads){
-    const d=normalizeSavedGroupsPayload(payload);
-    for(const g of d.groups){
-      if(seen.has(g.id))continue;
-      seen.add(g.id);groups.push(g);
-    }
-    Object.assign(map,d.map);
-  }
-  return {groups,map};
-}
 function loadSavedPlaceGroups(){
-  const primaryKey=savedGroupsStorageKey();
-  const primary=readJson(primaryKey,null);
-  const device=readJson(SAVED_GROUPS_DEVICE,null);
-  const legacy=readJson(SAVED_GROUPS_LEGACY,null);
+  const uid=state.firebase.user?.uid||'';
+  const key=savedGroupsStorageKey();
+  let d=normalizeSavedGroupsPayload(readJson(key,null));
 
-  // 로그인 전 생성한 그룹(legacy/device)을 로그인 후 UID 전용 저장소로 자동 승계한다.
-  // 기존 UID 전용 데이터가 있으면 그것을 우선하면서 기기 백업의 누락 그룹만 병합한다.
-  const merged=mergeSavedGroupsPayloads(primary,device,legacy);
-  state.savedPlaceGroups=merged.groups;
-  state.savedPlaceGroupMap=merged.map;
+  // 로그인한 사용자는 오직 본인 UID 저장소를 사용한다.
+  // 단, 해당 UID 저장소가 비어 있는 최초 1회에는 비로그인 legacy 그룹을 가져와 사용자별 저장소로 이관한다.
+  if(uid && !d.groups.length){
+    const legacy=normalizeSavedGroupsPayload(readJson(SAVED_GROUPS_LEGACY,null));
+    if(legacy.groups.length){
+      d=legacy;
+      try{
+        localStorage.setItem(key,JSON.stringify(d));
+      }catch(e){
+        console.warn('saved groups uid migration failed',e);
+      }
+    }
+  }
 
-  if(!state.savedPlaceGroups.length)state.savedPlaceGroups=[{id:'favorites',name:'즐겨찾기'}];
+  state.savedPlaceGroups=d.groups;
+  state.savedPlaceGroupMap=d.map;
+
+  if(!state.savedPlaceGroups.length){
+    state.savedPlaceGroups=[{id:'favorites',name:'즐겨찾기'}];
+  }
   if(!state.savedPlaceGroups.some(g=>g.id==='favorites')){
     state.savedPlaceGroups.unshift({id:'favorites',name:'즐겨찾기'});
   }
-  if(!state.activeSavedGroup||(
-    state.activeSavedGroup!=='all'&&!state.savedPlaceGroups.some(g=>g.id===state.activeSavedGroup)
-  ))state.activeSavedGroup='all';
 
-  // 발견된 기존 데이터를 현재 사용자 키와 기기 백업에 즉시 복구 저장.
-  if(primary||device||legacy)persistSavedPlaceGroups();
+  if(!state.activeSavedGroup||(
+    state.activeSavedGroup!=='all' &&
+    !state.savedPlaceGroups.some(g=>g.id===state.activeSavedGroup)
+  )){
+    state.activeSavedGroup='all';
+  }
 }
 function persistSavedPlaceGroups(){
-  const payload=JSON.stringify({groups:state.savedPlaceGroups,map:state.savedPlaceGroupMap});
+  const payload=JSON.stringify({
+    groups:state.savedPlaceGroups,
+    map:state.savedPlaceGroupMap
+  });
   try{
+    // 로그인 상태면 현재 Firebase UID 전용 키에만 저장.
+    // 로그아웃 상태면 기존 guest/legacy 키에 저장.
     localStorage.setItem(savedGroupsStorageKey(),payload);
-    localStorage.setItem(SAVED_GROUPS_DEVICE,payload);
-    // 비로그인/구버전과의 호환을 위해 legacy 키도 유지한다.
-    if(!state.firebase.user)localStorage.setItem(SAVED_GROUPS_LEGACY,payload);
-  }catch(e){console.warn('saved groups persist failed',e)}
+  }catch(e){
+    console.warn('saved groups persist failed',e);
+  }
 }
 function savedGroupName(id){
   return state.savedPlaceGroups.find(g=>g.id===id)?.name||'즐겨찾기';
@@ -4431,7 +4439,7 @@ async function initFirebase(){
     const [appMod,authMod,fsMod]=await Promise.all([import('https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js'),import('https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js')]);
     const app=appMod.initializeApp(firebaseConfig()),auth=authMod.getAuth(app),db=fsMod.getFirestore(app);await authMod.setPersistence(auth,authMod.browserLocalPersistence);state.firebase={...state.firebase,ready:true,auth,db,mods:{authMod,fsMod}};
     installNativeGoogleAuthHandlers();
-    authMod.onAuthStateChanged(auth,async user=>{state.firebase.user=user||null;state.adminVerified=false;state.adminVerifiedEmail='';resetLoginButton();renderProfile();if(user){state.loginPending=false;await verifyAdminAccess();await hydrateAuthenticatedUser()}else{loadLocal();loadLocalUserSettings();await Promise.all([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents(),loadUserSettings()]);updateFavoriteButtonState()}})
+    authMod.onAuthStateChanged(auth,async user=>{state.firebase.user=user||null;state.adminVerified=false;state.adminVerifiedEmail='';state.savedPlaceGroups=[];state.savedPlaceGroupMap={};state.activeSavedGroup='all';resetLoginButton();renderProfile();if(user){state.loginPending=false;await verifyAdminAccess();await hydrateAuthenticatedUser()}else{loadLocal();loadLocalUserSettings();await Promise.all([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents(),loadUserSettings()]);updateFavoriteButtonState()}})
   }catch(e){console.warn('Firebase init failed',e);resetLoginButton()}
 }
 function resetLoginButton(){const btn=$('googleLoginBtn');if(!btn)return;btn.disabled=false;btn.textContent='Google 로그인'}
@@ -4465,7 +4473,7 @@ async function loginGoogle(){
 async function logout(){
   if(!state.firebase.ready){state.firebase.user=null;renderProfile();return}
   try{await state.firebase.mods.authMod.signOut(state.firebase.auth)}catch(e){console.warn('Firebase logout failed',e)}
-  state.firebase.user=null;state.adminVerified=false;state.adminVerifiedEmail='';state.loginPending=false;resetLoginButton();renderProfile();
+  state.firebase.user=null;state.adminVerified=false;state.adminVerifiedEmail='';state.savedPlaceGroups=[];state.savedPlaceGroupMap={};state.activeSavedGroup='all';loadSavedPlaceGroups();state.loginPending=false;resetLoginButton();renderProfile();
 }
 function renderProfile(){
   const u=state.firebase.user,wrap=$('profilePhoto')?.closest('.profile-photo');
