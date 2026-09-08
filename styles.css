@@ -1588,3 +1588,65 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .saved-place-controls select{min-width:0;padding:0 8px;border:1px solid #dce3ed;background:#fff;color:#485568}
 .saved-place-controls button{border:0;padding:0 11px;background:#eaf2ff;color:#1763c7}.saved-place-controls button.danger{background:#fff0f0;color:#c82f36}
 @media(max-width:390px){.saved-place-controls{grid-template-columns:1fr 1fr}.saved-place-controls select{grid-column:1/-1}}
+
+
+/* 7.6.4.7 온누리 시장·상점가 구역 마커 */
+.onnuri-zone-marker{
+  display:flex!important;
+  align-items:center!important;
+  gap:5px!important;
+  border:0!important;
+  background:transparent!important;
+  padding:0!important;
+  filter:drop-shadow(0 3px 7px rgba(55,36,0,.20));
+}
+.onnuri-zone-pin{
+  width:38px!important;
+  height:38px!important;
+  display:grid!important;
+  place-items:center!important;
+  border-radius:50% 50% 50% 12px!important;
+  transform:rotate(-45deg)!important;
+  background:#ff8a1f!important;
+  border:3px solid #fff!important;
+  color:#fff!important;
+}
+.onnuri-zone-pin svg{
+  width:22px!important;
+  height:22px!important;
+  transform:rotate(45deg)!important;
+}
+.onnuri-zone-label{
+  display:flex!important;
+  align-items:center!important;
+  gap:5px!important;
+  max-width:150px!important;
+  padding:6px 8px!important;
+  border:1px solid rgba(222,127,22,.25)!important;
+  border-radius:11px!important;
+  background:rgba(255,255,255,.96)!important;
+  color:#5a370f!important;
+  white-space:nowrap!important;
+}
+.onnuri-zone-label b{
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  font-size:10px!important;
+}
+.onnuri-zone-label small{
+  flex:0 0 auto!important;
+  color:#e06c00!important;
+  font-size:9px!important;
+  font-weight:900!important;
+}
+.where-to-zone-item{
+  border-color:#ffd9ad!important;
+  background:#fffaf4!important;
+}
+.where-to-zone-item .where-to-rank{
+  background:#fff0df!important;
+  color:#dd6a00!important;
+}
+.where-to-zone-item .where-to-info em{
+  color:#d56600!important;
+}

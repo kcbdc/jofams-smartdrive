@@ -850,30 +850,58 @@ function merchantDistanceSorted(items){
     .sort((a,b)=>a._distance-b._distance);
 }
 function currentWhereItems(){
-  const source=state.whereToTab==='onnuri'?state.onnuriData:state.localVoucherData;
-  return merchantDistanceSorted(source?.items||[]).slice(0,100);
+  if(state.whereToTab==='onnuri'){
+    // 온누리 원천자료는 개별 점포의 정확한 좌표가 아니라 소속 시장/상점가 중심의 위치정보이므로
+    // 점포 단위가 아닌 시장/상점가 구역 단위로 안내한다.
+    return merchantDistanceSorted(state.onnuriData?.zones||[]).slice(0,100);
+  }
+  return merchantDistanceSorted(state.localVoucherData?.items||[]).slice(0,100);
 }
 function renderWhereToList(){
   const box=$('whereToList');if(!box)return;
   document.querySelectorAll('[data-where-tab]').forEach(b=>b.classList.toggle('active',b.dataset.whereTab===state.whereToTab));
   const items=currentWhereItems();
   if(!items.length){
-    box.innerHTML=`<div class="where-to-empty">${state.whereToTab==='onnuri'?'온누리상품권':'지역사랑상품권'} 가맹점을 불러오는 중이거나 주변 검색결과가 없습니다.</div>`;
+    box.innerHTML=`<div class="where-to-empty">${state.whereToTab==='onnuri'?'온누리상품권 시장·상점가 구역':'지역사랑상품권 가맹점'}을 불러오는 중이거나 주변 검색결과가 없습니다.</div>`;
     return;
   }
-  box.innerHTML=items.map((x,i)=>{
-    const use=state.whereToTab==='local'?voucherUseFlags(x).join(' · '):'온누리상품권';
-    return `<button type="button" class="where-to-item" data-where-index="${i}">
+
+  if(state.whereToTab==='onnuri'){
+    box.innerHTML=items.map((x,i)=>`<button type="button" class="where-to-item where-to-zone-item" data-where-index="${i}">
       <span class="where-to-rank">${i+1}</span>
-      <span class="where-to-info"><b>${escapeHtml(x.name||'가맹점')}</b><small>${escapeHtml(x.address||'주소 정보 없음')}</small><em>${escapeHtml(use||'가맹점')}</em></span>
-      <strong>${whereDistanceLabel(x._distance)}</strong>
-    </button>`;
-  }).join('');
+      <span class="where-to-info">
+        <b>${escapeHtml(x.name||x.market||'온누리상품권 구역')}</b>
+        <small>${escapeHtml(x.regionLabel||'소속 시장·상점가 기준 구역')}</small>
+        <em>온누리상품권 · 가맹점 ${Number(x.count||x.merchantCount||0).toLocaleString()}곳 · 정확한 개별 위치 미제공</em>
+      </span>
+      <strong>약 ${whereDistanceLabel(x._distance)}</strong>
+    </button>`).join('');
+  }else{
+    box.innerHTML=items.map((x,i)=>{
+      const use=voucherUseFlags(x).join(' · ');
+      return `<button type="button" class="where-to-item" data-where-index="${i}">
+        <span class="where-to-rank">${i+1}</span>
+        <span class="where-to-info"><b>${escapeHtml(x.name||'가맹점')}</b><small>${escapeHtml(x.address||'주소 정보 없음')}</small><em>${escapeHtml(use||'지역사랑상품권')}</em></span>
+        <strong>${whereDistanceLabel(x._distance)}</strong>
+      </button>`;
+    }).join('');
+  }
+
   box.querySelectorAll('[data-where-index]').forEach(btn=>btn.onclick=async()=>{
     const p=currentWhereItems()[Number(btn.dataset.whereIndex)];
     if(!p)return;
     closeWhereTo();
-    await chooseDestination({name:p.name||'가맹점',address:p.address||'',lng:Number(p.lng),lat:Number(p.lat)});
+    if(state.whereToTab==='onnuri'){
+      await chooseDestination({
+        name:p.name||p.market||'온누리상품권 시장·상점가',
+        address:`${p.regionLabel||'시장·상점가 구역'} · 온누리 가맹점 ${Number(p.count||p.merchantCount||0)}곳`,
+        lng:Number(p.lng),lat:Number(p.lat),
+        onnuriZone:true
+      });
+      toast('온누리상품권은 개별 점포 위치가 아닌 시장·상점가 대표 구역으로 안내합니다.',3000);
+    }else{
+      await chooseDestination({name:p.name||'가맹점',address:p.address||'',lng:Number(p.lng),lat:Number(p.lat)});
+    }
   });
 }
 async function refreshWhereTo(){
@@ -896,8 +924,15 @@ async function refreshWhereTo(){
     renderWhereToList();
   }
 }
+
+function closeBottomPanels(except=''){
+  if(except!=='where')$('whereToModal')?.classList.add('hidden');
+  if(except!=='saved')$('savedPlacesModal')?.classList.add('hidden');
+  if(except!=='my')$('myModal')?.classList.add('hidden');
+}
+
 function openWhereTo(){
-  closeMy?.();
+  closeBottomPanels('where');
   state.whereToTab=state.whereToTab||'local';
   $('whereToModal')?.classList.remove('hidden');
   renderWhereToList();
@@ -905,15 +940,42 @@ function openWhereTo(){
 }
 function closeWhereTo(){$('whereToModal')?.classList.add('hidden')}
 
+
+function openOnnuriZoneInfo(zone){
+  showMapPlacePrompt({
+    name:zone.name||zone.market||'온누리상품권 시장·상점가',
+    address:`${zone.regionLabel||'소속 시장·상점가 구역'} · 가맹점 ${Number(zone.count||zone.merchantCount||0)}곳 · 정확한 개별 점포 위치는 제공되지 않습니다.`,
+    lng:Number(zone.lng),lat:Number(zone.lat),
+    onnuriZone:zone
+  });
+}
+function renderOnnuriZoneMarkers(zones){
+  for(const zone of zones||[]){
+    const lng=Number(zone.lng),lat=Number(zone.lat);
+    if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;
+    const el=document.createElement('button');
+    el.type='button';
+    el.className='onnuri-zone-marker';
+    el.title=`${zone.name||zone.market||'온누리상품권 구역'} · ${Number(zone.count||zone.merchantCount||0)}곳`;
+    el.innerHTML=`<span class="onnuri-zone-pin">${onnuriShopSvg()}</span><span class="onnuri-zone-label"><b>${escapeHtml(zone.name||zone.market||'시장·상점가')}</b><small>${Number(zone.count||zone.merchantCount||0)}곳</small></span>`;
+    el.onclick=e=>{e.stopPropagation();openOnnuriZoneInfo(zone)};
+    try{
+      state.onnuriMarkers.push(
+        new maplibregl.Marker({element:el,anchor:'bottom'})
+          .setLngLat([lng,lat]).addTo(state.map)
+      );
+    }catch{}
+  }
+}
+
 function renderOnnuriMarkers(data){
   clearOnnuriMarkers();
   if(!state.map||!maplibregl?.Marker||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
-  const items=(data?.items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,1500);
-  if(!items.length)return;
-  if(mapVisibleWidthMeters()<1000)renderOnnuriShopMarkers(items);
-  else renderOnnuriClusterMarkers(clusterMapItemsByPixel(items,68));
+  const zones=(data?.zones||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,500);
+  if(!zones.length)return;
+  // 정확한 점포 좌표로 오인하지 않도록 확대 수준과 관계없이 시장/상점가 '구역' 마커만 표시한다.
+  renderOnnuriZoneMarkers(zones);
 }
-
 function readOnnuriStaleCache(){
   try{
     const raw=localStorage.getItem('jofams_onnuri_map_cache_v2');
@@ -4116,7 +4178,7 @@ function addSavedGroup(){
   renderSavedGroups();
 }
 function openSavedPlaces(){
-  closeMy?.();
+  closeBottomPanels('saved');
   loadSavedPlaceGroups();
   $('savedPlacesModal')?.classList.remove('hidden');
   renderSavedGroups();
@@ -4517,7 +4579,7 @@ function openWaypointSaved(){
 async function openAppPrivacy(){const c=await loadPublicContent();openInfoModal('앱정보 / 개인정보처리방침',`<div class="info-card privacy-copy"><h3>조팸스 내비</h3><p>${escapeHtml(c.appInfo||'앱정보가 준비 중입니다.').replace(/\n/g,'<br>')}</p><hr><p>${escapeHtml(c.privacy||'개인정보처리방침이 준비 중입니다.').replace(/\n/g,'<br>')}</p></div>`)}
 function openDriveMenu(){$('driveMenu').classList.remove('hidden')}
 function closeDriveMenu(){$('driveMenu').classList.add('hidden')}
-function openMy(){$('myModal').classList.remove('hidden');renderProfile();syncCharacterUI();updateVolumeUI();updateTripHistorySummary()}
+function openMy(){closeBottomPanels('my');$('myModal').classList.remove('hidden');renderProfile();syncCharacterUI();updateVolumeUI();updateTripHistorySummary()}
 function closeMy(){$('myModal').classList.add('hidden')}
 function toggleSettingPanel(buttonId,panelId){const btn=$(buttonId),panel=$(panelId),open=panel.classList.contains('hidden');panel.classList.toggle('hidden',!open);btn.setAttribute('aria-expanded',String(open));if(open)setTimeout(()=>panel.scrollIntoView({behavior:'smooth',block:'nearest'}),50)}
 async function shareArrival(){if(!state.destination)return;const text=`'${state.destination.name}' 이동 중입니다. 예상 도착 ${$('arrivalTime').textContent.replace('도착 ','')}`;try{if(navigator.share)await navigator.share({title:'조팸스 내비',text});else await navigator.clipboard.writeText(text),toast('도착 정보를 복사했습니다.')}catch{}}
@@ -4614,7 +4676,7 @@ function bindUI(){
   try{if($('inquiryCloseBtn'))$('inquiryCloseBtn').onclick=closeInquiryModal;if($('newInquiryBtn'))$('newInquiryBtn').onclick=startInquiryCompose;if($('inquiryComposeBack'))$('inquiryComposeBack').onclick=backInquiryList;if($('inquirySubmitBtn'))$('inquirySubmitBtn').onclick=submitInquiry;}catch(e){console.warn('UI bind section 15 failed',e)}
   try{if($('adminModeBtn'))$('adminModeBtn').onclick=openAdminMode;if($('adminCloseBtn'))$('adminCloseBtn').onclick=closeAdminMode;document.querySelectorAll('[data-admin-tab]').forEach(b=>b.onclick=()=>switchAdminTab(b.dataset.adminTab));if($('adminNoticeSaveBtn'))$('adminNoticeSaveBtn').onclick=saveAdminNotice;if($('adminContentSaveBtn'))$('adminContentSaveBtn').onclick=saveAdminContent;}catch(e){console.warn('UI bind section 16 failed',e)}
   try{if($('waypointSearchClose'))$('waypointSearchClose').onclick=()=>closeWaypointSearch(true);if($('waypointSearchSubmit'))$('waypointSearchSubmit').onclick=()=>searchWaypointPlaces($('waypointSearchInput').value);if($('waypointSearchInput'))$('waypointSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchWaypointPlaces(e.target.value)});if($('waypointSearchModal'))$('waypointSearchModal').addEventListener('click',e=>{if(e.target===$('waypointSearchModal'))closeWaypointSearch(true)});if($('drivePlaceChoiceClose'))$('drivePlaceChoiceClose').onclick=closeDrivePlaceChoice;if($('drivePlaceAsWaypoint'))$('drivePlaceAsWaypoint').onclick=()=>applyDrivePlaceChoice('waypoint');if($('drivePlaceAsDestination'))$('drivePlaceAsDestination').onclick=()=>applyDrivePlaceChoice('destination');if($('drivePlaceChoiceModal'))$('drivePlaceChoiceModal').addEventListener('click',e=>{if(e.target===$('drivePlaceChoiceModal'))closeDrivePlaceChoice()});}catch(e){console.warn('UI bind section waypoint/permission failed',e)}
-  try{$('originModalClose').onclick=closeOriginModal;$('useCurrentOriginBtn').onclick=useCurrentOrigin;$('originSearchBtn').onclick=()=>searchOrigins($('originSearchInput').value);$('originSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchOrigins(e.target.value)});$('originModal').addEventListener('click',e=>{if(e.target===$('originModal'))closeOriginModal()});$('arCloseBtn').onclick=stopAR;document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.bottomNav;if(nav==='home'){cancelAutoStart();setView('home')}else if(nav==='where'){setView('home');openWhereTo()}else if(nav==='saved'){setView('home');openSavedPlaces()}else if(nav==='my')openMy()});$('placeModalClose').onclick=()=>$('placeModal').classList.add('hidden');if($('useCurrentPlaceBtn'))$('useCurrentPlaceBtn').onclick=saveCurrentLocationAsPlace;if($('placeSaveBtn'))$('placeSaveBtn').onclick=confirmRegisteredPlace;if($('whereToClose'))$('whereToClose').onclick=closeWhereTo;
+  try{$('originModalClose').onclick=closeOriginModal;$('useCurrentOriginBtn').onclick=useCurrentOrigin;$('originSearchBtn').onclick=()=>searchOrigins($('originSearchInput').value);$('originSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchOrigins(e.target.value)});$('originModal').addEventListener('click',e=>{if(e.target===$('originModal'))closeOriginModal()});$('arCloseBtn').onclick=stopAR;document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.bottomNav;closeBottomPanels(nav);if(nav==='home'){cancelAutoStart();setView('home')}else if(nav==='where'){setView('home');openWhereTo()}else if(nav==='saved'){setView('home');openSavedPlaces()}else if(nav==='my')openMy()});$('placeModalClose').onclick=()=>$('placeModal').classList.add('hidden');if($('useCurrentPlaceBtn'))$('useCurrentPlaceBtn').onclick=saveCurrentLocationAsPlace;if($('placeSaveBtn'))$('placeSaveBtn').onclick=confirmRegisteredPlace;if($('whereToClose'))$('whereToClose').onclick=closeWhereTo;
 if($('whereToRefresh'))$('whereToRefresh').onclick=refreshWhereTo;
 if($('whereToModal'))$('whereToModal').addEventListener('click',e=>{if(e.target===$('whereToModal'))closeWhereTo()});
 document.querySelectorAll('[data-where-tab]').forEach(b=>b.onclick=()=>{state.whereToTab=b.dataset.whereTab;renderWhereToList();refreshWhereTo()});
