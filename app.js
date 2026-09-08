@@ -1197,9 +1197,13 @@ function scheduleSmoothDriveMarker(){
     if(!Number.isFinite(target))return;
     let rendered=Number(state.driveMarkerRenderedDistance);
     if(!Number.isFinite(rendered))rendered=target;
-    if(currentSpeed<.35&&!state.simulationActive){
-      state.driveMarkerRenderedDistance=target;
-      const stopped=pointAtRouteDistance(target);if(stopped)state.userMarker.setLngLat([stopped.lng,stopped.lat]);
+    if(!state.simulationActive&&currentSpeed<=0.05){
+      // 실제 속도가 0이면 목표 거리로 끌어가지 않고 현재 렌더링 위치에 완전히 고정한다.
+      if(!Number.isFinite(rendered))rendered=Number(state.routeLockedDistance)||target;
+      state.driveMarkerRenderedDistance=rendered;
+      state.driveMarkerTargetDistance=rendered;
+      const stopped=pointAtRouteDistance(rendered);
+      if(stopped)state.userMarker.setLngLat([stopped.lng,stopped.lat]);
       return;
     }
     const last=Number(state.driveMarkerFrameAt)||ts;
@@ -1237,7 +1241,14 @@ function ensureUserMarker(){
     state.driveMarkerRenderedDistance=Number(state.user.routeDistance);
   }
   if(state.tripStartedAt&&state.route?.geometry?.length&&Number.isFinite(Number(state.user.routeDistance))){
-    state.driveMarkerTargetDistance=Number(state.user.routeDistance);
+    const incomingRouteDistance=Number(state.user?.routeDistance);
+  const realSpeed=Math.max(0,Number(state.user?.speed)||0);
+  if(state.tripStartedAt&&!state.simulationActive&&realSpeed<=0.05&&Number.isFinite(Number(state.driveMarkerRenderedDistance))){
+    // 정지 중에는 GPS/맵매칭 오차가 앞쪽 점을 잡더라도 캐릭터 목표거리를 갱신하지 않는다.
+    state.driveMarkerTargetDistance=Number(state.driveMarkerRenderedDistance);
+  }else if(Number.isFinite(incomingRouteDistance)){
+    state.driveMarkerTargetDistance=incomingRouteDistance;
+  }
     if(!Number.isFinite(Number(state.driveMarkerRenderedDistance)))state.driveMarkerRenderedDistance=Number(state.user.routeDistance);
     scheduleSmoothDriveMarker();
   }else state.userMarker.setLngLat([state.user.lng,state.user.lat]);
@@ -2895,6 +2906,16 @@ function checkArrival(routeRemain){
   return true;
 }
 
+
+function fitManeuverDistanceText(){
+  const el=$('maneuverDistance');
+  const box=el?.closest('.maneuver-main');
+  if(!el||!box)return;
+  const len=String(el.textContent||'').replace(/\s+/g,'').length;
+  box.classList.toggle('long-distance',len>=6);
+  box.classList.toggle('very-long-distance',len>=8);
+}
+
 function updateProgressUI(idx){
   const total=state.routeCumulative.at(-1)||state.route.distance||1;
   const locked=Number(state.user?.routeDistance);
@@ -2947,6 +2968,7 @@ function updateProgressUI(idx){
 
   updateSafetyUI(idx,safetyCandidates);updateSectionAverageSpeed(idx);updateLaneGuide(idx);updateVms(idx);
   checkArrival(remain);
+  fitManeuverDistanceText();
 }
 /* 좌측 하단 원형 배지: 제한속도 정보가 있으면 기존처럼 제한속도를 표시하고,
    없으면 원을 아예 숨긴 뒤 전방에서 가장 임박한 도로표지판(주의/보호구역/대형차 제한 등)이 있을 때만

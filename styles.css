@@ -1454,3 +1454,32 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .safety-alert .safety-cctv-svg *{
   vector-effect:non-scaling-stroke;
 }
+
+
+/* 7.6.4.2 top-left maneuver distance long text fit */
+.maneuver-main{
+  min-width:0!important;
+}
+.maneuver-main>div:last-child{
+  min-width:0!important;
+  max-width:100%!important;
+}
+#maneuverDistance{
+  display:block!important;
+  max-width:100%!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:clip!important;
+  font-variant-numeric:tabular-nums!important;
+  letter-spacing:-0.04em!important;
+  line-height:1!important;
+  font-size:clamp(20px,5.2vw,34px)!important;
+}
+.maneuver-main.long-distance #maneuverDistance{
+  font-size:clamp(17px,4.4vw,28px)!important;
+  letter-spacing:-0.06em!important;
+}
+.maneuver-main.very-long-distance #maneuverDistance{
+  font-size:clamp(15px,3.9vw,24px)!important;
+  letter-spacing:-0.07em!important;
+}
