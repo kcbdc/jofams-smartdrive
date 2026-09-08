@@ -4,6 +4,37 @@ const OFFICIAL_ONNURI_2025_URL='https://api.odcloud.kr/api/3060079/v1/uddi:7ffa4
 
 const ONNURI_CACHE_TABLE='onnuri_geocode_cache_v1';
 
+const FORCED_ONNURI_MERCHANTS=[
+  {
+    id:'forced:sodammasilgil:wonjobuanjip-sodam',
+    city:'세종특별자치시',
+    district:'',
+    town:'소담동',
+    market:'소담마실길 골목형상점가',
+    name:'원조부안집 소담점',
+    address:'세종특별자치시 소담로 93 (소담동) 104 105',
+    category:'음식점',
+    paper:true,
+    digital:true,
+    forced:true
+  }
+];
+
+function shouldInjectForcedMerchant(x,region){
+  const city=normalizeText(region?.city);
+  const district=normalizeText(region?.district);
+  const town=normalizeText(region?.town);
+  const targetCity=normalizeText(x.city);
+  const targetDistrict=normalizeText(x.district);
+  const targetTown=normalizeText(x.town);
+
+  if(city && targetCity && !city.includes(targetCity) && !targetCity.includes(city))return false;
+  if(district && targetDistrict && !district.includes(targetDistrict) && !targetDistrict.includes(district))return false;
+  if(town && targetTown && !town.includes(targetTown) && !targetTown.includes(town))return false;
+  return true;
+}
+
+
 async function ensureOnnuriCacheTable(env){
   const db=env?.DB||env?.D1||env?.JOFAMS_DB;
   if(!db)return null;
@@ -141,6 +172,17 @@ export async function onRequestGet({request,env}){
     // 7.6.4.8: 상세 도로명주소가 누락된 온누리 원천데이터를
     // [지역 + 상점가명 + 가맹점명] 중심의 다단계 Kakao Keyword Search로 좌표화한다.
     // 개별 가맹점 검색이 실패할 때만 상점가/행정구역 대표 위치로 fallback한다.
+    // 7.6.5.0: 사용자가 확인한 소담동 온누리 가맹점을 원천 API 누락 여부와 무관하게 강제 포함.
+    // 상세 도로명주소가 있으므로, 아래 매핑 단계에서 주소 지오코딩을 최우선으로 사용한다.
+    for(const forced of FORCED_ONNURI_MERCHANTS){
+      if(!shouldInjectForcedMerchant(forced,region))continue;
+      const dup=local.some(x=>
+        normalizeText(x.name)===normalizeText(forced.name) &&
+        normalizeText(x.market)===normalizeText(forced.market)
+      );
+      if(!dup)local.unshift({...forced});
+    }
+
     local=local.slice(0,900);
 
     const marketCenterCache=new Map();
@@ -195,7 +237,21 @@ export async function onRequestGet({request,env}){
       let searchQuery='';
 
       const cacheKey=onnuriCacheKey(regionFull,market,merchant);
-      const cached=await readOnnuriCache(geocodeDb,cacheKey);
+
+      // 강제등록/상세주소 보유 행은 주소 지오코딩을 최우선 적용한다.
+      // Kakao 주소검색으로 성공하면 정확주소 좌표로 분류하고 D1에 저장한다.
+      if(x.address && kakaoKey){
+        const g=await geocode(String(x.address).replace(/\([^)]*\)/g,' ').replace(/\s+/g,' ').trim(),kakaoKey);
+        if(g&&validKorea(g.lat,g.lng)){
+          point={lng:g.lng,lat:g.lat};
+          precision='exact-address-geocode';
+          matchedPlaceName=merchant;
+          matchedAddress=x.address;
+          searchQuery='ADDRESS_GEOCODE';
+        }
+      }
+
+      const cached=!point?await readOnnuriCache(geocodeDb,cacheKey):null;
       if(cached&&validKorea(num(cached.lat),num(cached.lng))){
         point={lng:num(cached.lng),lat:num(cached.lat)};
         precision=String(cached.precision||'cached');
@@ -299,7 +355,8 @@ export async function onRequestGet({request,env}){
         matchedAddress,
         searchQuery,
         approximate:precision==='market-zone'||precision==='admin-zone',
-        source:'semas-onnuri-2025'
+        source:x.forced?'manual-forced':'semas-onnuri-2025',
+        forced:Boolean(x.forced)
       };
     });
 
@@ -365,7 +422,7 @@ export async function onRequestGet({request,env}){
       fetchedRows:rows.length,
       localRows:local.length,
       mappedRows:items.length,
-      preciseMerchantCount:items.filter(x=>x.precision==='merchant-keyword'||x.precision==='merchant-keyword-relaxed'||x.precision==='source-coordinate').length,
+      preciseMerchantCount:items.filter(x=>x.precision==='exact-address-geocode'||x.precision==='merchant-keyword'||x.precision==='merchant-keyword-relaxed'||x.precision==='source-coordinate').length,
       fallbackZoneCount:items.filter(x=>x.precision==='market-zone'||x.precision==='admin-zone').length,
       cacheEnabled:Boolean(geocodeDb),
       minimumVisibleFallback:items.some(x=>x.searchQuery==='MIN_VISIBLE_FALLBACK'),
