@@ -4616,9 +4616,13 @@ async function loadAdminContent(){try{const d=await adminContentRequest('content
 async function saveAdminContent(){const btn=$('adminContentSaveBtn');btn.disabled=true;try{await adminContentRequest('content','PUT',{appInfo:$('adminAppInfoText').value,privacy:$('adminPrivacyText').value});showPlaceConfirmPopup('앱정보와 개인정보처리방침이 수정되었습니다.')}catch{toast('수정 내용 저장에 실패했습니다.')}finally{btn.disabled=false}}
 
 let onnuriBatchRunning=false;
-let onnuriBatchCursor=0;
 let onnuriBatchGrandDone=0;
 let onnuriBatchGrandTotal=0;
+let onnuriBatchProgressState={
+  exact:{cursor:0,total:0},
+  market:{cursor:0,total:0},
+  unresolved:{cursor:0,total:0}
+};
 
 async function loadOnnuriBatchStatus(){
   const status=$('onnuriBatchStatus');if(status)status.textContent='D1 캐시 상태를 확인하는 중입니다.';
@@ -4632,8 +4636,21 @@ async function loadOnnuriBatchStatus(){
     $('onnuriBatchUnresolved').textContent=Number(d.unresolvedTotal||0).toLocaleString();
     $('onnuriBatchCached').textContent=Number(d.cached||0).toLocaleString();
     onnuriBatchGrandTotal=Number(d.total||0);
-    if(!onnuriBatchRunning)updateOnnuriBatchProgress(Math.min(Number(d.cached||0),onnuriBatchGrandTotal),onnuriBatchGrandTotal);
-    if(status)status.textContent=`D1 캐시 ${Number(d.cached||0).toLocaleString()}건 · 개별 점포 좌표 ${Number(d.precise||0).toLocaleString()}건`;
+    if(d.progress){
+      onnuriBatchProgressState={
+        exact:{cursor:Number(d.progress.exact?.cursor||0),total:Number(d.progress.exact?.total||d.exactTotal||0)},
+        market:{cursor:Number(d.progress.market?.cursor||0),total:Number(d.progress.market?.total||d.marketFallbackTotal||0)},
+        unresolved:{cursor:Number(d.progress.unresolved?.cursor||0),total:Number(d.progress.unresolved?.total||d.unresolvedTotal||0)}
+      };
+      onnuriBatchGrandDone=Number(d.progress.done||0);
+    }else{
+      onnuriBatchGrandDone=Math.min(Number(d.cached||0),onnuriBatchGrandTotal);
+    }
+    if(!onnuriBatchRunning)updateOnnuriBatchProgress(onnuriBatchGrandDone,onnuriBatchGrandTotal);
+    if(status){
+      const pct=onnuriBatchGrandTotal?Math.min(100,Math.round(onnuriBatchGrandDone/onnuriBatchGrandTotal*100)):0;
+      status.textContent=`저장된 진행률 ${pct}% · ${onnuriBatchGrandDone.toLocaleString()} / ${onnuriBatchGrandTotal.toLocaleString()} · D1 캐시 ${Number(d.cached||0).toLocaleString()}건`;
+    }
   }catch(e){
     if(status)status.textContent=`상태 확인 실패: ${e?.message||'서버 설정을 확인해 주세요.'}`;
   }
@@ -4643,8 +4660,9 @@ function updateOnnuriBatchProgress(done,total){
   if($('onnuriBatchProgress'))$('onnuriBatchProgress').textContent=`${pct}%`;
   if($('onnuriBatchBar'))$('onnuriBatchBar').style.width=`${pct}%`;
 }
-async function runOnnuriStage(stage,label,total){
-  let cursor=0;
+async function runOnnuriStage(stage,label,total,startCursor=0){
+  let cursor=Math.max(0,Math.min(total,Number(startCursor)||0));
+  if(cursor>=total)return;
   while(onnuriBatchRunning && cursor<total){
     if($('onnuriBatchStatus'))$('onnuriBatchStatus').textContent=`${label} ${cursor.toLocaleString()} / ${total.toLocaleString()} 처리 중…`;
     const r=await authFetch('/api/onnuri-geocode-batch',{
@@ -4653,9 +4671,14 @@ async function runOnnuriStage(stage,label,total){
     });
     const d=await r.json();
     if(!r.ok)throw new Error(d.error||'batch failed');
-    const advanced=Number(d.nextCursor||cursor)-cursor;
-    cursor=Number(d.nextCursor||cursor);
-    onnuriBatchGrandDone+=Math.max(0,advanced);
+    const serverCursor=Math.max(cursor,Number(d.nextCursor||cursor));
+    const advanced=serverCursor-cursor;
+    cursor=serverCursor;
+    if(onnuriBatchProgressState[stage])onnuriBatchProgressState[stage].cursor=cursor;
+    onnuriBatchGrandDone=
+      Number(onnuriBatchProgressState.exact?.cursor||0)+
+      Number(onnuriBatchProgressState.market?.cursor||0)+
+      Number(onnuriBatchProgressState.unresolved?.cursor||0);
     updateOnnuriBatchProgress(onnuriBatchGrandDone,onnuriBatchGrandTotal);
     if($('onnuriBatchStatus'))$('onnuriBatchStatus').textContent=`${label} ${cursor.toLocaleString()} / ${total.toLocaleString()} · 성공 ${d.success||0} · 캐시 ${d.cachedHits||0} · 실패 ${d.failed||0}`;
     if(d.done)break;
@@ -4672,12 +4695,26 @@ async function startOnnuriBatch(){
     const rs=await authFetch('/api/onnuri-geocode-batch'),sd=await rs.json();
     if(!rs.ok)throw new Error(sd.error||'status failed');
     onnuriBatchGrandTotal=Number(sd.total||0);
-    onnuriBatchGrandDone=0;
-    updateOnnuriBatchProgress(0,onnuriBatchGrandTotal);
+    const p=sd.progress||{};
+    onnuriBatchProgressState={
+      exact:{cursor:Number(p.exact?.cursor||0),total:Number(sd.exactTotal||0)},
+      market:{cursor:Number(p.market?.cursor||0),total:Number(sd.marketFallbackTotal||0)},
+      unresolved:{cursor:Number(p.unresolved?.cursor||0),total:Number(sd.unresolvedTotal||0)}
+    };
+    onnuriBatchGrandDone=
+      onnuriBatchProgressState.exact.cursor+
+      onnuriBatchProgressState.market.cursor+
+      onnuriBatchProgressState.unresolved.cursor;
+    updateOnnuriBatchProgress(onnuriBatchGrandDone,onnuriBatchGrandTotal);
 
-    await runOnnuriStage('exact','실주소',Number(sd.exactTotal||0));
-    if(onnuriBatchRunning)await runOnnuriStage('market','상점가 대표주소',Number(sd.marketFallbackTotal||0));
-    if(onnuriBatchRunning)await runOnnuriStage('unresolved','미확인 가맹점',Number(sd.unresolvedTotal||0));
+    if(status&&onnuriBatchGrandDone>0){
+      const pct=onnuriBatchGrandTotal?Math.min(100,Math.round(onnuriBatchGrandDone/onnuriBatchGrandTotal*100)):0;
+      status.textContent=`이전 진행률 ${pct}%에서 이어서 시작합니다.`;
+    }
+
+    await runOnnuriStage('exact','실주소',Number(sd.exactTotal||0),onnuriBatchProgressState.exact.cursor);
+    if(onnuriBatchRunning)await runOnnuriStage('market','상점가 대표주소',Number(sd.marketFallbackTotal||0),onnuriBatchProgressState.market.cursor);
+    if(onnuriBatchRunning)await runOnnuriStage('unresolved','미확인 가맹점',Number(sd.unresolvedTotal||0),onnuriBatchProgressState.unresolved.cursor);
 
     if(onnuriBatchRunning && status)status.textContent='온누리 주소 좌표화 배치가 완료되었습니다. D1 캐시를 갱신합니다.';
   }catch(e){
@@ -4691,7 +4728,7 @@ async function startOnnuriBatch(){
 }
 function stopOnnuriBatch(){
   onnuriBatchRunning=false;
-  if($('onnuriBatchStatus'))$('onnuriBatchStatus').textContent='사용자가 배치를 중지했습니다. 이미 저장된 D1 좌표는 유지됩니다.';
+  if($('onnuriBatchStatus'))$('onnuriBatchStatus').textContent='배치를 중지했습니다. 현재 진행 위치도 D1에 저장되어 다음 실행 시 이 지점부터 이어집니다.';
   if($('onnuriBatchStartBtn'))$('onnuriBatchStartBtn').disabled=false;
   if($('onnuriBatchStopBtn'))$('onnuriBatchStopBtn').disabled=true;
 }
