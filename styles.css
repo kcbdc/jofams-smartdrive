@@ -1538,3 +1538,14 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
     top:calc(var(--safeT) + 56px)!important;
   }
 }
+
+/* 7.6.4.5 안전안내 CCTV = 기존 단속카메라 빨간색 계열 */
+.safety-alert .safety-cctv-svg{
+  width:34px!important;
+  height:34px!important;
+  color:#cf2634!important;
+}
+.safety-alert .safety-cctv-svg path,
+.safety-alert .safety-cctv-svg circle{
+  stroke:#cf2634!important;
+}

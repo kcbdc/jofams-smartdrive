@@ -465,20 +465,84 @@ function currentBaseMapStyle(){
 }
 // setStyle()은 지도 위 레이어/소스(경로선 등)를 모두 초기화하므로, 스타일 전환 후 다시 그려준다.
 // (사용자 위치/목적지 마커 등 maplibregl.Marker는 별도 DOM 오버레이라 스타일 전환에 영향받지 않는다.)
+
+function restoreMapOverlaysAfterStyleChange(){
+  if(!state.map)return;
+  const restore=()=>{
+    try{
+      if(!state.map?.isStyleLoaded?.())return false;
+      state.mapReady=true;
+      enforce2DMap();
+
+      // setStyle()로 사라진 GeoJSON source/layer를 반드시 다시 생성한다.
+      if(state.route?.geometry?.length){
+        state.pendingRouteDraw=null;
+        drawRoute(state.route,{fit:false});
+      }
+
+      // DOM Marker 계열도 현재 상태를 기준으로 즉시 다시 표시한다.
+      if(state.tripStartedAt&&state.safetyEvents?.length)renderSafetyMarkers();
+
+      // 온누리/지역상품권은 위성/일반 지도 여부와 관계없이 다시 렌더링한다.
+      if(!state.tripStartedAt&&!$('homeView')?.classList.contains('hidden')){
+        if(state.onnuriData)renderOnnuriMarkers(state.onnuriData);
+        if(state.localVoucherData)renderLocalVoucherMarkers(state.localVoucherData);
+        scheduleOnnuriRefresh(true);
+        scheduleLocalVoucherRefresh();
+        scheduleHomeCameraRefresh();
+      }
+      return true;
+    }catch(e){
+      console.warn('map overlay restore failed',e);
+      return false;
+    }
+  };
+
+  // style.load 직후 1회 + 일부 WebView에서 style load 이벤트가 빠지는 경우를 위한 재확인.
+  if(restore())return;
+  let tries=0;
+  const retry=()=>{
+    tries++;
+    if(restore()||tries>=12)return;
+    setTimeout(retry,100);
+  };
+  setTimeout(retry,60);
+}
+
 function toggleMapSatellite(){
   if(!state.map)return;
   state.mapSatellite=!state.mapSatellite;
   try{
+    // setStyle 직전에 현재 경로를 보존해 style 전환 중 pending 상태로 유실되지 않게 한다.
+    if(state.route?.geometry?.length){
+      state.pendingRouteDraw={route:state.route,options:{fit:false}};
+    }
     state.map.setStyle(currentBaseMapStyle());
-    state.map.once('styledata',()=>{
-      state.mapReady=true;enforce2DMap();
-      if(state.route)drawRoute(state.route,{fit:false});
-      if(state.routeMode&&state.tripStartedAt)loadSafetyEvents(state.route);
-      if(!state.mapSatellite){scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh()}
-    });
+
+    let restored=false;
+    const onStyleLoaded=()=>{
+      if(restored)return;
+      restored=true;
+      state.pendingRouteDraw=null;
+      restoreMapOverlaysAfterStyleChange();
+    };
+    state.map.once('style.load',onStyleLoaded);
+
+    // 일부 Android WebView/MapLibre 조합에서 style.load 타이밍이 불안정한 경우 보조 복구.
+    setTimeout(()=>{
+      if(!restored&&state.map?.isStyleLoaded?.()){
+        restored=true;
+        state.pendingRouteDraw=null;
+        restoreMapOverlaysAfterStyleChange();
+      }
+    },500);
   }catch(e){console.warn('satellite toggle failed',e)}
   const btn=$('mapSatelliteBtn');
-  if(btn){btn.classList.toggle('active',state.mapSatellite);btn.setAttribute('aria-pressed',String(state.mapSatellite));btn.textContent=state.mapSatellite?'일반':'위성'}
+  if(btn){
+    btn.classList.toggle('active',state.mapSatellite);
+    btn.setAttribute('aria-pressed',String(state.mapSatellite));
+    btn.textContent=state.mapSatellite?'일반':'위성';
+  }
 }
 function mapHasRenderedTiles(){
   try{return Boolean(state.map?.getCanvas()?.width&&state.map?.getCanvas()?.height&&state.map?.isStyleLoaded()&&(typeof state.map.areTilesLoaded!=='function'||state.map.areTilesLoaded()))}catch{return false}
@@ -490,7 +554,7 @@ function useMapFallback(){
   state.mapFallbackTried=next;
   try{
     state.map.setStyle(rasterStyle(next));
-    state.map.once('styledata',()=>{state.mapReady=true;enforce2DMap();refreshMapLayout({fitRoute:Boolean(state.route)});if(state.route)drawRoute(state.route,{fit:true});setTimeout(()=>{if(!mapHasRenderedTiles())useMapFallback()},2600)});
+    state.map.once('style.load',()=>{state.mapReady=true;enforce2DMap();refreshMapLayout({fitRoute:Boolean(state.route)});restoreMapOverlaysAfterStyleChange();setTimeout(()=>{if(!mapHasRenderedTiles())useMapFallback()},2600)});
   }catch(e){console.warn('map fallback failed',e)}
 }
 function setBuildingExtrusions(visible){
@@ -523,6 +587,7 @@ async function initMap(){
       state.map.on('rotateend',e=>{if(e?.originalEvent)endMapManualExplore()});
       state.map.on('zoomend',()=>{if(state.onnuriData)renderOnnuriMarkers(state.onnuriData);if(state.localVoucherData)renderLocalVoucherMarkers(state.localVoucherData);if(state.tripStartedAt&&state.safetyEvents?.length)renderSafetyMarkers()});
       state.map.on('moveend',()=>{scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh()});
+      state.map.on('style.load',()=>{if(state.mapReady)restoreMapOverlaysAfterStyleChange()});
       if(state.pendingRouteDraw){const p=state.pendingRouteDraw;state.pendingRouteDraw=null;drawRoute(p.route,p.options)}
       permissionStatus('geolocation').then(async status=>{
         try{
@@ -626,15 +691,13 @@ function cctvMarkerSvg(){
 // 스타일로 다시 단순화했다. 지도 위 마커와 길안내 좌측 하단 안전 배지(safety-alert,
 // kind=stat) 양쪽에서 이 함수를 공통으로 사용한다.
 function safetyCctvSvg(){
-  return `<svg viewBox="0 0 64 64" aria-hidden="true" class="safety-cctv-svg">
-    <g fill="none" stroke="#1f6fd8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M10 22h29l10 9-10 9H10z"/>
-      <circle cx="24" cy="31" r="5"/>
-      <path d="M40 40l7 8M47 48h8M13 43v8M9 51h12"/>
-    </g>
+  // 지도 단속카메라와 동일한 CCTV 형상을 사용하되 안전안내 레이어에서는 빨간색으로 통일한다.
+  return `<svg viewBox="0 0 28 28" aria-hidden="true" class="safety-cctv-svg">
+    <path d="M6.2 8.3h11.1c1.1 0 2 .9 2 2v4.6c0 1.1-.9 2-2 2H6.2c-1.1 0-2-.9-2-2v-4.6c0-1.1.9-2 2-2Z" fill="none" stroke="#cf2634" stroke-width="1.8"/>
+    <circle cx="14.7" cy="12.6" r="2.6" fill="none" stroke="#cf2634" stroke-width="1.8"/>
+    <path d="M19.4 11.1 24 8.9v7.4l-4.6-2.2M9.2 17.1l-1.4 4.1M16.6 17.1l1.3 4.1M5.7 21.2h13.1" fill="none" stroke="#cf2634" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
 }
-
 function congestionMarkerSvg(){
   return `<svg viewBox="0 0 100 100" aria-hidden="true">
     <circle cx="50" cy="50" r="47" fill="#e2001a"/>
@@ -761,51 +824,103 @@ function renderOnnuriMarkers(data){
   if(mapVisibleWidthMeters()<1000)renderOnnuriShopMarkers(items);
   else renderOnnuriClusterMarkers(clusterMapItemsByPixel(items,68));
 }
+
+function readOnnuriStaleCache(){
+  try{
+    const raw=localStorage.getItem('jofams_onnuri_map_cache_v2');
+    if(!raw)return null;
+    const d=JSON.parse(raw);
+    if(!d?.payload||Date.now()-Number(d.savedAt||0)>24*60*60*1000)return null;
+    return d.payload;
+  }catch{return null}
+}
+function writeOnnuriStaleCache(payload){
+  try{
+    if(payload?.items?.length)localStorage.setItem('jofams_onnuri_map_cache_v2',JSON.stringify({savedAt:Date.now(),payload}));
+  }catch{}
+}
+
 async function loadOnnuriMap({force=false}={}){
   if(!state.map||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
   const zoom=Number(state.map.getZoom?.()||0);
   if(zoom<7.5){clearOnnuriMarkers();return}
   const center=state.map.getCenter?.();if(!center)return;
 
-  if(state.onnuriData)renderOnnuriMarkers(state.onnuriData);
+  // 메모리 데이터가 있으면 네트워크 응답을 기다리지 않고 즉시 표시.
+  if(state.onnuriData?.items?.length)renderOnnuriMarkers(state.onnuriData);
+  else{
+    const cached=readOnnuriStaleCache();
+    if(cached?.items?.length){
+      state.onnuriData=cached;
+      renderOnnuriMarkers(cached);
+    }
+  }
+
   const moved=(()=>{
     if(!state.onnuriLoadedCenter)return true;
     const d=voucherGeoMeters(state.onnuriLoadedCenter.lat,state.onnuriLoadedCenter.lng,center.lat,center.lng);
     const r=voucherVisibleRadiusMeters();
     return d>=Math.max(600,Number.isFinite(r)?r*.35:1200);
   })();
-  if(!force&&!moved&&state.onnuriData&&Date.now()-Number(state.onnuriLoadedAt||0)<90000)return;
+  if(!force&&!moved&&state.onnuriData?.items?.length&&Date.now()-Number(state.onnuriLoadedAt||0)<90000)return;
 
   try{
     const b=state.map.getBounds?.(),u=new URL('/api/onnuri-voucher',location.origin);
     u.searchParams.set('lng',center.lng);u.searchParams.set('lat',center.lat);
-    if(b){u.searchParams.set('west',b.getWest());u.searchParams.set('south',b.getSouth());u.searchParams.set('east',b.getEast());u.searchParams.set('north',b.getNorth())}
-    const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),12000);
-    let r;try{r=await fetch(u,{headers:{accept:'application/json'},signal:ctrl.signal,cache:'no-store'})}finally{clearTimeout(timer)}
+    if(b){
+      u.searchParams.set('west',b.getWest());u.searchParams.set('south',b.getSouth());
+      u.searchParams.set('east',b.getEast());u.searchParams.set('north',b.getNorth());
+    }
+    const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),15000);
+    let r;
+    try{r=await fetch(u,{headers:{accept:'application/json'},signal:ctrl.signal,cache:'no-store'})}
+    finally{clearTimeout(timer)}
+
     if(!r.ok){
       const err=await r.json().catch(()=>({}));
       console.warn('onnuri API unavailable',r.status,err?.code||'',err?.detail||err?.error||'');
-      clearOnnuriMarkers();
+      // 기존/캐시 마커는 지우지 않는다.
+      if(state.onnuriData?.items?.length)renderOnnuriMarkers(state.onnuriData);
       return;
     }
-    const d=await r.json();
-    state.onnuriData=d;state.onnuriLoadedAt=Date.now();state.onnuriLoadedCenter={lat:center.lat,lng:center.lng};
-    renderOnnuriMarkers(d);
-    if(!d.items?.length){
-      console.warn('onnuri mapped rows 0',d.region,d.fetchMeta,d.fetchedRows,d.localRows,d.mappedRows);
-      // 캐시/이전 0건 응답이 남은 경우 한 번만 즉시 재조회한다.
-      if(!force&&(!state.onnuriZeroRetryAt||Date.now()-Number(state.onnuriZeroRetryAt||0)>60000)){
-        state.onnuriZeroRetryAt=Date.now();
-        setTimeout(()=>loadOnnuriMap({force:true}),900);
-      }
-    }
-  }catch(e){console.warn('onnuri map load failed',e)}
-}
-function scheduleOnnuriRefresh(){
-  clearTimeout(state.onnuriLoadTimer);
-  state.onnuriLoadTimer=setTimeout(()=>loadOnnuriMap(),520);
-}
 
+    const d=await r.json();
+    if(d?.items?.length){
+      state.onnuriData=d;
+      state.onnuriLoadedAt=Date.now();
+      state.onnuriLoadedCenter={lat:center.lat,lng:center.lng};
+      writeOnnuriStaleCache(d);
+      renderOnnuriMarkers(d);
+      state.onnuriZeroRetryAt=0;
+      return;
+    }
+
+    console.warn('onnuri mapped rows 0',d?.region,d?.fetchMeta,d?.fetchedRows,d?.localRows,d?.mappedRows);
+
+    // 0건 응답이 와도 기존 정상 데이터/캐시를 지우지 않고 한 번 강제 재조회.
+    const cached=state.onnuriData?.items?.length?state.onnuriData:readOnnuriStaleCache();
+    if(cached?.items?.length){
+      state.onnuriData=cached;
+      renderOnnuriMarkers(cached);
+    }
+    if(!force&&(!state.onnuriZeroRetryAt||Date.now()-Number(state.onnuriZeroRetryAt||0)>60000)){
+      state.onnuriZeroRetryAt=Date.now();
+      setTimeout(()=>loadOnnuriMap({force:true}),900);
+    }
+  }catch(e){
+    console.warn('onnuri map load failed',e);
+    // 네트워크/timeout에서도 화면의 기존 온누리 마커를 유지.
+    const cached=state.onnuriData?.items?.length?state.onnuriData:readOnnuriStaleCache();
+    if(cached?.items?.length){
+      state.onnuriData=cached;
+      renderOnnuriMarkers(cached);
+    }
+  }
+}
+function scheduleOnnuriRefresh(force=false){
+  clearTimeout(state.onnuriLoadTimer);
+  state.onnuriLoadTimer=setTimeout(()=>loadOnnuriMap({force:Boolean(force)}),320);
+}
 function voucherGeoMeters(aLat,aLng,bLat,bLng){
   const r=6371000,toRad=Math.PI/180,dLat=(bLat-aLat)*toRad,dLng=(bLng-aLng)*toRad;
   const aa=Math.sin(dLat/2)**2+Math.cos(aLat*toRad)*Math.cos(bLat*toRad)*Math.sin(dLng/2)**2;
