@@ -1,6 +1,62 @@
+const PUBLIC_CAMERA_API='https://api.data.go.kr/openapi/tn_pubr_public_unmanned_traffic_camera_api';
 const OVERPASS='https://overpass-api.de/api/interpreter';
 const OPEN_METEO='https://api.open-meteo.com/v1/forecast';
 const KOROAD_LG='https://opendata.koroad.or.kr/data/rest/frequentzone/lg';
+
+
+function publicDataKey(env){return String(env.PUBLIC_DATA_SERVICE_KEY||env.DATA_GO_KR_SERVICE_KEY||'').trim()}
+function decodedKey(v){try{return decodeURIComponent(String(v||'').trim())}catch{return String(v||'').trim()}}
+function normalizeNationalCamera(x){
+  const lat=Number(x.latitude??x.lat??x.위도),lng=Number(x.longitude??x.lot??x.lng??x.경도);
+  if(!Number.isFinite(lat)||!Number.isFinite(lng))return null;
+  const sp=Number(x.limitSpeed??x.speedLimit??x.제한속도??x.restrictSpeed);
+  return {type:'speed_camera',lat,lng,maxspeed:Number.isFinite(sp)&&sp>0?sp:null,
+    source:'data.go.kr-national-unmanned-camera',
+    roadName:String(x.roadRouteName??x.roadName??x.도로노선명??'').trim(),
+    direction:String(x.roadRouteDirection??x.roadDirection??x.도로노선방향??'').trim(),
+    name:String(x.installationLocation??x.설치장소??x.cameraType??x.카메라구분??'무인교통단속카메라').trim()};
+}
+function nationalRows(d){
+  const b=d?.response?.body||d?.body||d||{};
+  let rows=b?.items?.item||b?.items||d?.items||d?.data||[];
+  if(!Array.isArray(rows))rows=rows?[rows]:[];
+  return rows.map(normalizeNationalCamera).filter(Boolean);
+}
+function pointSegMeters(p,a,b){
+  const lat0=p.lat*Math.PI/180,sx=111320*Math.cos(lat0),sy=110540;
+  const px=p.lng*sx,py=p.lat*sy,ax=a.lng*sx,ay=a.lat*sy,bx=b.lng*sx,by=b.lat*sy;
+  const vx=bx-ax,vy=by-ay,wx=px-ax,wy=py-ay,vv=vx*vx+vy*vy;
+  const t=vv?Math.max(0,Math.min(1,(wx*vx+wy*vy)/vv)):0;
+  return Math.hypot(px-(ax+t*vx),py-(ay+t*vy));
+}
+function cameraNearRoute(cam,points,max=45){
+  let best=Infinity;
+  for(let i=0;i<points.length-1;i++){
+    const d=pointSegMeters(cam,{lat:points[i].lat,lng:points[i].lng},{lat:points[i+1].lat,lng:points[i+1].lng});
+    if(d<best)best=d;if(best<=18)break;
+  }
+  return best<=max;
+}
+async function loadNationalRouteCameras(points,env){
+  const key=publicDataKey(env);if(!key||!points?.length)return [];
+  let west=Infinity,south=Infinity,east=-Infinity,north=-Infinity;
+  for(const p of points){west=Math.min(west,p.lng);east=Math.max(east,p.lng);south=Math.min(south,p.lat);north=Math.max(north,p.lat)}
+  const out=[],perPage=1000,maxPages=40,pad=.08;
+  for(let page=1;page<=maxPages;page++){
+    const u=new URL(PUBLIC_CAMERA_API);
+    u.searchParams.set('serviceKey',decodedKey(key));u.searchParams.set('pageNo',String(page));u.searchParams.set('numOfRows',String(perPage));u.searchParams.set('type','json');
+    const r=await fetch(u,{headers:{accept:'application/json'}});if(!r.ok)break;
+    const text=await r.text();let d;try{d=JSON.parse(text)}catch{break}
+    const rows=nationalRows(d);if(!rows.length)break;
+    for(const c of rows){
+      if(c.lng<west-pad||c.lng>east+pad||c.lat<south-pad||c.lat>north+pad)continue;
+      if(cameraNearRoute(c,points,45))out.push(c);
+    }
+    const total=Number(d?.response?.body?.totalCount);
+    if(rows.length<perPage||(Number.isFinite(total)&&page*perPage>=total))break;
+  }
+  return out;
+}
 
 export async function onRequestPost({request,env}){
   try{
@@ -27,7 +83,13 @@ export async function onRequestPost({request,env}){
       catch(e){providers.push({name:'koroad-accident-hotspots',ok:false,error:String(e?.message||e)})}
     }else providers.push({name:'koroad-accident-hotspots',ok:false,note:'KOROAD_AUTH_KEY or KAKAO_REST_API_KEY not configured'});
 
-    return json({events:dedupe(events),providers,coverage:'weather + statistics + road-safety supplements'},200,120);
+    try{
+      const national=await loadNationalRouteCameras(points,env);
+      events.push(...national);
+      providers.push({name:'data.go.kr-national-unmanned-camera',ok:true,count:national.length});
+    }catch(e){providers.push({name:'data.go.kr-national-unmanned-camera',ok:false,error:String(e?.message||e)})}
+
+    return json({events:dedupe(events),providers,coverage:'weather + statistics + road-safety supplements + national unmanned cameras'},200,120);
   }catch(e){return json({events:[],providers:[],warning:String(e?.message||e)},200,30)}
 }
 
