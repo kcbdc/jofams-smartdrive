@@ -1005,7 +1005,7 @@ function renderOnnuriMarkers(data){
 }
 function readOnnuriStaleCache(){
   try{
-    const raw=localStorage.getItem('jofams_onnuri_map_cache_v2');
+    const raw=localStorage.getItem('jofams_onnuri_map_cache_v3');
     if(!raw)return null;
     const d=JSON.parse(raw);
     if(!d?.payload||Date.now()-Number(d.savedAt||0)>24*60*60*1000)return null;
@@ -1014,7 +1014,7 @@ function readOnnuriStaleCache(){
 }
 function writeOnnuriStaleCache(payload){
   try{
-    if(payload?.items?.length)localStorage.setItem('jofams_onnuri_map_cache_v2',JSON.stringify({savedAt:Date.now(),payload}));
+    if(payload?.items?.length)localStorage.setItem('jofams_onnuri_map_cache_v3',JSON.stringify({savedAt:Date.now(),payload}));
   }catch{}
 }
 
@@ -4503,7 +4503,7 @@ function isAdminUser(){
 async function authFetch(url,opt={}){
   const token=await firebaseIdToken();
   if(!token)throw new Error('LOGIN_REQUIRED');
-  const headers={...(opt.headers||{}),'authorization':`Bearer ${token}`};
+  const headers={...(opt.headers||{}),'authorization':`Bearer ${token}`};if(CONFIG?.firebase?.apiKey)headers['x-firebase-api-key']=CONFIG.firebase.apiKey;
   return fetch(url,{...opt,headers});
 }
 async function verifyAdminAccess(){
@@ -4534,7 +4534,17 @@ async function verifyAdminAccess(){
   }
 }
 async function loadPublicContent(){try{const r=await fetch('/api/content?type=content'),d=await r.json();return d.content||{}}catch{return {appInfo:'MVP 7.5.4',privacy:'개인정보처리방침이 준비 중입니다.'}}}
-function updateAdminUI(){const btn=$('adminModeBtn');if(btn)btn.classList.toggle('hidden',!isAdminUser())}
+function updateAdminUI(){
+  const btn=$('adminModeBtn');
+  if(!btn)return;
+  const loggedIn=Boolean(state.firebase.user);
+  btn.classList.toggle('hidden',!loggedIn);
+  btn.dataset.adminVerified=isAdminUser()?'1':'0';
+  const small=btn.querySelector('small');
+  if(small)small.textContent=isAdminUser()
+    ?'공지·콘텐츠·1:1 문의·온누리 주소 관리'
+    :'관리자 권한 확인 후 진입';
+}
 async function openAdminMode(){
   if(!isAdminUser())await verifyAdminAccess();
   if(!isAdminUser())return toast(`관리자 계정만 이용할 수 있습니다.${localAdminEmail()?` (현재: ${localAdminEmail()})`:''}`);
