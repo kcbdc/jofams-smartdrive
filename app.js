@@ -2444,7 +2444,7 @@ async function liveRouteRefresh(){
 function startLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.lastLiveRouteAt=0;setTimeout(liveRouteRefresh,12000);state.liveRouteTimer=setInterval(liveRouteRefresh,75000)}
 function stopLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.liveRouteTimer=0}
 
-function markMapManualExplore(){if(state.tripStartedAt)state.mapManualExploreUntil=Date.now()+12000}
+function markMapManualExplore(){if(state.tripStartedAt)state.mapManualExploreUntil=Date.now()+20000}
 function canAutoRecenterMap(){return !state.mapManualExploreUntil||Date.now()>=state.mapManualExploreUntil}
 function setView(view){
   $('homeView').classList.toggle('hidden',view!=='home');$('routeView').classList.toggle('hidden',view!=='route');$('driveView').classList.toggle('hidden',view!=='drive');
@@ -2988,7 +2988,7 @@ function renderCameraClusterMarkers(items){
     if(c.count===1){
       const e=c.items[0],limit=Number(e.maxspeed)||0,el=document.createElement('div');
       el.className=`safety-map-marker camera camera-pin${e.type==='mobile_camera'?' mobile':''}`;
-      el.title='단속 카메라';
+      el.title=e.type==='signal_speed_camera'?'신호·과속 단속카메라':e.type==='signal_camera'?'신호 단속카메라':e.type==='speed_camera'?'과속 단속카메라':'단속 카메라';
       el.innerHTML=`<span class="camera-pin-icon">${cctvMarkerSvg()}</span>${limit>0?`<small class="camera-pin-speed">${Math.round(limit)}</small>`:''}`;
       try{state.safetyMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map))}catch{}
       continue;
@@ -3018,7 +3018,12 @@ function renderSafetyMarkers(){
 
   for(const e of state.safetyEvents||[]){
     if(skip.includes(e.type))continue;
-    if(cameraTypes.has(e.type)){if(!state.tripStartedAt||cameraMatchesRouteRoad(e,state.route?.geometry||[],state.currentRouteIndex,38))cameraItems.push(e)}else otherItems.push(e);
+    if(cameraTypes.has(e.type)){
+      // 지도 표시용: 현재 위치 주변만 보지 않고 선택된 전체 경로 geometry 위에 있는
+      // 신호/과속/구간/기타 단속카메라를 모두 CCTV SVG로 표시한다.
+      // 실제 음성 경고는 updateSafetyUI의 현재 주행구간 필터를 계속 사용한다.
+      if(!state.tripStartedAt||cameraMatchesRouteRoad(e,state.route?.geometry||[],null,45))cameraItems.push(e)
+    }else otherItems.push(e);
   }
 
   // 화면 가시폭이 1km 이상이면 CCTV는 숫자 클러스터로 묶어 캐릭터 주변에 한 줄처럼 쌓이는 현상을 없앤다.
@@ -3027,7 +3032,7 @@ function renderSafetyMarkers(){
     for(const e of cameraItems){
       const el=document.createElement('div'),limit=Number(e.maxspeed)||0;
       el.className=`safety-map-marker camera camera-pin${e.type==='mobile_camera'?' mobile':''}`;
-      el.title=e.type==='section_speed_camera'?'구간단속':e.type==='bus_lane_camera'?'버스전용차로 단속':e.type==='mobile_camera'?'이동식 단속카메라':'단속 카메라';
+      el.title=e.type==='signal_speed_camera'?'신호·과속 단속카메라':e.type==='signal_camera'?'신호 단속카메라':e.type==='speed_camera'?'과속 단속카메라':e.type==='section_speed_camera'?'구간단속':e.type==='bus_lane_camera'?'버스전용차로 단속':e.type==='mobile_camera'?'이동식 단속카메라':'단속 카메라';
       el.innerHTML=`<span class="camera-pin-icon">${cctvMarkerSvg()}</span>${limit>0?`<small class="camera-pin-speed">${Math.round(limit)}</small>`:''}`;
       try{state.safetyMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map))}catch{}
     }
