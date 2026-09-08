@@ -78,25 +78,99 @@ export async function onRequestGet({request,env}){
       });
     }
 
-    // 시군구 매칭이 확인된 행만 좌표화한다. unrelated first-page rows를 좌표화해
-    // bounds 단계에서 전부 버리던 7.6.3.5 동작을 제거.
-    local=local.slice(0,220);
-    const geocoded=await mapLimit(local,8,async x=>{
-      let glng=x.lng,glat=x.lat,coordinateSource='source';
-      if(!validKorea(glat,glng)&&x.address&&kakaoKey){
-        const g=await geocode(x.address,kakaoKey);
-        if(g){glng=g.lng;glat=g.lat;coordinateSource='kakao-address'}
+    // 온누리 원천자료는 개별 점포의 정확한 위치정보보다 '소속 시장명(또는 상점가)'이
+    // 핵심 위치 단서인 경우가 많다. 따라서 개별 가맹점을 임의의 정확한 점으로 표시하지 않고,
+    // 시장/상점가 단위로 그룹화하여 대표 구역 좌표만 만든다.
+    local=local.slice(0,1200);
+    const grouped=new Map();
+    for(const x of local){
+      const market=(x.market||'').trim();
+      const key=market||`${region?.district||region?.city||'기타'} 온누리상품권`;
+      if(!grouped.has(key))grouped.set(key,{market:key,rows:[]});
+      grouped.get(key).rows.push(x);
+    }
+
+    const zoneRows=[...grouped.values()].slice(0,180);
+    const zonesMapped=await mapLimit(zoneRows,6,async group=>{
+      const market=group.market;
+      const rows=group.rows;
+      let point=null,coordinateSource='';
+
+      // 시장/상점가 이름 자체를 Kakao 장소검색으로 찾아 대표 구역 위치를 얻는다.
+      if(kakaoKey){
+        const queries=[
+          [region?.city,region?.district,market].filter(Boolean).join(' '),
+          [region?.city,market].filter(Boolean).join(' '),
+          market
+        ];
+        for(const query of queries){
+          point=await searchPlace(query,kakaoKey);
+          if(point){coordinateSource='kakao-market-keyword';break}
+        }
       }
-      if(!validKorea(glat,glng))return null;
+
+      // 장소검색이 실패할 때만 원천자료에 유효한 좌표가 여러 개 있다면 평균 중심점을 사용한다.
+      // 이 경우에도 개별 점포 좌표가 아닌 '구역 대표 중심점'으로만 반환한다.
+      if(!point){
+        const pts=rows.map(x=>({lng:x.lng,lat:x.lat})).filter(p=>validKorea(p.lat,p.lng));
+        if(pts.length){
+          point={
+            lng:pts.reduce((s,p)=>s+p.lng,0)/pts.length,
+            lat:pts.reduce((s,p)=>s+p.lat,0)/pts.length
+          };
+          coordinateSource='source-zone-centroid';
+        }
+      }
+
+      if(!point||!validKorea(point.lat,point.lng))return null;
       if([west,south,east,north].every(Number.isFinite)){
-        const pad=.025;
-        if(glng<west-pad||glng>east+pad||glat<south-pad||glat>north+pad)return null;
+        const pad=.05;
+        if(point.lng<west-pad||point.lng>east+pad||point.lat<south-pad||point.lat>north+pad)return null;
       }
-      return {id:x.id||`${x.name}:${x.address}`,name:x.name,address:x.address,market:x.market,category:x.category,paper:x.paper,digital:x.digital,registeredYear:x.registeredYear,lng:glng,lat:glat,coordinateSource,source:'semas-onnuri-2025'};
+
+      return {
+        id:`zone:${market}`,
+        name:market,
+        market,
+        regionLabel:[region?.city,region?.district,region?.town].filter(Boolean).join(' '),
+        count:rows.length,
+        merchantCount:rows.length,
+        lng:point.lng,
+        lat:point.lat,
+        coordinateSource,
+        approximate:true,
+        locationPrecision:'market-zone',
+        merchants:rows.slice(0,80).map(x=>({
+          id:x.id,
+          name:x.name,
+          market:x.market,
+          category:x.category,
+          paper:x.paper,
+          digital:x.digital,
+          registeredYear:x.registeredYear
+        }))
+      };
     });
 
-    const items=geocoded.filter(Boolean);
-    return json({ok:true,configured:true,provider:'소상공인시장진흥공단 전국 온누리상품권 가맹점 현황 2025-07-31',datasetUrl:OFFICIAL_ONNURI_2025_URL,region:{city:region?.city||'',district:region?.district||'',town:region?.town||''},fetchedRows:rows.length,localRows:local.length,mappedRows:items.length,fetchMeta,items},200);
+    const zones=zonesMapped.filter(Boolean);
+    // 호환성을 위해 items도 zone 배열로 제공하되, 정확한 개별 가맹점 좌표라는 의미로 사용하지 않는다.
+    const items=zones;
+    return json({
+      ok:true,
+      configured:true,
+      provider:'소상공인시장진흥공단 전국 온누리상품권 가맹점 현황 2025-07-31',
+      datasetUrl:OFFICIAL_ONNURI_2025_URL,
+      region:{city:region?.city||'',district:region?.district||'',town:region?.town||''},
+      fetchedRows:rows.length,
+      localRows:local.length,
+      mappedRows:zones.length,
+      zoneCount:zones.length,
+      locationPrecision:'market-zone',
+      notice:'온누리상품권 가맹점 위치는 소속 시장명(또는 상점가)을 기준으로 한 대표 구역 위치입니다.',
+      fetchMeta,
+      zones,
+      items
+    },200);
   }catch(e){
     return json({ok:false,configured:true,code:'ONNURI_UPSTREAM_ERROR',error:'온누리상품권 가맹점 데이터를 불러오지 못했습니다.',detail:String(e?.message||e),items:[]},502);
   }
@@ -225,6 +299,22 @@ async function resolveRegion(lat,lng,key){
     return {city:String(x?.region_1depth_name||'').trim(),district:String(x?.region_2depth_name||'').trim(),town:String(x?.region_3depth_name||'').trim()};
   }catch{return null}
 }
+
+async function searchPlace(query,key){
+  if(!query||!key)return null;
+  try{
+    const u=new URL('https://dapi.kakao.com/v2/local/search/keyword.json');
+    u.searchParams.set('query',query);
+    u.searchParams.set('size','5');
+    const r=await fetch(u,{headers:{Authorization:`KakaoAK ${key}`}});if(!r.ok)return null;
+    const d=await r.json(),docs=d.documents||[];
+    if(!docs.length)return null;
+    const x=docs[0];
+    const lng=num(x.x),lat=num(x.y);
+    return validKorea(lat,lng)?{lng,lat,name:String(x.place_name||'').trim()}:null;
+  }catch{return null}
+}
+
 async function geocode(address,key){
   try{
     const u=new URL('https://dapi.kakao.com/v2/local/search/address.json');u.searchParams.set('query',address);
