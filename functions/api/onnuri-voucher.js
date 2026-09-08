@@ -236,7 +236,8 @@ export async function onRequestGet({request,env}){
       let matchedAddress='';
       let searchQuery='';
 
-      const cacheKey=onnuriCacheKey(regionFull,market,merchant);
+      const cacheRegion=region?.city||regionFull;
+      const cacheKey=onnuriCacheKey(cacheRegion,market,merchant);
 
       // 강제등록/상세주소 보유 행은 주소 지오코딩을 최우선 적용한다.
       // Kakao 주소검색으로 성공하면 정확주소 좌표로 분류하고 D1에 저장한다.
@@ -326,7 +327,7 @@ export async function onRequestGet({request,env}){
       if(searchQuery!=='D1_CACHE' && precision && validKorea(point.lat,point.lng)){
         await writeOnnuriCache(geocodeDb,{
           cache_key:cacheKey,
-          region:regionFull,
+          region:cacheRegion,
           market,
           merchant,
           lng:point.lng,
