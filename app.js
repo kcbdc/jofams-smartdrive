@@ -874,7 +874,7 @@ function renderWhereToList(){
         : `${x.matchedAddress||x.address||x.market||'위치 확인됨'}`;
       const tag=approx
         ? (Number(x.fallbackCount)>1?`대표 구역 위치 · 원천 ${Number(x.fallbackCount).toLocaleString()}곳`:'대표 구역 위치')
-        :'가맹점 위치 확인';
+        : (x.precision==='exact-address-geocode'?'상세주소 위치 확인':'가맹점 위치 확인');
       return `<button type="button" class="where-to-item ${approx?'where-to-zone-item':''}" data-where-index="${i}">
         <span class="where-to-rank">${i+1}</span>
         <span class="where-to-info">
