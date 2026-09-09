@@ -309,6 +309,10 @@ function officialCameraType(raw=''){
   const s=String(raw||'').trim();
   if(/신호.*과속|과속.*신호|신호.*속도|속도.*신호/.test(s)||s==='3'||s==='4')return 'signal_speed_camera';
   if(/신호/.test(s)||s==='2'||s==='02')return 'signal_camera';
+  // 표준데이터 단속구분 코드 '99'(기타)는 실제로는 대부분 구간(평균속도) 단속에 쓰인다.
+  // 짝이 되는 시점/종점 행이 없거나 위치구분 값이 비어 있는 개별 행이라도
+  // 일반 속도위반 카메라로 잘못 안내되지 않도록 구간단속으로 분류한다.
+  if(s==='99'||/구간/.test(s))return 'section_speed_camera';
   if(/속도|과속/.test(s)||s==='1'||s==='01')return 'speed_camera';
   return 'traffic_camera';
 }
@@ -316,6 +320,16 @@ function officialSectionPosition(row){
   const raw=String(pickField(row,['단속구간위치구분','sectionPosition','sectionPos'])||'').trim();
   if(/^(0?1|시점|시작)$/i.test(raw))return 'start';
   if(/^(0?2|종점|종료|끝)$/i.test(raw))return 'end';
+  // 단속구간위치구분이 비어 있는 구간단속(99/구간) 행은 설치장소 문구로
+  // 시점/종점을 보조 추정한다. 예: "둔곡터널 전(→대전)" → 시점.
+  // 일반 속도/신호 단속카메라(터널 입구·출구 등)까지 구간으로 오분류하지
+  // 않도록, 단속구분이 구간단속으로 확인된 행에만 적용한다.
+  const regltRaw=String(pickField(row,['단속구분','regltSe','규제구분'])||'').trim();
+  if(regltRaw==='99'||/구간/.test(regltRaw)){
+    const place=String(pickField(row,['설치장소','itlpc'])||'');
+    if(/(입구|진입\s*전|시점|전\s*\(→|전\)$)/.test(place))return 'start';
+    if(/(출구|진출\s*후|종점|지난\s*후|통과\s*후|후\s*\(→|후\)$)/.test(place))return 'end';
+  }
   return '';
 }
 function officialBusLaneCamera(row){
@@ -346,7 +360,7 @@ function buildSectionSpeedEvents(nodes,route){
     (n.sectionPosition==='start'?starts:ends).push(n);
   }
   starts.sort((a,b)=>a.routeIndex-b.routeIndex);ends.sort((a,b)=>a.routeIndex-b.routeIndex);
-  const used=new Set(),events=[];
+  const used=new Set(),usedStarts=new Set(),events=[];
   for(const st of starts){
     let best=null,bestScore=Infinity;
     const stRoad=normalizeRoadName(st.roadName||''),stDist=cum[st.routeIndex]||0;
@@ -363,7 +377,7 @@ function buildSectionSpeedEvents(nodes,route){
       if(score<bestScore){best=en;bestScore=score}
     }
     if(!best)continue;
-    used.add(best.id);
+    used.add(best.id);usedStarts.add(st.id);
     const startPoint=g[st.routeIndex],endPoint=g[best.routeIndex],sectionLength=(cum[best.routeIndex]||0)-(cum[st.routeIndex]||0);
     events.push({
       id:`section-speed:${st.id}:${best.id}`,type:'section_speed_camera',
@@ -372,6 +386,28 @@ function buildSectionSpeedEvents(nodes,route){
       maxspeed:Number(st.maxspeed)||Number(best.maxspeed)||0,
       roadName:st.roadName||best.roadName||'',name:st.name||best.name||'구간단속',
       sectionLength,source:'전국무인교통단속카메라표준데이터(구간 시점·종점)'
+    });
+  }
+  // 짝을 찾지 못한 시점/종점 행도 일반 카메라로 강등하지 않고, 위치는 정확히
+  // 유지한 채 단일 지점 구간단속 이벤트로 안내한다(짝 매칭 실패로 인한 소실 방지).
+  for(const st of starts){
+    if(usedStarts.has(st.id))continue;
+    const p=g[st.routeIndex];if(!p)continue;
+    events.push({
+      id:`section-speed-single:${st.id}`,type:'section_speed_camera',
+      lat:p[1],lng:p[0],routeIndex:st.routeIndex,
+      maxspeed:Number(st.maxspeed)||0,roadName:st.roadName||'',name:st.name||'구간단속',
+      source:'전국무인교통단속카메라표준데이터(구간 시점, 짝 미확인)'
+    });
+  }
+  for(const en of ends){
+    if(used.has(en.id))continue;
+    const p=g[en.routeIndex];if(!p)continue;
+    events.push({
+      id:`section-speed-single:${en.id}`,type:'section_speed_camera',
+      lat:p[1],lng:p[0],routeIndex:en.routeIndex,
+      maxspeed:Number(en.maxspeed)||0,roadName:en.roadName||'',name:en.name||'구간단속',
+      source:'전국무인교통단속카메라표준데이터(구간 종점, 짝 미확인)'
     });
   }
   return events;
@@ -1530,7 +1566,17 @@ function scheduleSmoothDriveMarker(){
   state.driveMarkerRaf=requestAnimationFrame(frame);
 }
 function ensureUserMarker(){
-  if(!state.user||!state.map)return;
+  if(!state.user||!state.map||!pointValid(state.user))return;
+  // GPS/맵매칭이 순간적으로 불안정해도(터널, 산간 등 신호 약한 구간) 캐릭터 마커
+  // DOM이 지도에서 떨어져 나가면 다시 붙인다. 경로선은 별도 레이어라 영향받지 않지만
+  // 마커만 사라져 보이는 현상은 대부분 이 detach 상태에서 발생한다.
+  if(state.userMarker){
+    const el=state.userMarker.getElement?.();
+    if(!el||!el.isConnected){
+      try{state.userMarker.remove()}catch{}
+      state.userMarker=null;
+    }
+  }
   if(!state.userMarker){
     state.userMarker=makeCarMarker().setLngLat([state.user.lng,state.user.lat]).addTo(state.map);
     state.driveMarkerRenderedDistance=Number(state.user.routeDistance);
@@ -3257,7 +3303,10 @@ function checkArrival(routeRemain){
   const speed=Math.max(0,Number(state.user?.speed)||0);
 
   // 본사/공장처럼 POI 중심이 건물 안쪽인 경우 정문·진입도로 endpoint 도착으로 종료.
-  const reached=(rawToRouteEnd<=45)||(Number(routeRemain)<=30&&rawToRouteEnd<=70)||(rawToPoi<=35);
+  // 한국조폐공사처럼 부지가 넓은 공사·공단·청사 등은 정문 근처(더 넓은 반경)에서 종료하고,
+  // 그 외 목적지는 목적지 주변(약 ±10m 여유를 둔 좁은 반경)에 오면 종료한다.
+  const radius=arrivalRadiusMeters(state.destination);
+  const reached=(rawToRouteEnd<=radius)||(Number(routeRemain)<=30&&rawToRouteEnd<=radius+25)||(rawToPoi<=Math.max(35,radius-10));
   if(!reached){state.arrivalCandidateSince=0;return false}
 
   if(!state.arrivalCandidateSince)state.arrivalCandidateSince=Date.now();
