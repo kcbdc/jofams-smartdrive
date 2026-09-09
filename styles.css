@@ -1713,3 +1713,24 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 #myModal .setting-list{
   overflow:visible!important;
 }
+
+
+/* === 7.6.5.9 KOMSCO 소식 하단 잘림 방지 === */
+#komscoShortsListModal .komsco-shorts-list-sheet{
+  bottom:max(calc(var(--safeB) + 8px),8px)!important;
+  height:min(82dvh,760px)!important;
+  max-height:calc(100dvh - var(--safeT) - var(--safeB) - 20px)!important;
+  overflow-y:auto!important;
+  -webkit-overflow-scrolling:touch!important;
+  padding-bottom:max(calc(96px + var(--safeB)),110px)!important;
+  scroll-padding-bottom:max(calc(96px + var(--safeB)),110px)!important;
+}
+#komscoShortsListModal .komsco-shorts-list-body{
+  padding-bottom:max(calc(48px + var(--safeB)),60px)!important;
+}
+#komscoShortsListModal .komsco-shorts-grid::after{
+  content:"";
+  display:block;
+  grid-column:1/-1;
+  height:max(calc(44px + var(--safeB)),56px);
+}
