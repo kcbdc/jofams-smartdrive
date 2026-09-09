@@ -51,6 +51,10 @@
           <div class="block-title"><b>최근 목적지</b><span>내 계정에 저장된 최근 방문 장소</span></div>
           <div id="recentDestinationList" class="recent-destination-list"><div class="recent-empty">최근 목적지가 없습니다.</div></div>
         </section>
+        <section id="komscoShortsHomeBlock" class="home-block komsco-shorts-block hidden">
+          <div class="block-title"><b>KOMSCO 소식</b><span>한국조폐공사 유튜브 숏폼</span></div>
+          <div id="komscoShortsScroll" class="komsco-shorts-scroll"></div>
+        </section>
         <section class="home-block home-facility-block">
           <div class="block-title"><b>생활편의시설</b><span>현재 위치에서 가까운 순</span></div>
           <div class="home-facility-tabs" role="tablist" aria-label="생활편의시설">
@@ -398,6 +402,7 @@
               <button type="button" data-my-character="hunmin"><img src="/assets/hunmin_car.png" alt="훈민 자동차"><span><b>훈민</b><small>재탐색을 명확하게</small></span></button>
             </div>
           </div>
+          <button id="komscoShortsMyBtn" class="hidden"><span data-icon="megaphone"></span><span><b>KOMSCO 소식</b><small>한국조폐공사 유튜브 숏폼</small></span><i data-icon="chevron"></i></button>
           <button id="noticeBtn"><span data-icon="megaphone"></span><span><b>공지사항</b><small>서비스 업데이트 및 안내</small></span><i data-icon="chevron"></i></button>
           <button id="appPrivacyBtn"><span data-icon="document"></span><span><b>앱정보 / 개인정보처리방침</b><small>버전·개인정보 처리 안내</small></span><i data-icon="chevron"></i></button>
           <button id="adminModeBtn" class="hidden admin-mode-entry"><span data-icon="settings"></span><span><b>관리자 모드</b><small>공지·콘텐츠·1:1 문의·온누리 주소 관리</small></span><i data-icon="chevron"></i></button>
@@ -415,6 +420,7 @@
           <button data-admin-tab="content">앱정보·개인정보</button>
           <button data-admin-tab="inquiries">1:1 문의</button>
           <button data-admin-tab="onnuri">온누리 주소</button>
+          <button data-admin-tab="shorts">KOMSCO 숏폼</button>
         </div>
         <section id="adminNoticesPanel" class="admin-panel">
           <div class="admin-form"><label><b>공지 제목</b><input id="adminNoticeTitle" maxlength="120" placeholder="공지 제목"></label><label><b>공지 내용</b><textarea id="adminNoticeBody" rows="6" maxlength="5000" placeholder="공지 내용을 입력하세요."></textarea></label><button id="adminNoticeSaveBtn" class="primary-btn">공지 등록</button></div>
@@ -449,6 +455,42 @@
             <small id="onnuriBatchStatus">상태를 확인하는 중입니다.</small>
           </div>
         </section>
+        <section id="adminShortsPanel" class="admin-panel hidden">
+          <div class="admin-form">
+            <label class="setting-toggle-row"><span><b>홈/MY 노출</b><small>전체 KOMSCO 소식 섹션 표시 여부</small></span><input id="adminShortsEnabled" type="checkbox" checked><i></i></label>
+            <label><b>노출 개수</b><input id="adminShortsLimit" type="number" min="1" max="10" value="6"></label>
+            <label><b>정렬 기준</b>
+              <select id="adminShortsSort">
+                <option value="latest">최신순</option>
+                <option value="views">조회수순</option>
+              </select>
+            </label>
+            <button id="adminShortsSaveBtn" class="primary-btn">설정 저장</button>
+            <button id="adminShortsRefreshBtn" type="button">지금 유튜브에서 새로고침</button>
+            <small id="adminShortsStatus"></small>
+          </div>
+          <div id="adminShortsList" class="admin-list"></div>
+        </section>
+      </section>
+    </div>
+
+    <!-- KOMSCO SHORTS PLAYER -->
+    <div id="komscoShortModal" class="modal hidden">
+      <section class="simple-sheet komsco-short-sheet">
+        <header><b id="komscoShortTitle">KOMSCO 소식</b><button id="komscoShortClose" class="circle-btn"><span data-icon="close"></span></button></header>
+        <div class="komsco-short-player-wrap">
+          <iframe id="komscoShortPlayer" class="komsco-short-player" src="" title="KOMSCO Shorts" frameborder="0" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+        </div>
+        <a id="komscoShortOpenYoutube" class="komsco-short-open-link" href="#" target="_blank" rel="noopener">유튜브에서 보기</a>
+      </section>
+    </div>
+
+    <!-- KOMSCO SHORTS LIST (MY 페이지) -->
+    <div id="komscoShortsListModal" class="modal hidden">
+      <section class="simple-sheet komsco-shorts-list-sheet">
+        <header><b>KOMSCO 소식</b><button id="komscoShortsListClose" class="circle-btn"><span data-icon="close"></span></button></header>
+        <p class="komsco-shorts-list-intro">한국조폐공사 공식 유튜브(@prkomsco)의 최신 숏폼 영상입니다.</p>
+        <div id="komscoShortsListBody" class="komsco-shorts-list-body"></div>
       </section>
     </div>
 

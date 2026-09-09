@@ -60,7 +60,8 @@ function icon(name){
     sliders:`<svg viewBox="0 0 24 24" ${common}><path d="M4 6h5M13 6h7M4 12h9M17 12h3M4 18h3M11 18h9"/><circle cx="11" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/></svg>`,
     headset:`<svg viewBox="0 0 24 24" ${common}><path d="M4 13a8 8 0 0 1 16 0v5h-4v-6h4M4 12h4v6H4z"/><path d="M16 20h-4"/></svg>`,
     edit:`<svg viewBox="0 0 24 24" ${common}><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>`,
-    inbox:`<svg viewBox="0 0 24 24" ${common}><path d="M4 5h16v14H4z"/><path d="M4 14h5l2 2h2l2-2h5"/></svg>`
+    inbox:`<svg viewBox="0 0 24 24" ${common}><path d="M4 5h16v14H4z"/><path d="M4 14h5l2 2h2l2-2h5"/></svg>`,
+    play:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`
   };
   return map[name]||'';
 }
@@ -4637,6 +4638,99 @@ async function verifyAdminAccess(){
   }
 }
 async function loadPublicContent(){try{const r=await fetch('/api/content?type=content'),d=await r.json();return d.content||{}}catch{return {appInfo:'MVP 7.5.4',privacy:'개인정보처리방침이 준비 중입니다.'}}}
+
+// ===== KOMSCO 유튜브 숏폼 (홈/MY 노출) =====
+// 주행 화면(안내 진행 중)에는 절대 노출하지 않는다. 홈 화면과 MY 페이지, 즉 정차/대기 상태에서만 사용한다.
+function komscoShortThumb(item){return item.thumbnailUrl||`https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`}
+function komscoShortDurationLabel(sec){if(!sec)return'';const m=Math.floor(sec/60),s=sec%60;return`${m}:${String(s).padStart(2,'0')}`}
+function komscoShortCardHtml(item){
+  return `<button type="button" class="komsco-short-card" data-komsco-video="${escapeHtml(item.videoId)}" data-komsco-title="${escapeHtml(item.title)}">
+    <span class="komsco-short-thumb-wrap"><img src="${escapeHtml(komscoShortThumb(item))}" alt="" loading="lazy"><i data-icon="play"></i>${item.durationSec?`<small>${komscoShortDurationLabel(item.durationSec)}</small>`:''}</span>
+    <b>${escapeHtml(item.title)}</b>
+  </button>`;
+}
+async function loadHomeShorts(){
+  try{
+    const r=await fetch('/api/komsco-shorts'),d=await r.json();
+    const items=Array.isArray(d.items)?d.items:[];
+    const block=$('komscoShortsHomeBlock'),scroll=$('komscoShortsScroll'),myBtn=$('komscoShortsMyBtn');
+    if(!d.ok||!d.enabled||!items.length){block?.classList.add('hidden');myBtn?.classList.add('hidden');return}
+    state.komscoShorts=items;
+    if(scroll){scroll.innerHTML=items.map(komscoShortCardHtml).join('');applyIcons(scroll);scroll.querySelectorAll('[data-komsco-video]').forEach(btn=>btn.onclick=()=>openKomscoShort(btn.dataset.komscoVideo,btn.dataset.komscoTitle))}
+    block?.classList.remove('hidden');
+    myBtn?.classList.remove('hidden');
+  }catch(e){console.warn('komsco shorts load failed',e);$('komscoShortsHomeBlock')?.classList.add('hidden');$('komscoShortsMyBtn')?.classList.add('hidden')}
+}
+function openKomscoShort(videoId,title){
+  if(!videoId)return;
+  const player=$('komscoShortPlayer');
+  if(player)player.src=`https://www.youtube.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0`;
+  if($('komscoShortTitle'))$('komscoShortTitle').textContent=title||'KOMSCO 소식';
+  if($('komscoShortOpenYoutube'))$('komscoShortOpenYoutube').href=`https://www.youtube.com/watch?v=${videoId}`;
+  $('komscoShortModal')?.classList.remove('hidden');
+}
+function closeKomscoShort(){$('komscoShortModal')?.classList.add('hidden');const player=$('komscoShortPlayer');if(player)player.src=''}
+async function openKomscoShortsList(){
+  $('komscoShortsListModal')?.classList.remove('hidden');
+  const body=$('komscoShortsListBody');
+  if(body)body.innerHTML='<div class="inquiry-empty">불러오는 중...</div>';
+  try{
+    const r=await fetch('/api/komsco-shorts?scope=full'),d=await r.json();
+    const items=Array.isArray(d.items)?d.items:[];
+    if(!items.length){if(body)body.innerHTML='<div class="inquiry-empty">표시할 영상이 없습니다.</div>';return}
+    if(body){body.innerHTML=`<div class="komsco-shorts-grid">${items.map(komscoShortCardHtml).join('')}</div>`;applyIcons(body);body.querySelectorAll('[data-komsco-video]').forEach(btn=>btn.onclick=()=>openKomscoShort(btn.dataset.komscoVideo,btn.dataset.komscoTitle))}
+  }catch{if(body)body.innerHTML='<div class="inquiry-empty">영상을 불러오지 못했습니다.</div>'}
+}
+function closeKomscoShortsList(){$('komscoShortsListModal')?.classList.add('hidden')}
+
+// ---- 관리자: KOMSCO 숏폼 노출 관리 ----
+async function komscoShortsAdminRequest(action,method='GET',body=null){
+  const u=new URL('/api/komsco-shorts',location.origin);if(action)u.searchParams.set('action',action);
+  const opt={method,headers:{'content-type':'application/json'}};if(body)opt.body=JSON.stringify(body);
+  const r=await authFetch(u,opt),d=await r.json().catch(()=>({}));
+  if(!r.ok||d.ok===false)throw new Error(d.error||`HTTP ${r.status}`);
+  return d;
+}
+async function loadAdminShorts(){
+  try{
+    const d=await komscoShortsAdminRequest('admin-list');
+    const s=d.settings||{enabled:true,limit:6,sort:'latest'};
+    if($('adminShortsEnabled'))$('adminShortsEnabled').checked=s.enabled!==false;
+    if($('adminShortsLimit'))$('adminShortsLimit').value=s.limit||6;
+    if($('adminShortsSort'))$('adminShortsSort').value=s.sort||'latest';
+    const items=Array.isArray(d.items)?d.items:[];
+    const box=$('adminShortsList');
+    if(box)box.innerHTML=items.length?items.map(x=>`<article><div><b>${escapeHtml(x.title)}</b><small>${escapeHtml((x.publishedAt||'').slice(0,10))} · 조회수 ${Number(x.viewCount||0).toLocaleString()}</small></div><button data-komsco-toggle="${escapeHtml(x.videoId)}" data-excluded="${x.excluded?1:0}">${x.excluded?'노출 재개':'제외'}</button></article>`).join(''):'<div class="inquiry-empty">캐시된 영상이 없습니다. 새로고침을 눌러 주세요.</div>';
+    box?.querySelectorAll('[data-komsco-toggle]').forEach(b=>b.onclick=()=>toggleKomscoShortExclude(b.dataset.komscoToggle,b.dataset.excluded==='1'));
+  }catch{toast('KOMSCO 숏폼 목록을 불러오지 못했습니다.')}
+}
+async function saveAdminShortsSettings(){
+  const btn=$('adminShortsSaveBtn');if(btn)btn.disabled=true;
+  try{
+    await komscoShortsAdminRequest('settings','PUT',{
+      enabled:$('adminShortsEnabled')?.checked!==false,
+      limit:Number($('adminShortsLimit')?.value)||6,
+      sort:$('adminShortsSort')?.value||'latest',
+    });
+    showPlaceConfirmPopup('KOMSCO 숏폼 노출 설정이 저장되었습니다.');
+  }catch{toast('설정 저장에 실패했습니다.')}finally{if(btn)btn.disabled=false}
+}
+async function refreshAdminShortsNow(){
+  const btn=$('adminShortsRefreshBtn'),status=$('adminShortsStatus');
+  if(btn)btn.disabled=true;if(status)status.textContent='유튜브에서 최신 영상을 가져오는 중...';
+  try{
+    const d=await komscoShortsAdminRequest('refresh','POST',{});
+    if(status)status.textContent=`완료: Shorts ${d.refreshed||0}건 갱신됨`;
+    loadAdminShorts();
+  }catch(e){if(status)status.textContent=`실패: ${e.message||'오류가 발생했습니다.'}`}
+  finally{if(btn)btn.disabled=false}
+}
+async function toggleKomscoShortExclude(videoId,currentlyExcluded){
+  try{
+    await komscoShortsAdminRequest(currentlyExcluded?'include':'exclude','POST',{videoId});
+    loadAdminShorts();
+  }catch{toast('처리에 실패했습니다.')}
+}
 function updateAdminUI(){
   const btn=$('adminModeBtn');
   if(!btn)return;
@@ -4656,7 +4750,7 @@ async function openAdminMode(){
   switchAdminTab('notices');
 }
 function closeAdminMode(){$('adminModal')?.classList.add('hidden')}
-function switchAdminTab(tab){document.querySelectorAll('[data-admin-tab]').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===tab));['notices','content','inquiries','onnuri'].forEach(k=>$(`admin${k[0].toUpperCase()+k.slice(1)}Panel`)?.classList.toggle('hidden',k!==tab));if(tab==='notices')loadAdminNotices();if(tab==='content')loadAdminContent();if(tab==='inquiries')loadAdminInquiries();if(tab==='onnuri')loadOnnuriBatchStatus()}
+function switchAdminTab(tab){document.querySelectorAll('[data-admin-tab]').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===tab));['notices','content','inquiries','onnuri','shorts'].forEach(k=>$(`admin${k[0].toUpperCase()+k.slice(1)}Panel`)?.classList.toggle('hidden',k!==tab));if(tab==='notices')loadAdminNotices();if(tab==='content')loadAdminContent();if(tab==='inquiries')loadAdminInquiries();if(tab==='onnuri')loadOnnuriBatchStatus();if(tab==='shorts')loadAdminShorts()}
 async function adminContentRequest(type,method='GET',body=null){const u=new URL('/api/content',location.origin);u.searchParams.set('type',type);const opt={method,headers:{'content-type':'application/json'}};if(body)opt.body=JSON.stringify(body);const r=method==='GET'?await fetch(u):await authFetch(u,opt);const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`HTTP ${r.status}`);return d}
 async function loadAdminNotices(){try{const d=await adminContentRequest('notices');state.adminNotices=d.items||[];const box=$('adminNoticeList');box.innerHTML=state.adminNotices.length?state.adminNotices.map(x=>`<article><div><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.createdAt||'')}</small></div><button data-admin-notice-delete="${x.id}">삭제</button><p>${escapeHtml(x.body).replace(/\n/g,'<br>')}</p></article>`).join(''):'<div class="inquiry-empty">등록된 공지가 없습니다.</div>';box.querySelectorAll('[data-admin-notice-delete]').forEach(b=>b.onclick=()=>deleteAdminNotice(b.dataset.adminNoticeDelete))}catch{toast('공지 목록을 불러오지 못했습니다.')}}
 async function saveAdminNotice(){const title=$('adminNoticeTitle').value.trim(),body=$('adminNoticeBody').value.trim();if(title.length<2||body.length<2)return toast('공지 제목과 내용을 입력해 주세요.');const btn=$('adminNoticeSaveBtn');btn.disabled=true;try{await adminContentRequest('notices','POST',{title,body});$('adminNoticeTitle').value='';$('adminNoticeBody').value='';showPlaceConfirmPopup('공지사항이 등록되었습니다.');loadAdminNotices()}catch{toast('공지 등록에 실패했습니다.')}finally{btn.disabled=false}}
@@ -4978,7 +5072,8 @@ function bindUI(){
   try{if($('routePriorityClose'))$('routePriorityClose').onclick=()=>$('routePriorityModal').classList.add('hidden');document.querySelectorAll('[data-route-pref]').forEach(b=>b.onclick=()=>chooseRoutePreference(b.dataset.routePref));}catch(e){console.warn('UI bind section 13 failed',e)}
   try{if($('cameraAlertClose'))$('cameraAlertClose').onclick=()=>$('cameraAlertModal').classList.add('hidden');if($('speedCameraAlertToggle'))$('speedCameraAlertToggle').onchange=e=>updateCameraAlertSetting('speed',e.target.checked);if($('signalCameraAlertToggle'))$('signalCameraAlertToggle').onchange=e=>updateCameraAlertSetting('signal',e.target.checked);}catch(e){console.warn('UI bind section 14 failed',e)}
   try{if($('inquiryCloseBtn'))$('inquiryCloseBtn').onclick=closeInquiryModal;if($('newInquiryBtn'))$('newInquiryBtn').onclick=startInquiryCompose;if($('inquiryComposeBack'))$('inquiryComposeBack').onclick=backInquiryList;if($('inquirySubmitBtn'))$('inquirySubmitBtn').onclick=submitInquiry;}catch(e){console.warn('UI bind section 15 failed',e)}
-  try{if($('adminModeBtn'))$('adminModeBtn').onclick=openAdminMode;if($('adminCloseBtn'))$('adminCloseBtn').onclick=closeAdminMode;document.querySelectorAll('[data-admin-tab]').forEach(b=>b.onclick=()=>switchAdminTab(b.dataset.adminTab));if($('adminNoticeSaveBtn'))$('adminNoticeSaveBtn').onclick=saveAdminNotice;if($('adminContentSaveBtn'))$('adminContentSaveBtn').onclick=saveAdminContent;if($('onnuriBatchStartBtn'))$('onnuriBatchStartBtn').onclick=startOnnuriBatch;if($('onnuriBatchStopBtn'))$('onnuriBatchStopBtn').onclick=stopOnnuriBatch;}catch(e){console.warn('UI bind section 16 failed',e)}
+  try{if($('adminModeBtn'))$('adminModeBtn').onclick=openAdminMode;if($('adminCloseBtn'))$('adminCloseBtn').onclick=closeAdminMode;document.querySelectorAll('[data-admin-tab]').forEach(b=>b.onclick=()=>switchAdminTab(b.dataset.adminTab));if($('adminNoticeSaveBtn'))$('adminNoticeSaveBtn').onclick=saveAdminNotice;if($('adminContentSaveBtn'))$('adminContentSaveBtn').onclick=saveAdminContent;if($('onnuriBatchStartBtn'))$('onnuriBatchStartBtn').onclick=startOnnuriBatch;if($('onnuriBatchStopBtn'))$('onnuriBatchStopBtn').onclick=stopOnnuriBatch;if($('adminShortsSaveBtn'))$('adminShortsSaveBtn').onclick=saveAdminShortsSettings;if($('adminShortsRefreshBtn'))$('adminShortsRefreshBtn').onclick=refreshAdminShortsNow;}catch(e){console.warn('UI bind section 16 failed',e)}
+  try{if($('komscoShortsMyBtn'))$('komscoShortsMyBtn').onclick=openKomscoShortsList;if($('komscoShortsListClose'))$('komscoShortsListClose').onclick=closeKomscoShortsList;if($('komscoShortsListModal'))$('komscoShortsListModal').addEventListener('click',e=>{if(e.target===$('komscoShortsListModal'))closeKomscoShortsList()});if($('komscoShortClose'))$('komscoShortClose').onclick=closeKomscoShort;if($('komscoShortModal'))$('komscoShortModal').addEventListener('click',e=>{if(e.target===$('komscoShortModal'))closeKomscoShort()});}catch(e){console.warn('UI bind section 17 failed',e)}
   try{if($('waypointSearchClose'))$('waypointSearchClose').onclick=()=>closeWaypointSearch(true);if($('waypointSearchSubmit'))$('waypointSearchSubmit').onclick=()=>searchWaypointPlaces($('waypointSearchInput').value);if($('waypointSearchInput'))$('waypointSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchWaypointPlaces(e.target.value)});if($('waypointSearchModal'))$('waypointSearchModal').addEventListener('click',e=>{if(e.target===$('waypointSearchModal'))closeWaypointSearch(true)});if($('drivePlaceChoiceClose'))$('drivePlaceChoiceClose').onclick=closeDrivePlaceChoice;if($('drivePlaceAsWaypoint'))$('drivePlaceAsWaypoint').onclick=()=>applyDrivePlaceChoice('waypoint');if($('drivePlaceAsDestination'))$('drivePlaceAsDestination').onclick=()=>applyDrivePlaceChoice('destination');if($('drivePlaceChoiceModal'))$('drivePlaceChoiceModal').addEventListener('click',e=>{if(e.target===$('drivePlaceChoiceModal'))closeDrivePlaceChoice()});}catch(e){console.warn('UI bind section waypoint/permission failed',e)}
   try{$('originModalClose').onclick=closeOriginModal;$('useCurrentOriginBtn').onclick=useCurrentOrigin;$('originSearchBtn').onclick=()=>searchOrigins($('originSearchInput').value);$('originSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchOrigins(e.target.value)});$('originModal').addEventListener('click',e=>{if(e.target===$('originModal'))closeOriginModal()});$('arCloseBtn').onclick=stopAR;document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.bottomNav;closeBottomPanels(nav);if(nav==='home'){cancelAutoStart();setView('home')}else if(nav==='where'){setView('home');openWhereTo()}else if(nav==='saved'){setView('home');openSavedPlaces()}else if(nav==='my')openMy()});$('placeModalClose').onclick=()=>$('placeModal').classList.add('hidden');if($('useCurrentPlaceBtn'))$('useCurrentPlaceBtn').onclick=saveCurrentLocationAsPlace;if($('placeSaveBtn'))$('placeSaveBtn').onclick=confirmRegisteredPlace;if($('whereToClose'))$('whereToClose').onclick=closeWhereTo;
 if($('whereToRefresh'))$('whereToRefresh').onclick=refreshWhereTo;
@@ -5010,6 +5105,7 @@ function bootstrapApp(){
   }
   Promise.resolve().then(()=>initFirebase()).catch(e=>console.warn('firebase init failed',e));
   try{loadSavedWaypointCourses();renderProfile();updateOriginUI();renderRouteWaypoints();renderSavedWaypointCourses();updateTripHistorySummary();setView('home')}catch(e){console.error('initial render failed',e)}
+  try{loadHomeShorts()}catch(e){console.warn('komsco shorts init failed',e)}
   if('speechSynthesis'in window){try{speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices()}catch{}}
   setTimeout(()=>refreshPermissionState().catch(()=>{}),180);
 }
