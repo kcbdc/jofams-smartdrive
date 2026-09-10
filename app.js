@@ -1874,7 +1874,7 @@ function applyGps(pos,fly=false){
   if(!pointValid(stateObj))return;
 
   const rawLat=stateObj.lat,rawLng=stateObj.lng,sampleTime=Number(pos?.timestamp)||now;
-  const reportedSpeed=Number(c.speed);
+  const reportedSpeed=Number.isFinite(Number(c.speed))?Number(c.speed):0;
   const previousReliableSpeed=Math.max(
     0,
     Number(state.gnssQuality?.lastReliableSpeed)||0,
@@ -5082,7 +5082,7 @@ function openKomscoShort(videoId,title,{fromList=false}={}){
   if(player){
     player.src='';
     player.setAttribute('allow','autoplay; accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen');
-    player.src=`https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1&playsinline=1&rel=0&modestbranding=1`;
+    player.src=`https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1&mute=1&playsinline=1&rel=0&modestbranding=1`;
   }
 }
 function closeKomscoShort(){
