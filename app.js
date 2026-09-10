@@ -22,6 +22,7 @@ const state = {
   tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapSatellite:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,homeSheetDrag:null,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherData:null,localVoucherRetryCount:0,localVoucherLastErrorAt:0,localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,localVoucherLoadedCenter:null,onnuriMarkers:[],onnuriData:null,onnuriLoadedAt:0,onnuriLoadedCenter:null,onnuriLoadTimer:0,homeCameraMarkers:[],homeCameraLoadTimer:0,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,adminVerified:false,adminVerifiedEmail:'',loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,simulationActive:false,simulationSpeed:1,simulationDistance:null,simulationLastAt:0,simulationRaf:0,
   compassHeading:null,compassAt:0,compassReady:false,activeLaneGuideKey:'',nativeLocationAt:0,nativeLocationActive:false,imu:{at:0,yawRateDegS:0,accelMagnitude:0,headingDeg:null},mapMatch:{index:0,routeDistance:0,score:Infinity,confidence:0,at:0},offRouteHeadingHits:0,gpsFix:{lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false},
+  gnssQuality:{satellites:null,speedAccuracy:null,lastReliableAt:0,lastReliableSpeed:0,lastReliableHeading:null,lastReliableLat:null,lastReliableLng:null},gpsReacquire:{active:false,startedAt:0,fromDistance:null,targetDistance:null,lastRawDistance:null},
   whereToTab:'local',destinationSearchCenter:null,wakeLock:null,savedPlaceGroups:[],savedPlaceGroupMap:{},activeSavedGroup:'all',firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
 };
 
@@ -97,7 +98,13 @@ window.JofamsNative=window.JofamsNative||{};
 window.JofamsNative.onLocationUpdate=packet=>{
   const p=parseNativePacket(packet),lat=Number(p.lat??p.latitude),lng=Number(p.lng??p.longitude);if(!Number.isFinite(lat)||!Number.isFinite(lng))return;
   state.nativeLocationAt=Date.now();state.nativeLocationActive=true;
-  applyGps({native:true,timestamp:Number(p.timestamp)||Date.now(),coords:{latitude:lat,longitude:lng,accuracy:Number(p.accuracy)||8,speed:Number(p.speedMps??p.speed),heading:Number(p.headingDeg??p.bearing),speedAccuracy:Number(p.speedAccuracy),headingAccuracy:Number(p.bearingAccuracy)}},false);
+  applyGps({native:true,timestamp:Number(p.timestamp)||Date.now(),coords:{
+    latitude:lat,longitude:lng,accuracy:Number(p.accuracy)||8,
+    speed:Number(p.speedMps??p.speed),heading:Number(p.headingDeg??p.bearing),
+    speedAccuracy:Number(p.speedAccuracy??p.speedAccuracyMps??p.velocityAccuracy),
+    headingAccuracy:Number(p.bearingAccuracy??p.headingAccuracy),
+    satelliteCount:Number(p.satelliteCount??p.satellitesUsed??p.usedSatellites??p.gnssSatellites??p.satellites)
+  }},false);
 };
 window.JofamsNative.onMotionUpdate=packet=>{
   const p=parseNativePacket(packet);state.imu={at:Date.now(),yawRateDegS:Number(p.yawRateDegS)||0,accelMagnitude:Number(p.accelMagnitude)||0,headingDeg:Number.isFinite(Number(p.headingDeg))?Number(p.headingDeg):state.imu.headingDeg};
@@ -1764,6 +1771,68 @@ async function locate(fly=true){
     );
   });
 }
+
+function readSatelliteCount(c){
+  const vals=[c?.satelliteCount,c?.satellitesUsed,c?.usedSatellites,c?.gnssSatellites,c?.satellites];
+  for(const v of vals){const n=Number(v);if(Number.isFinite(n)&&n>=0)return n}
+  return null;
+}
+function readSpeedAccuracy(c){
+  const vals=[c?.speedAccuracy,c?.speedAccuracyMps,c?.velocityAccuracy];
+  for(const v of vals){const n=Number(v);if(Number.isFinite(n)&&n>=0)return n}
+  return null;
+}
+function tunnelAheadMeters(routeIndex,maxMeters=350){
+  const segs=state.route?.roadSegments||[],cum=state.routeCumulative||[];
+  if(!segs.length||!cum.length)return Infinity;
+  const here=Number(cum[Math.max(0,routeIndex)]||0);
+  let best=Infinity;
+  for(const seg of segs){
+    if(!/터널|tunnel/i.test(String(seg?.name||'')))continue;
+    const si=Math.max(0,Number(seg.startIndex)||0);
+    const d=Number(cum[Math.min(cum.length-1,si)]||0)-here;
+    if(d>=-30&&d<best)best=d;
+  }
+  return best<=maxMeters?best:Infinity;
+}
+function isNoisyZeroSpeed({reportedSpeed,speedAccuracy,satellites,accuracy,previousSpeed,routeIndex}){
+  if(!state.tripStartedAt||!Number.isFinite(reportedSpeed)||reportedSpeed>0.15||previousSpeed<1.5)return false;
+  const nearTunnel=Number.isFinite(tunnelAheadMeters(routeIndex,350))||Boolean(state.tunnelRouteLock?.active);
+  const weakSat=Number.isFinite(satellites)&&satellites<5;
+  const poorSpeed=Number.isFinite(speedAccuracy)&&speedAccuracy>2.2;
+  const poorPos=Number(accuracy)>22;
+  // 위성수/속도정확도 값이 제공되면 그것을 최우선으로 사용하고,
+  // Web Geolocation처럼 해당 필드가 없을 때는 터널 접근 + 위치정확도 악화를 보조 근거로 사용한다.
+  return weakSat||poorSpeed||(nearTunnel&&poorPos);
+}
+function resetGpsReacquire(){
+  state.gpsReacquire={active:false,startedAt:0,fromDistance:null,targetDistance:null,lastRawDistance:null};
+}
+function smoothReacquiredRouteDistance(rawDistance,now=Date.now()){
+  if(!Number.isFinite(rawDistance))return rawDistance;
+  const r=state.gpsReacquire||{};
+  if(!r.active){
+    r.active=true;r.startedAt=now;
+    r.fromDistance=Number.isFinite(Number(state.deadReckoningDistance))?Number(state.deadReckoningDistance):rawDistance;
+    r.targetDistance=rawDistance;r.lastRawDistance=rawDistance;
+    state.gpsReacquire=r;
+  }else{
+    r.targetDistance=rawDistance;r.lastRawDistance=rawDistance;
+  }
+  const elapsed=Math.max(0,now-r.startedAt);
+  const alpha=Math.min(1,elapsed/3500);
+  const from=Number(r.fromDistance);
+  const target=Number(r.targetDistance);
+  const eased=Number.isFinite(from)&&Number.isFinite(target)
+    ?from+(target-from)*(1-Math.pow(1-alpha,3))
+    :rawDistance;
+  if(alpha>=1||Math.abs(target-eased)<3){
+    resetGpsReacquire();
+    return target;
+  }
+  return eased;
+}
+
 function applyGps(pos,fly=false){
   if(state.simulationActive)return;
   if(state.permissionPrefs?.location===false)return;
@@ -1771,25 +1840,40 @@ function applyGps(pos,fly=false){
   const wasEstimated=Boolean(state.gpsEstimated||state.user?.estimated);
   if(!native&&state.nativeLocationAt&&now-state.nativeLocationAt<2200)return;
 
-  const c=pos.coords||pos,stateObj={
+  const c=pos.coords||pos;
+  const speedAccuracy=readSpeedAccuracy(c),satelliteCount=readSatelliteCount(c);
+  const stateObj={
     lng:Number(c.longitude??c.lng),lat:Number(c.latitude??c.lat),
     speed:Number(c.speed),heading:Number(c.heading),accuracy:Number(c.accuracy)||0,
-    estimated:false,native
+    speedAccuracy,satelliteCount,estimated:false,native
   };
   if(!pointValid(stateObj))return;
 
   const rawLat=stateObj.lat,rawLng=stateObj.lng,sampleTime=Number(pos?.timestamp)||now;
   const reportedSpeed=Number(c.speed);
-  const tunnelZeroGps=Boolean(
-    state.tripStartedAt &&
-    Number.isFinite(reportedSpeed) && reportedSpeed<=0.05 &&
-    (state.tunnelRouteLock?.active||tunnelBoundsAtIndex(state.currentRouteIndex))
+  const previousReliableSpeed=Math.max(
+    0,
+    Number(state.gnssQuality?.lastReliableSpeed)||0,
+    Number(state.lastRealSpeedMps)||0,
+    Number(state.user?.speed)||0
   );
+  const noisyZeroSpeed=isNoisyZeroSpeed({
+    reportedSpeed,speedAccuracy,satellites:satelliteCount,accuracy:stateObj.accuracy,
+    previousSpeed:previousReliableSpeed,routeIndex:state.currentRouteIndex
+  });
+  const tunnelZeroGps=Boolean(
+    state.tripStartedAt && Number.isFinite(reportedSpeed) && reportedSpeed<=0.15 &&
+    (state.tunnelRouteLock?.active||Number.isFinite(tunnelAheadMeters(state.currentRouteIndex,350)))
+  );
+  if(noisyZeroSpeed){
+    // 신호 약화로 발생한 0속도는 정지로 인정하지 않고 마지막 신뢰 속도를 유지한다.
+    stateObj.speed=Math.max(1.5,previousReliableSpeed);
+  }
   let forceStationary=false;
 
   // 실제 GPS 속도가 0이고 최초 정지 GPS 기준 ±10m 안이면 캐릭터/경로 진행을 완전히 고정한다.
   // 이 구간에서는 GPS 위치 흔들림으로 계산한 파생속도도 사용하지 않는다.
-  if(state.tripStartedAt&&!state.simulationActive&&!tunnelZeroGps&&Number.isFinite(reportedSpeed)&&reportedSpeed<=0.05){
+  if(state.tripStartedAt&&!state.simulationActive&&!tunnelZeroGps&&!noisyZeroSpeed&&Number.isFinite(reportedSpeed)&&reportedSpeed<=0.05){
     if(!state.stationaryGpsAnchor){
       state.stationaryGpsAnchor={
         lat:rawLat,lng:rawLng,
@@ -1826,11 +1910,12 @@ function applyGps(pos,fly=false){
       }else stateObj.speed=0;
     }
   }
-  if(tunnelZeroGps){
+  if(tunnelZeroGps||noisyZeroSpeed){
     state.stationaryGpsAnchor=null;
     state.stationaryActive=false;
     stateObj.speed=Math.max(
-      2.5,
+      noisyZeroSpeed?1.5:2.5,
+      Number(state.gnssQuality?.lastReliableSpeed)||0,
       Number(state.tunnelEntrySpeedMps)||0,
       Number(state.lastRealSpeedMps)||0,
       Number(state.user?.speed)||0
@@ -1840,11 +1925,27 @@ function applyGps(pos,fly=false){
   state.lastSpeedSample={lat:stateObj.lat,lng:stateObj.lng,t:sampleTime,accuracy:stateObj.accuracy};
   if(state.tripStartedAt&&now-sampleTime>4500)return;
 
+  const gnssPositionReliable=stateObj.accuracy<=35 && !(Number.isFinite(satelliteCount)&&satelliteCount<4);
+  const gnssSpeedReliable=!noisyZeroSpeed && !(Number.isFinite(speedAccuracy)&&speedAccuracy>3.5);
+
   if(forceStationary)state.lastRealSpeedMps=0;
-  else if(Number.isFinite(stateObj.speed)&&stateObj.speed>=0)state.lastRealSpeedMps=stateObj.speed;
-  if(Number.isFinite(stateObj.heading))state.lastRealHeading=stateObj.heading;
-  if(!tunnelZeroGps)state.lastRealGpsAt=now;
-  state.lastGpsTickAt=now;state.deadReckoningLastAt=now;state.gpsEstimated=Boolean(tunnelZeroGps);
+  else if(Number.isFinite(stateObj.speed)&&stateObj.speed>=0&&gnssSpeedReliable)state.lastRealSpeedMps=stateObj.speed;
+  if(Number.isFinite(stateObj.heading)&&gnssPositionReliable)state.lastRealHeading=stateObj.heading;
+
+  if(gnssPositionReliable){
+    state.lastRealGpsAt=now;
+    state.gnssQuality={
+      satellites:satelliteCount,speedAccuracy,
+      lastReliableAt:now,
+      lastReliableSpeed:gnssSpeedReliable?Math.max(0,Number(stateObj.speed)||0):Math.max(0,Number(state.gnssQuality?.lastReliableSpeed)||0),
+      lastReliableHeading:Number.isFinite(stateObj.heading)?stateObj.heading:state.gnssQuality?.lastReliableHeading,
+      lastReliableLat:rawLat,lastReliableLng:rawLng
+    };
+  }else{
+    state.gnssQuality={...(state.gnssQuality||{}),satellites:satelliteCount,speedAccuracy};
+  }
+  state.lastGpsTickAt=now;state.deadReckoningLastAt=now;
+  state.gpsEstimated=Boolean(tunnelZeroGps||!gnssPositionReliable);
   if(!Number.isFinite(stateObj.speed))stateObj.speed=state.lastRealSpeedMps||0;
   if(!Number.isFinite(stateObj.heading))stateObj.heading=state.lastRealHeading;
 
@@ -1854,13 +1955,22 @@ function applyGps(pos,fly=false){
   if(state.tripStartedAt&&state.route?.geometry?.length){
     // 주행 화면 위치는 항상 현재 경로에 강제 스냅.
     const locked=lockDisplayPositionToRoute(stateObj,now);
-    if(locked&&wasEstimated){
-      // 터널 출구 첫 GPS가 DR 위치보다 앞서더라도 한 프레임에 따라잡지 않는다.
-      const simulated=Number(state.deadReckoningDistance);
-      if(Number.isFinite(simulated)&&locked.distance>simulated+12){
-        const cap=simulated+Math.max(5,(Number(stateObj.speed)||0)*1.2);
-        const q=pointAtRouteDistance(Math.min(locked.distance,cap));
-        if(q){locked.lng=q.lng;locked.lat=q.lat;locked.heading=q.heading;locked.index=q.index;locked.distance=q.distance}
+    if(locked&&wasEstimated&&gnssPositionReliable){
+      // GPS 재획득 시 DR 위치에서 실측 위치로 약 3.5초 동안 점진적으로 수렴한다.
+      // 앞/뒤 어느 방향의 오차도 한 프레임 순간이동하지 않는다.
+      const smoothDistance=smoothReacquiredRouteDistance(Number(locked.distance),now);
+      const q=pointAtRouteDistance(smoothDistance);
+      if(q){
+        locked.lng=q.lng;locked.lat=q.lat;locked.heading=q.heading;
+        locked.index=q.index;locked.distance=q.distance;
+      }
+      state.gpsEstimated=false;
+    }else if(!wasEstimated&&state.gpsReacquire?.active){
+      const smoothDistance=smoothReacquiredRouteDistance(Number(locked?.distance),now);
+      const q=pointAtRouteDistance(smoothDistance);
+      if(locked&&q){
+        locked.lng=q.lng;locked.lat=q.lat;locked.heading=q.heading;
+        locked.index=q.index;locked.distance=q.distance;
       }
     }
     if(locked){
@@ -1985,24 +2095,37 @@ function simulatedTunnelSpeedMps(idx,baseSpeed){
 function deadReckoningTick(){
   if(!state.tripStartedAt||!state.route?.geometry?.length||!state.routeCumulative.length||!state.user)return;
   const now=Date.now(),sinceReal=now-(state.lastRealGpsAt||0);
-  // 실제 정지 상태에서는 마지막 주행속도를 재사용한 추정주행을 절대 시작하지 않는다.
-  if(state.stationaryActive||Math.max(0,Number(state.user?.speed)||0)<=0.05){
+  // 명확하게 신뢰 가능한 정지 상태일 때만 DR을 막는다.
+  // GPS가 끊긴 직전의 0속도 노이즈 때문에 stale user.speed=0이 남아 있어도
+  // 마지막 신뢰 속도가 주행 중이면 추정주행을 계속한다.
+  const reliablePriorSpeed=Math.max(
+    0,
+    Number(state.gnssQuality?.lastReliableSpeed)||0,
+    Number(state.lastRealSpeedMps)||0
+  );
+  if(state.stationaryActive&&reliablePriorSpeed<=0.35){
     state.deadReckoningLastAt=now;
-    state.lastRealSpeedMps=0;
     state.user.speed=0;
     updateUserMarkerMotion();
     return;
   }
-  if(sinceReal<2500||sinceReal>180000)return;
+  // GPS 미수신 2.5초 후 시작, 최대 90초까지만 추정한다.
+  if(sinceReal<2500||sinceReal>90000)return;
 
   if(!state.gpsEstimated){
     state.tunnelEntrySpeedMps=Math.max(0,Number(state.lastRealSpeedMps)||Number(state.user.speed)||0);
     state.tunnelEntryAt=now;
   }
-  let speed=simulatedTunnelSpeedMps(state.currentRouteIndex,Number(state.lastRealSpeedMps)||Number(state.user.speed)||0);
+  let speed=simulatedTunnelSpeedMps(
+    state.currentRouteIndex,
+    Number(state.gnssQuality?.lastReliableSpeed)||Number(state.lastRealSpeedMps)||Number(state.user.speed)||0
+  );
   const imuFresh=state.imu&&now-state.imu.at<1200;
   if(imuFresh&&Number(state.imu.accelMagnitude)>1.8)speed=Math.max(0,Math.min(55,speed+Math.min(.8,Number(state.imu.accelMagnitude)*.035)));
   if(speed<.35){state.deadReckoningLastAt=now;state.user.speed=0;updateUserMarkerMotion();return}
+  if(sinceReal>=89500){
+    speed=Math.max(0,Math.min(speed,Math.max(0,(90000-sinceReal)/500)*speed));
+  }
 
   const last=state.deadReckoningLastAt||state.lastGpsTickAt||now;
   const dt=Math.min(1.0,Math.max(.15,(now-last)/1000));
@@ -2039,7 +2162,7 @@ function deadReckoningTick(){
   }
 }
 function startDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningLastAt=Date.now();state.deadReckoningTimer=setInterval(deadReckoningTick,500)}
-function stopDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningTimer=0;state.gpsEstimated=false;state.deadReckoningDistance=null;state.deadReckoningLastAt=0}
+function stopDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningTimer=0;state.gpsEstimated=false;state.deadReckoningDistance=null;state.deadReckoningLastAt=0;resetGpsReacquire()}
 function startWatch(){if(state.permissionPrefs?.location===false)return;if(nativeBridgeAvailable())setNativeNavigationActive(true);if(state.watchId!=null)return;state.watchId=navigator.geolocation.watchPosition(p=>applyGps(p,false),()=>{}, {enableHighAccuracy:true,maximumAge:0,timeout:7000});startDeadReckoning()}
 function stopWatch(){if(nativeBridgeAvailable())setNativeNavigationActive(false);if(state.watchId!=null){navigator.geolocation.clearWatch(state.watchId);state.watchId=null}state.nativeLocationActive=false;stopDeadReckoning()}
 
@@ -3190,7 +3313,7 @@ function initializeDriveSummary(){
 function startNavigation(){
   $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearOnnuriMarkers();clearHomeCameraMarkers();
   if((state.waypoints||[]).filter(pointValid).length)saveCurrentWaypointCourse();if(!state.route||!state.destination)return;cancelAutoStart();state.tripStartedAt=Date.now();acquireNavigationWakeLock();startDestinationCycle();logTrip('start');setView('drive');$('driveView')?.classList.toggle('walking-mode',state.routeMode==='walk');
-  state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false};state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};state.routeLockedDistance=0;state.routeLockedAt=Date.now();state.offRouteHits=0;state.offRouteHeadingHits=0;state.offRouteSince=0;state.arrivalCandidateSince=0; // 새 주행마다 상보필터 상태 초기화
+  state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false};state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};state.gnssQuality={satellites:null,speedAccuracy:null,lastReliableAt:0,lastReliableSpeed:0,lastReliableHeading:null,lastReliableLat:null,lastReliableLng:null};resetGpsReacquire();state.routeLockedDistance=0;state.routeLockedAt=Date.now();state.offRouteHits=0;state.offRouteHeadingHits=0;state.offRouteSince=0;state.arrivalCandidateSince=0; // 새 주행마다 상보필터 상태 초기화
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
   if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 바로 요청해야 브라우저가 확실히 허용한다.
   initializeDriveSummary();startWatch();ensureUserMarker();updateCarMarkerImage();drawRoute(state.route,{fit:false});updateDriving(true);if(state.routeMode==='car')startLiveRouteRefresh();else stopLiveRouteRefresh();applyNightMode();setTimeout(tryLandscapeFullscreen,100);}
