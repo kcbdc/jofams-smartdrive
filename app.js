@@ -457,26 +457,29 @@ function buildSectionSpeedEvents(nodes,route){
     });
   }
 
-  // 짝을 찾지 못한 시점/종점 행도 일반 카메라로 강등하지 않고, 위치는 정확히
-  // 유지한 채 단일 지점 구간단속 이벤트로 안내한다(짝 매칭 실패로 인한 소실 방지).
+  // 버그 수정: 짝(시점+종점)을 찾지 못한 행을 그대로 'section_speed_camera'로 안내하면
+  // 실제로는 구간(평균속도) 단속이 아닌 지점에서도 "구간단속 시작 구간입니다"라는 안내와
+  // 평균속도 패널이 계속 표시되는 문제가 있었다(없는 구간단속을 있는 것처럼 안내).
+  // 짝이 확인되지 않은 행은 구간단속이라 확정할 근거가 없으므로, 일반 지점 단속카메라로
+  // 낮춰서 안내한다(카메라 자체의 위치 정보는 유지해 소실은 방지하되, '구간' 단정은 하지 않음).
   for(const st of starts){
     if(usedStarts.has(st.id))continue;
     const p=g[st.routeIndex];if(!p)continue;
     events.push({
-      id:`section-speed-single:${st.id}`,type:'section_speed_camera',
+      id:`section-speed-single:${st.id}`,type:'speed_camera',
       lat:p[1],lng:p[0],routeIndex:st.routeIndex,
-      maxspeed:Number(st.maxspeed)||0,roadName:st.roadName||'',name:st.name||'구간단속',
-      source:'전국무인교통단속카메라표준데이터(구간 시점, 짝 미확인)'
+      maxspeed:Number(st.maxspeed)||0,roadName:st.roadName||'',name:st.name||'단속카메라',
+      source:'전국무인교통단속카메라표준데이터(구간 시점, 짝 미확인 → 단일 지점으로 안내)'
     });
   }
   for(const en of ends){
     if(used.has(en.id))continue;
     const p=g[en.routeIndex];if(!p)continue;
     events.push({
-      id:`section-speed-single:${en.id}`,type:'section_speed_camera',
+      id:`section-speed-single:${en.id}`,type:'speed_camera',
       lat:p[1],lng:p[0],routeIndex:en.routeIndex,
-      maxspeed:Number(en.maxspeed)||0,roadName:en.roadName||'',name:en.name||'구간단속',
-      source:'전국무인교통단속카메라표준데이터(구간 종점, 짝 미확인)'
+      maxspeed:Number(en.maxspeed)||0,roadName:en.roadName||'',name:en.name||'단속카메라',
+      source:'전국무인교통단속카메라표준데이터(구간 종점, 짝 미확인 → 단일 지점으로 안내)'
     });
   }
   return events;
@@ -2971,10 +2974,17 @@ function toggleMapControls(force){const el=$('driveMapControls');if(!el)return;s
 function laneDirectionInfo(turnType,guidance=''){
   const text=String(guidance||'');
   const t=Number(turnType)||0;
-  const left=/좌|왼쪽|left/i.test(text)||[1,2,4,6,7,11,12,14,16].includes(t);
-  const right=/우|오른쪽|right/i.test(text)||[3,5,8,9,10,13,15,17].includes(t);
-  if(left&&!right)return {side:'left',icon:'↖',label:'왼쪽 차로'};
-  if(right&&!left)return {side:'right',icon:'↗',label:'오른쪽 차로'};
+  // 버그 수정: 기존 코드는 g.type 숫자 배열([1,2,4,6,7,...] 등)이 turnSvg/guideVoiceCategory가 쓰는
+  // 실제 분기 코드(1·5=좌회전 계열, 2·6=우회전 계열)와 서로 맞지 않아, 같은 회전(type)에 대해
+  // 문구("우회전" 등)로는 오른쪽으로 판정되면서 숫자 배열로는 동시에 왼쪽으로도 판정되는 경우가 있었다.
+  // 그 결과 left/right가 동시에 true가 되어 else 분기인 '직진 차로'로 잘못 안내됐다(화면 회전 안내와 불일치).
+  // 문구를 최우선으로 신뢰하고, 문구가 없을 때만 turnSvg와 동일한 기준의 type 코드로 판정한다.
+  const textLeft=/좌회전|왼쪽|left/i.test(text);
+  const textRight=/우회전|오른쪽|right/i.test(text);
+  if(textLeft&&!textRight)return {side:'left',icon:'↖',label:'왼쪽 차로'};
+  if(textRight&&!textLeft)return {side:'right',icon:'↗',label:'오른쪽 차로'};
+  if(t===1||t===5)return {side:'left',icon:'↖',label:'왼쪽 차로'};
+  if(t===2||t===6)return {side:'right',icon:'↗',label:'오른쪽 차로'};
   return {side:'straight',icon:'↑',label:'직진 차로'};
 }
 function normalizeGuideLanes(g){
@@ -3040,6 +3050,27 @@ function mergeFreshTraffic(current,fresh){
 function remainingWaypointsForReroute(){
   const g=state.route?.geometry||[],idx=state.currentRouteIndex||0;if(!g.length)return (state.waypoints||[]).filter(pointValid);
   return (state.waypoints||[]).filter(pointValid).filter(w=>nearestIndex(w.lng,w.lat,g)>idx+8);
+}
+// 버그 수정: 경유지를 실제로 통과했는데도 재탐색(예: 목적지 근처 주차장 등에서의 GPS 흔들림) 시
+// 다시 경유지를 거쳐가도록 안내가 늘어나는 문제가 있었다. 원인은 remainingWaypointsForReroute()가
+// 매번 그때그때의 경로 geometry에서 '가장 가까운 지점의 인덱스'만으로 통과 여부를 판단하는 것인데,
+// 목적지와 경유지가 같은 도로에 있거나 도로가 겹치는 경우 인덱스 계산이 실제 통과 여부와
+// 반대로 나올 수 있었다. 이를 보완하기 위해 실제 GPS 위치가 경유지 반경 45m 이내로 들어오면
+// 경로 인덱스 계산과 무관하게 해당 경유지를 영구적으로 목록에서 제거한다.
+const WAYPOINT_VISITED_RADIUS_M=45;
+function pruneVisitedWaypoints(){
+  if(!Array.isArray(state.waypoints)||!state.waypoints.length)return;
+  const rawLat=Number.isFinite(state.user?.rawLat)?state.user.rawLat:Number(state.user?.lat);
+  const rawLng=Number.isFinite(state.user?.rawLng)?state.user.rawLng:Number(state.user?.lng);
+  if(!Number.isFinite(rawLat)||!Number.isFinite(rawLng))return;
+  const remaining=state.waypoints.filter(w=>{
+    if(!pointValid(w))return false;
+    return hav(rawLat,rawLng,Number(w.lat),Number(w.lng))>WAYPOINT_VISITED_RADIUS_M;
+  });
+  if(remaining.length!==state.waypoints.length){
+    state.waypoints=remaining;
+    renderRouteWaypoints();
+  }
 }
 async function liveRouteRefresh(){
   if(state.routeMode==='walk'||!state.tripStartedAt||!state.user||!state.destination||state.gpsEstimated||Date.now()-state.lastLiveRouteAt<65000)return;state.lastLiveRouteAt=Date.now();
@@ -3197,6 +3228,7 @@ function updateDriving(force=false){
   }
   updateProgressUI(idx);
   if(state.arRunning)updateAROverlay();
+  if(state.tripStartedAt)pruneVisitedWaypoints();
   checkOffRoute(idx);
 }
 function hideDestinationBottom(){clearTimeout(state.destinationHideTimer);$('driveBottomDestination')?.classList.add('hidden');$('driveBottomNormal')?.classList.remove('hidden')}
@@ -3401,7 +3433,12 @@ function checkArrival(routeRemain){
   // 한국조폐공사처럼 부지가 넓은 공사·공단·청사 등은 정문 근처(더 넓은 반경)에서 종료하고,
   // 그 외 목적지는 목적지 주변(약 ±10m 여유를 둔 좁은 반경)에 오면 종료한다.
   const radius=arrivalRadiusMeters(state.destination);
-  const reached=(rawToRouteEnd<=radius)||(Number(routeRemain)<=30&&rawToRouteEnd<=radius+25)||(rawToPoi<=radius);
+  // 버그 수정: 넓은 부지의 기관(공사·공단·대학 등)은 정문에서 실제 POI(본동 건물)까지
+  // 직선거리(rawToPoi)나 경로 끝점까지의 직선거리(rawToRouteEnd)만으로는 좀처럼 반경 안에
+  // 들어오지 않아 캐릭터가 부지 안쪽까지 계속 안내를 받으며 진입하게 되는 경우가 있었다.
+  // 경로상 '남은 거리(routeRemain)'가 도착 반경 이내로 줄어들면 안내를 종료해, 본동 안쪽까지
+  // 들어가지 않고 부지 진입 지점(문 앞)에서 안내가 끝나도록 한다.
+  const reached=(rawToRouteEnd<=radius)||(Number(routeRemain)<=radius)||(rawToPoi<=radius);
   if(!reached){state.arrivalCandidateSince=0;return false}
 
   if(!state.arrivalCandidateSince)state.arrivalCandidateSince=Date.now();
