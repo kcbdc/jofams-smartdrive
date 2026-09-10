@@ -1,4 +1,6 @@
 const PUBLIC_CAMERA_API='https://api.data.go.kr/openapi/tn_pubr_public_unmanned_traffic_camera_api';
+const SEJONG_CCTV_API='https://apis.data.go.kr/5690000/sjCCTV';
+const DAEJEON_CAMERA_API='https://apis.data.go.kr/6300000/GetTrctListService1';
 const OVERPASS='https://overpass-api.de/api/interpreter';
 const OPEN_METEO='https://api.open-meteo.com/v1/forecast';
 const KOROAD_LG='https://opendata.koroad.or.kr/data/rest/frequentzone/lg';
@@ -37,6 +39,49 @@ function cameraNearRoute(cam,points,max=45){
   }
   return best<=max;
 }
+function flattenApiRows(d){
+  const candidates=[
+    d?.response?.body?.items?.item,d?.response?.body?.items,d?.response?.body?.data,
+    d?.body?.items?.item,d?.body?.items,d?.items?.item,d?.items,d?.data,d?.records,
+    d?.response?.body?.resultList,d?.resultList,d?.row,d?.rows
+  ];
+  for(const x of candidates){if(Array.isArray(x))return x;if(x&&typeof x==='object')return [x]}
+  return [];
+}
+function firstValue(x,keys){for(const k of keys){const v=x?.[k];if(v!==undefined&&v!==null&&String(v).trim()!=='')return v}return null}
+function normalizeRegionalCamera(x,source){
+  const lat=Number(firstValue(x,['latitude','lat','LAT','la','LA','위도','Y','y','crdntY','CRDNT_Y','gpsY','GPS_Y']));
+  const lng=Number(firstValue(x,['longitude','lng','lon','lot','LNG','LO','경도','X','x','crdntX','CRDNT_X','gpsX','GPS_X']));
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat<33||lat>39||lng<124||lng>132)return null;
+  const sp=Number(firstValue(x,['limitSpeed','speedLimit','LIMIT_SPEED','RESTRICT_SPEED','제한속도','lmtSpd','LMT_SPD','spdLmt','SPD_LMT']));
+  const rawType=String(firstValue(x,['cameraType','type','카메라구분','단속구분','regltSe','REG_SE','trctSe','TRCT_SE'])||'');
+  let type=/신호/.test(rawType)&&/(과속|속도)/.test(rawType)?'signal_speed_camera':/신호/.test(rawType)?'signal_camera':/구간/.test(rawType)?'section_speed_camera':'speed_camera';
+  return {type,lat,lng,maxspeed:Number.isFinite(sp)&&sp>0?sp:null,source,
+    roadName:String(firstValue(x,['roadRouteName','roadName','도로노선명','도로명','rn','ROAD_NM','roadNm'])||'').trim(),
+    direction:String(firstValue(x,['roadRouteDirection','roadDirection','도로노선방향','direction','DIRECTION','drct'])||'').trim(),
+    name:String(firstValue(x,['installationLocation','설치장소','location','LOCPLC','instlLc','INSTL_LC','addr','address','도로명주소'])||'무인단속카메라').trim()};
+}
+async function fetchRegionalCameraEndpoint(base,points,env,source){
+  const key=publicDataKey(env);if(!key||!points?.length)return [];
+  const endpoints=[base,base+'/getSjCCTVList',base+'/getTrctList',base+'/getTrctList1'];
+  let west=Infinity,south=Infinity,east=-Infinity,north=-Infinity;
+  for(const p of points){west=Math.min(west,p.lng);east=Math.max(east,p.lng);south=Math.min(south,p.lat);north=Math.max(north,p.lat)}
+  for(const ep of endpoints){
+    try{
+      const u=new URL(ep);u.searchParams.set('serviceKey',decodedKey(key));u.searchParams.set('pageNo','1');u.searchParams.set('numOfRows','1000');u.searchParams.set('type','json');u.searchParams.set('_type','json');
+      const r=await fetch(u,{headers:{accept:'application/json, application/xml;q=0.8'}});if(!r.ok)continue;
+      const text=await r.text();let d=null;try{d=JSON.parse(text)}catch{continue}
+      const rows=flattenApiRows(d);if(!rows.length)continue;
+      const out=[];
+      for(const row of rows){const c=normalizeRegionalCamera(row,source);if(!c)continue;if(c.lng<west-.08||c.lng>east+.08||c.lat<south-.08||c.lat>north+.08)continue;if(cameraNearRoute(c,points,45))out.push(c)}
+      return out;
+    }catch{}
+  }
+  return [];
+}
+async function loadSejongRouteCameras(points,env){return fetchRegionalCameraEndpoint(SEJONG_CCTV_API,points,env,'data.go.kr-sejong-cctv')}
+async function loadDaejeonRouteCameras(points,env){return fetchRegionalCameraEndpoint(DAEJEON_CAMERA_API,points,env,'data.go.kr-daejeon-unmanned-camera')}
+
 async function loadNationalRouteCameras(points,env){
   const key=publicDataKey(env);if(!key||!points?.length)return [];
   let west=Infinity,south=Infinity,east=-Infinity,north=-Infinity;
@@ -84,12 +129,16 @@ export async function onRequestPost({request,env}){
     }else providers.push({name:'koroad-accident-hotspots',ok:false,note:'KOROAD_AUTH_KEY or KAKAO_REST_API_KEY not configured'});
 
     try{
-      const national=await loadNationalRouteCameras(points,env);
-      events.push(...national);
+      const [national,sejong,daejeon]=await Promise.all([
+        loadNationalRouteCameras(points,env),loadSejongRouteCameras(points,env),loadDaejeonRouteCameras(points,env)
+      ]);
+      events.push(...national,...sejong,...daejeon);
       providers.push({name:'data.go.kr-national-unmanned-camera',ok:true,count:national.length});
-    }catch(e){providers.push({name:'data.go.kr-national-unmanned-camera',ok:false,error:String(e?.message||e)})}
+      providers.push({name:'data.go.kr-sejong-cctv',ok:true,count:sejong.length,endpoint:SEJONG_CCTV_API});
+      providers.push({name:'data.go.kr-daejeon-unmanned-camera',ok:true,count:daejeon.length,endpoint:DAEJEON_CAMERA_API});
+    }catch(e){providers.push({name:'data.go.kr-regional-camera',ok:false,error:String(e?.message||e)})}
 
-    return json({events:dedupe(events),providers,coverage:'weather + statistics + road-safety supplements + national unmanned cameras'},200,120);
+    return json({events:dedupe(events),providers,coverage:'weather + statistics + road-safety supplements + national + Sejong + Daejeon camera APIs'},200,120);
   }catch(e){return json({events:[],providers:[],warning:String(e?.message||e)},200,30)}
 }
 
