@@ -37,6 +37,7 @@ async function routeWithKakao(origin,destination,body,env){
     if(body.waypoints?.length)u.searchParams.set('waypoints',body.waypoints.map(p=>`${p.lng},${p.lat}`).join('|'));
     const priority = ['RECOMMEND','TIME','DISTANCE','MAIN_ROAD','NO_TRAFFIC_INFO'].includes(body.priority) ? body.priority : 'RECOMMEND';
     u.searchParams.set('priority', priority);
+    u.searchParams.set('car_type','1');
     if (body.avoid) {
       const allowed = String(body.avoid).split('|').filter(x=>['ferries','toll','motorway','schoolzone','uturn'].includes(x));
       if (allowed.length) u.searchParams.set('avoid', allowed.join('|'));
@@ -154,6 +155,19 @@ function parseOsrmRoute(route,routeNo){
 function normalizeOsrmManeuver(type,modifier){
   if(type==='arrive')return {type:101,guidance:'목적지'};if(type==='depart')return {type:100,guidance:'출발지'};if(type==='roundabout'||type==='rotary')return {type:72,guidance:'회전교차로 진입'};if(type==='uturn'||modifier==='uturn')return {type:3,guidance:'유턴'};if(['left','sharp left'].includes(modifier))return {type:1,guidance:'좌회전'};if(modifier==='slight left')return {type:5,guidance:'왼쪽 방향'};if(['right','sharp right'].includes(modifier))return {type:2,guidance:'우회전'};if(modifier==='slight right')return {type:6,guidance:'오른쪽 방향'};if(type==='off ramp')return modifier?.includes('left')?{type:8,guidance:'왼쪽 출구'}:{type:9,guidance:'오른쪽 출구'};if(type==='on ramp')return modifier?.includes('left')?{type:11,guidance:'왼쪽 진입'}:{type:12,guidance:'오른쪽 진입'};return {type:0,guidance:'직진'};
 }
-function guideTypeLabel(type){if(type===0)return '직진';if(type===1)return '좌회전';if(type===2)return '우회전';if(type===3)return '유턴';if(type===5)return '왼쪽 방향';if(type===6)return '오른쪽 방향';if(type===7)return '고속도로 출구';if(type===10)return '고속도로 입구';if(type===14)return '고가도로 진입';if(type===15)return '지하차도 진입';if(type===100)return '출발지';if(type===101)return '목적지';if(type===1000)return '경유지';if((type>=30&&type<=41)||(type>=70&&type<=81))return '회전교차로 안내';return '경로 안내'}
+function guideTypeLabel(type){
+  const labels={0:'직진',1:'좌회전',2:'우회전',3:'유턴',5:'왼쪽 방향',6:'오른쪽 방향',
+    7:'고속도로 출구',8:'왼쪽 고속도로 출구',9:'오른쪽 고속도로 출구',
+    10:'고속도로 입구',11:'왼쪽 고속도로 입구',12:'오른쪽 고속도로 입구',
+    14:'고가도로 진입',15:'지하차도 진입',16:'고가도로 옆길',17:'지하차도 옆길',
+    42:'도시고속도로 출구',43:'왼쪽 도시고속도로 출구',44:'오른쪽 도시고속도로 출구',
+    45:'도시고속도로 입구',46:'왼쪽 도시고속도로 입구',47:'오른쪽 도시고속도로 입구',
+    48:'왼쪽 고속도로 진입',49:'오른쪽 고속도로 진입',82:'왼쪽 직진',83:'오른쪽 직진',
+    84:'톨게이트 진입',85:'원톨링 진입',86:'분기 후 합류',100:'출발지',101:'목적지',1000:'경유지',
+    300:'톨게이트',301:'휴게소'};
+  if(labels[type])return labels[type];
+  if((type>=30&&type<=41)||(type>=70&&type<=81))return '회전교차로 안내';
+  return '경로 안내';
+}
 function nearestGeometryIndex(lng,lat,geometry){if(!Number.isFinite(lng)||!Number.isFinite(lat)||!geometry?.length)return 0;let bestI=0,best=Infinity;const stride=Math.max(1,Math.floor(geometry.length/1800));for(let i=0;i<geometry.length;i+=stride){const dx=(geometry[i][0]-lng)*Math.cos(lat*Math.PI/180),dy=geometry[i][1]-lat,d=dx*dx+dy*dy;if(d<best){best=d;bestI=i}}const start=Math.max(0,bestI-stride*3),end=Math.min(geometry.length-1,bestI+stride*3);for(let i=start;i<=end;i++){const dx=(geometry[i][0]-lng)*Math.cos(lat*Math.PI/180),dy=geometry[i][1]-lat,d=dx*dx+dy*dy;if(d<best){best=d;bestI=i}}return bestI}
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}})}
