@@ -1734,3 +1734,8 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   grid-column:1/-1;
   height:max(calc(44px + var(--safeB)),56px);
 }
+
+
+/* 7.6.6.2 KOMSCO 영상은 목록보다 항상 위에 표시 */
+#komscoShortModal:not(.hidden){z-index:1300!important;}
+#komscoShortsListModal:not(.hidden){z-index:1250!important;}
