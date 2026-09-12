@@ -5055,15 +5055,40 @@ function openKomscoShort(videoId,title,{fromList=false}={}){
   if(!videoId)return;
   state.komscoShortReturnToList=Boolean(fromList||!$('komscoShortsListModal')?.classList.contains('hidden'));
   if(state.komscoShortReturnToList)$('komscoShortsListModal')?.classList.add('hidden');
-  const player=$('komscoShortPlayer');
-  if(player)player.src=`https://www.youtube.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0`;
+
   if($('komscoShortTitle'))$('komscoShortTitle').textContent=title||'KOMSCO 소식';
   if($('komscoShortOpenYoutube'))$('komscoShortOpenYoutube').href=`https://www.youtube.com/watch?v=${videoId}`;
-  $('komscoShortModal')?.classList.remove('hidden');
+
+  // 사용자 클릭 제스처가 살아있는 동안 플레이어 모달을 먼저 표시한 뒤
+  // autoplay 권한이 포함된 YouTube embed를 로드한다.
+  const modal=$('komscoShortModal');
+  modal?.classList.remove('hidden');
+
+  const player=$('komscoShortPlayer');
+  if(player){
+    const origin=encodeURIComponent(location.origin);
+    player.src=`https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=${origin}`;
+
+    // 일부 Android WebView/브라우저가 autoplay 파라미터만으로 재생을 시작하지 않는 경우를 보완.
+    const requestPlay=()=>{
+      try{
+        player.contentWindow?.postMessage(JSON.stringify({
+          event:'command',
+          func:'playVideo',
+          args:[]
+        }),'https://www.youtube.com');
+      }catch{}
+    };
+    player.onload=()=>{
+      requestPlay();
+      setTimeout(requestPlay,180);
+      setTimeout(requestPlay,650);
+    };
+  }
 }
 function closeKomscoShort(){
   $('komscoShortModal')?.classList.add('hidden');
-  const player=$('komscoShortPlayer');if(player)player.src='';
+  const player=$('komscoShortPlayer');if(player){player.onload=null;player.src=''}
   if(state.komscoShortReturnToList){
     state.komscoShortReturnToList=false;
     $('komscoShortsListModal')?.classList.remove('hidden');
