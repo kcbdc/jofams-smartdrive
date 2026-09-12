@@ -22,7 +22,9 @@ const state = {
   tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapSatellite:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,homeSheetDrag:null,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherData:null,localVoucherRetryCount:0,localVoucherLastErrorAt:0,localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,localVoucherLoadedCenter:null,onnuriMarkers:[],onnuriData:null,onnuriLoadedAt:0,onnuriLoadedCenter:null,onnuriLoadTimer:0,homeCameraMarkers:[],homeCameraLoadTimer:0,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,adminVerified:false,adminVerifiedEmail:'',loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,simulationActive:false,simulationSpeed:1,simulationDistance:null,simulationLastAt:0,simulationRaf:0,
   compassHeading:null,compassAt:0,compassReady:false,activeLaneGuideKey:'',nativeLocationAt:0,nativeLocationActive:false,imu:{at:0,yawRateDegS:0,accelMagnitude:0,headingDeg:null},mapMatch:{index:0,routeDistance:0,score:Infinity,confidence:0,at:0},offRouteHeadingHits:0,gpsFix:{lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false},
-  whereToTab:'local',wakeLock:null,savedPlaceGroups:[],savedPlaceGroupMap:{},activeSavedGroup:'all',firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
+  whereToTab:'local',wakeLock:null,savedPlaceGroups:[],savedPlaceGroupMap:{},activeSavedGroup:'all',
+  navigationStartAnchor:null,navigationStartReleased:false,navigationStartAt:0,
+  firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
 };
 
 
@@ -707,9 +709,14 @@ async function initMap(){
       state.map.on('dragend',e=>{if(e?.originalEvent)endMapManualExplore()});
       state.map.on('zoomend',e=>{if(e?.originalEvent)endMapManualExplore()});
       state.map.on('rotateend',e=>{if(e?.originalEvent)endMapManualExplore()});
-      state.map.on('zoomend',()=>{if(state.onnuriData)renderOnnuriMarkers(state.onnuriData);if(state.localVoucherData)renderLocalVoucherMarkers(state.localVoucherData);if(state.tripStartedAt&&state.safetyEvents?.length)renderSafetyMarkers()});
-      state.map.on('moveend',()=>{scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh()});
-      state.map.on('style.load',()=>{if(state.mapReady)restoreMapOverlaysAfterStyleChange()});
+      state.map.on('zoomend',()=>{
+        if(state.onnuriData)renderOnnuriMarkers(state.onnuriData);
+        if(state.localVoucherData)renderLocalVoucherMarkers(state.localVoucherData);
+        if(state.tripStartedAt&&state.safetyEvents?.length)renderSafetyMarkers();
+        ensureDestinationMarker();
+      });
+      state.map.on('moveend',()=>{scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh();ensureDestinationMarker()});
+      state.map.on('style.load',()=>{if(state.mapReady)restoreMapOverlaysAfterStyleChange();setTimeout(ensureDestinationMarker,0)});
       if(state.pendingRouteDraw){const p=state.pendingRouteDraw;state.pendingRouteDraw=null;drawRoute(p.route,p.options)}
       permissionStatus('geolocation').then(async status=>{
         try{
@@ -1665,7 +1672,34 @@ function ensureUserMarker(){
   }else state.userMarker.setLngLat([state.user.lng,state.user.lat]);
   updateUserMarkerMotion();
 }
-function setDestinationMarker(){if(state.destMarker)state.destMarker.remove();if(state.destination&&state.map)state.destMarker=makeDestMarker().setLngLat([state.destination.lng,state.destination.lat]).addTo(state.map)}
+function ensureDestinationMarker(){
+  if(!state.destination||!state.map)return;
+  let needsCreate=!state.destMarker;
+  if(state.destMarker){
+    const el=state.destMarker.getElement?.();
+    if(!el||!el.isConnected){
+      try{state.destMarker.remove()}catch{}
+      state.destMarker=null;needsCreate=true;
+    }
+  }
+  if(needsCreate){
+    state.destMarker=makeDestMarker().setLngLat([state.destination.lng,state.destination.lat]).addTo(state.map);
+  }else{
+    state.destMarker.setLngLat([state.destination.lng,state.destination.lat]);
+  }
+  const el=state.destMarker?.getElement?.();
+  if(el){
+    el.style.setProperty('z-index','70');
+    el.style.setProperty('display','block');
+    el.style.setProperty('visibility','visible');
+    el.style.setProperty('opacity','1');
+    el.style.pointerEvents='none';
+  }
+}
+function setDestinationMarker(){
+  if(state.destMarker){try{state.destMarker.remove()}catch{}state.destMarker=null}
+  ensureDestinationMarker();
+}
 function updateOriginMarker(){if(state.originMarker){state.originMarker.remove();state.originMarker=null}if(state.originMode!=='custom'||!state.origin||!state.map)return;const el=document.createElement('div');el.className='origin-pin';state.originMarker=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([state.origin.lng,state.origin.lat]).addTo(state.map)}
 function trafficClassFromValues(speed,stateCode){
   const st=Number(stateCode)||0,sp=Number(speed)||0;
@@ -1698,8 +1732,24 @@ function drawRoute(route=state.route,{fit=true}={}){
     // 진행방향 화살표를 경로선 위에 직접 배치한다. 줌에 따라 반복 간격을 조절해 복잡도를 낮춘다.
     state.map.addLayer({
       id:'route-direction-arrows',type:'symbol',source:'route',
-      layout:{'symbol-placement':'line','symbol-spacing':95,'text-field':'➤','text-size':20,'text-keep-upright':false,'text-rotation-alignment':'map','text-pitch-alignment':'map','text-allow-overlap':false},
-      paint:{'text-color':'#ffffff','text-halo-color':'#1677ff','text-halo-width':2.2,'text-opacity':.96}
+      layout:{
+        'symbol-placement':'line',
+        'symbol-spacing':72,
+        'text-field':'➤',
+        'text-size':['interpolate',['linear'],['zoom'],12,15,15,18,18,21],
+        'text-keep-upright':false,
+        'text-rotation-alignment':'map',
+        'text-pitch-alignment':'map',
+        'text-allow-overlap':true,
+        'text-ignore-placement':true
+      },
+      paint:{
+        'text-color':'#ffffff',
+        'text-halo-color':'#1677ff',
+        'text-halo-width':2.8,
+        'text-halo-blur':.2,
+        'text-opacity':1
+      }
     });
   }
   const traffic=buildTrafficGeoJson(route);
@@ -1707,6 +1757,11 @@ function drawRoute(route=state.route,{fit=true}={}){
     state.map.addSource('route-traffic',{type:'geojson',data:traffic});
     state.map.addLayer({id:'route-traffic',type:'line',source:'route-traffic',paint:{'line-color':['get','color'],'line-width':5.2,'line-opacity':.96}});
   }
+  // 교통상태 색상 경로선을 그린 뒤 방향 화살표를 최상단으로 올려
+  // 화살표가 경로선 밑에 묻히지 않도록 한다.
+  try{
+    if(state.map.getLayer('route-direction-arrows'))state.map.moveLayer('route-direction-arrows');
+  }catch(e){console.warn('route arrow layer order failed',e)}
   if(fit){const b=new maplibregl.LngLatBounds();route.geometry.forEach(p=>b.extend(p));state.map.fitBounds(b,{padding:{top:100,bottom:310,left:36,right:36},duration:650})}
 }
 function clearRouteLayer(){['route-direction-arrows','route-traffic','route-main','route-shadow'].forEach(id=>{if(state.map?.getLayer(id))state.map.removeLayer(id)});['route-traffic','route'].forEach(id=>{if(state.map?.getSource(id))state.map.removeSource(id)})}
@@ -1765,6 +1820,25 @@ function applyGps(pos,fly=false){
 
   const rawLat=stateObj.lat,rawLng=stateObj.lng,sampleTime=Number(pos?.timestamp)||now;
   const reportedSpeed=Number(c.speed);
+  // 안내 시작 직후 실제 차량이 움직이지 않았는데 GPS 흔들림만으로 캐릭터가 앞서가는 현상을 방지한다.
+  // 출발 기준점에서 12m 이내이며 실제 speed가 1m/s를 넘지 않는 동안은 정지 상태를 유지한다.
+  let startupStationary=false;
+  if(state.tripStartedAt&&!state.simulationActive&&!state.navigationStartReleased&&state.navigationStartAnchor){
+    const startMoved=hav(
+      Number(state.navigationStartAnchor.lat),Number(state.navigationStartAnchor.lng),
+      rawLat,rawLng
+    );
+    const confirmedMoving=Number.isFinite(reportedSpeed)&&reportedSpeed>=1.0;
+    if(confirmedMoving||startMoved>=12){
+      state.navigationStartReleased=true;
+      state.stationaryActive=false;
+      state.stationaryGpsAnchor=null;
+    }else{
+      startupStationary=true;
+      state.stationaryActive=true;
+      stateObj.speed=0;
+    }
+  }
   const tunnelZeroGps=Boolean(
     state.tripStartedAt &&
     Number.isFinite(reportedSpeed) && reportedSpeed<=0.05 &&
@@ -1774,7 +1848,10 @@ function applyGps(pos,fly=false){
 
   // 실제 GPS 속도가 0이고 최초 정지 GPS 기준 ±10m 안이면 캐릭터/경로 진행을 완전히 고정한다.
   // 이 구간에서는 GPS 위치 흔들림으로 계산한 파생속도도 사용하지 않는다.
-  if(state.tripStartedAt&&!state.simulationActive&&!tunnelZeroGps&&Number.isFinite(reportedSpeed)&&reportedSpeed<=0.05){
+  if(startupStationary){
+    forceStationary=true;
+    stateObj.speed=0;
+  }else if(state.tripStartedAt&&!state.simulationActive&&!tunnelZeroGps&&Number.isFinite(reportedSpeed)&&reportedSpeed<=0.05){
     if(!state.stationaryGpsAnchor){
       state.stationaryGpsAnchor={
         lat:rawLat,lng:rawLng,
@@ -1970,6 +2047,13 @@ function simulatedTunnelSpeedMps(idx,baseSpeed){
 function deadReckoningTick(){
   if(!state.tripStartedAt||!state.route?.geometry?.length||!state.routeCumulative.length||!state.user)return;
   const now=Date.now(),sinceReal=now-(state.lastRealGpsAt||0);
+  if(!state.simulationActive&&!state.navigationStartReleased){
+    state.deadReckoningLastAt=now;
+    state.user.speed=0;
+    state.lastRealSpeedMps=0;
+    updateUserMarkerMotion();
+    return;
+  }
   // 실제 정지 상태에서는 마지막 주행속도를 재사용한 추정주행을 절대 시작하지 않는다.
   if(state.stationaryActive||Math.max(0,Number(state.user?.speed)||0)<=0.05){
     state.deadReckoningLastAt=now;
@@ -2330,6 +2414,12 @@ function resumeNavigationWithSelectedRoute(){
   state.offRouteHeadingHits=0;
   state.offRouteSince=0;
   state.arrivalCandidateSince=0;
+  state.navigationStartAt=Date.now();
+  state.navigationStartAnchor=pointValid(state.user)?{lat:Number(state.user.lat),lng:Number(state.user.lng),routeDistance:Number(state.user.routeDistance)}:null;
+  state.navigationStartReleased=false;
+  state.stationaryActive=true;
+  state.stationaryGpsAnchor=state.navigationStartAnchor?{...state.navigationStartAnchor}:null;
+  state.lastRealSpeedMps=0;
   state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false};
   setView('drive');
   $('driveView')?.classList.toggle('walking-mode',state.routeMode==='walk');
@@ -3164,7 +3254,14 @@ function initializeDriveSummary(){
 }
 function startNavigation(){
   $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearOnnuriMarkers();clearHomeCameraMarkers();
-  if((state.waypoints||[]).filter(pointValid).length)saveCurrentWaypointCourse();if(!state.route||!state.destination)return;cancelAutoStart();state.tripStartedAt=Date.now();acquireNavigationWakeLock();startDestinationCycle();logTrip('start');setView('drive');$('driveView')?.classList.toggle('walking-mode',state.routeMode==='walk');
+  if((state.waypoints||[]).filter(pointValid).length)saveCurrentWaypointCourse();if(!state.route||!state.destination)return;cancelAutoStart();state.tripStartedAt=Date.now();
+  state.navigationStartAt=state.tripStartedAt;
+  state.navigationStartAnchor=pointValid(state.user)?{lat:Number(state.user.lat),lng:Number(state.user.lng),routeDistance:Number(state.user.routeDistance)}:null;
+  state.navigationStartReleased=false;
+  state.stationaryActive=true;
+  state.stationaryGpsAnchor=state.navigationStartAnchor?{...state.navigationStartAnchor}:null;
+  state.lastRealSpeedMps=0;
+  acquireNavigationWakeLock();startDestinationCycle();logTrip('start');setView('drive');$('driveView')?.classList.toggle('walking-mode',state.routeMode==='walk');
   state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false};state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};state.routeLockedDistance=0;state.routeLockedAt=Date.now();state.offRouteHits=0;state.offRouteHeadingHits=0;state.offRouteSince=0;state.arrivalCandidateSince=0; // 새 주행마다 상보필터 상태 초기화
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
   if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 바로 요청해야 브라우저가 확실히 허용한다.
@@ -3175,7 +3272,10 @@ function stopNavigation(){
   // 안내 종료는 어떤 부가기능 오류가 발생해도 반드시 홈 화면까지 복귀해야 한다.
   try{if(state.tripStartedAt)logTrip('finish')}catch(e){console.warn('finish log failed',e)}
   try{if(state.tripStartedAt)addTripHistory({destination:state.destination?.name||'목적지',date:new Date().toLocaleString('ko-KR'),distance:state.route?.distance||0,duration:Math.round((Date.now()-state.tripStartedAt)/1000),character:state.character})}catch(e){console.warn('trip history finish failed',e)}
-  state.tripStartedAt=0;releaseNavigationWakeLock();
+  state.tripStartedAt=0;
+  state.navigationStartAnchor=null;state.navigationStartReleased=false;state.navigationStartAt=0;
+  state.stationaryActive=false;state.stationaryGpsAnchor=null;
+  releaseNavigationWakeLock();
   for(const fn of [stopDestinationCycle,stopLiveRouteRefresh,stopAR,stopWatch,cancelAutoStart,clearRouteLayer,clearSafetyMarkers,hideSafetyAlert]){try{fn?.()}catch(e){console.warn('navigation cleanup failed',e)}}
   try{$('driveMenu')?.classList.add('hidden')}catch{}
   state.safetyEvents=[];resetSectionSpeedState();state.tunnelRouteLock={active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0};state.route=null;state.routeOptions=[];state.waypoints=[];renderRouteWaypoints();

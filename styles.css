@@ -1892,3 +1892,15 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   .lane-assist-copy b{font-size:11px!important}
   .lane-assist-road{max-width:110px!important;font-size:8px!important}
 }
+
+/* 7.6.6.8 목적지 핀은 지도 줌 단계와 관계없이 항상 또렷하게 유지 */
+.maplibregl-marker:has(.destination-pin){z-index:70!important;overflow:visible!important}
+.destination-pin{
+  width:34px!important;height:42px!important;
+  display:block!important;visibility:visible!important;opacity:1!important;
+  transform:none!important;filter:none!important;
+}
+.destination-pin::before{
+  opacity:1!important;visibility:visible!important;
+  box-shadow:0 5px 13px rgba(130,20,20,.34)!important;
+}
