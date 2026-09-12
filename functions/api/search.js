@@ -32,7 +32,11 @@ export async function onRequestGet({ request, env }) {
       // 고유 지명은 정확도 우선. 역명은 보조 질의를 추가한다.
       const queries=stationQuery?[searchQ,`${searchQ} 기차역`,`${searchQ} 지하철역`]:buildExactQueries(searchQ);
       for(const query of queries){
-        merged=mergeUnique(merged,await kakaoKeywordSearch(query,env.KAKAO_REST_API_KEY,sortMode==='center'&&hasGps?{lng,lat,sortDistance:true,radius:30000}:{sortDistance:false}));
+        const centerOpt=sortMode==='center'&&hasGps?{lng,lat,sortDistance:true,radius:20000}:{sortDistance:false};
+        merged=mergeUnique(merged,await kakaoKeywordSearch(query,env.KAKAO_REST_API_KEY,centerOpt));
+        if(sortMode==='center'&&hasGps&&merged.length===0){
+          merged=mergeUnique(merged,await kakaoKeywordSearch(query,env.KAKAO_REST_API_KEY,{sortDistance:false}));
+        }
         if(merged.length>=25)break;
       }
     }
