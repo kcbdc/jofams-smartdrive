@@ -1693,8 +1693,14 @@ function drawRoute(route=state.route,{fit=true}={}){
   const data={type:'Feature',geometry:{type:'LineString',coordinates:route.geometry},properties:{}};
   if(state.map.getSource('route'))state.map.getSource('route').setData(data);else{
     state.map.addSource('route',{type:'geojson',data});
-    state.map.addLayer({id:'route-shadow',type:'line',source:'route',paint:{'line-color':'#ffffff','line-width':10,'line-opacity':.95}});
-    state.map.addLayer({id:'route-main',type:'line',source:'route',paint:{'line-color':'#1c72f2','line-width':7,'line-opacity':1}});
+    state.map.addLayer({id:'route-shadow',type:'line',source:'route',paint:{'line-color':'#ffffff','line-width':11,'line-opacity':.96}});
+    state.map.addLayer({id:'route-main',type:'line',source:'route',paint:{'line-color':'#1677ff','line-width':7.5,'line-opacity':1}});
+    // 진행방향 화살표를 경로선 위에 직접 배치한다. 줌에 따라 반복 간격을 조절해 복잡도를 낮춘다.
+    state.map.addLayer({
+      id:'route-direction-arrows',type:'symbol',source:'route',
+      layout:{'symbol-placement':'line','symbol-spacing':95,'text-field':'➤','text-size':20,'text-keep-upright':false,'text-rotation-alignment':'map','text-pitch-alignment':'map','text-allow-overlap':false},
+      paint:{'text-color':'#ffffff','text-halo-color':'#1677ff','text-halo-width':2.2,'text-opacity':.96}
+    });
   }
   const traffic=buildTrafficGeoJson(route);
   if(state.map.getSource('route-traffic'))state.map.getSource('route-traffic').setData(traffic);else{
@@ -1703,7 +1709,7 @@ function drawRoute(route=state.route,{fit=true}={}){
   }
   if(fit){const b=new maplibregl.LngLatBounds();route.geometry.forEach(p=>b.extend(p));state.map.fitBounds(b,{padding:{top:100,bottom:310,left:36,right:36},duration:650})}
 }
-function clearRouteLayer(){['route-traffic','route-main','route-shadow'].forEach(id=>{if(state.map?.getLayer(id))state.map.removeLayer(id)});['route-traffic','route'].forEach(id=>{if(state.map?.getSource(id))state.map.removeSource(id)})}
+function clearRouteLayer(){['route-direction-arrows','route-traffic','route-main','route-shadow'].forEach(id=>{if(state.map?.getLayer(id))state.map.removeLayer(id)});['route-traffic','route'].forEach(id=>{if(state.map?.getSource(id))state.map.removeSource(id)})}
 
 /* ---------- LOCATION ---------- */
 async function locate(fly=true){
@@ -3498,12 +3504,41 @@ function updateProgressUI(idx){
   }else $('nextManeuver').classList.add('hidden');
 
   updateSafetyUI(idx,safetyCandidates);updateSectionAverageSpeed(idx);updateLaneGuide(idx);updateVms(idx);
+  updateDriveRoadGuideSign(idx,first,second,seg,remain);
+  updateSpeedTrafficLight(safetyCandidates);
   checkArrival(remain);
   fitManeuverDistanceText();
 }
 /* 좌측 하단 원형 배지: 제한속도 정보가 있으면 기존처럼 제한속도를 표시하고,
    없으면 원을 아예 숨긴 뒤 전방에서 가장 임박한 도로표지판(주의/보호구역/대형차 제한 등)이 있을 때만
    그 배지를 대신 보여준다. 어느 쪽도 없으면 원/배지를 모두 숨기고, 현재속도(km/h)만 계속 표시한다. */
+function routeNumberFromRoadName(name=''){
+  const m=String(name||'').match(/(?:국도|지방도|고속도로)?\s*(\d{1,4})\s*(?:번|호선)?/);
+  return m?m[1]:'';
+}
+function updateDriveRoadGuideSign(idx,first,second,seg,remain){
+  const box=$('driveRoadGuideSign');if(!box)return;
+  const road=String(first?.name||first?.guidance||seg?.name||'').trim();
+  const secondary=String(second?.guidance||second?.name||seg?.name||'진행 방향을 확인하세요').trim();
+  const d=first?Math.max(10,guideDisplayDistance(idx,first,remain)):Math.max(0,Number(remain)||0);
+  if(!road||d>1800){box.classList.add('hidden');return}
+  box.classList.remove('hidden');
+  const no=routeNumberFromRoadName(road)||routeNumberFromRoadName(seg?.name||'');
+  $('driveGuideRouteNo').textContent=no||'안내';
+  $('driveGuidePrimary').textContent=road;
+  $('driveGuideSecondary').textContent=secondary===road?'진행 차로를 유지하세요':secondary;
+  $('driveGuideDistance').textContent=d<10?'곧':km(d);
+}
+function updateSpeedTrafficLight(candidates){
+  const el=$('speedTrafficLight');if(!el)return;
+  const signal=(candidates||[]).find(e=>['signal_camera','signal_speed_camera'].includes(e?.type)&&Number(e.d)>=0&&Number(e.d)<=550);
+  if(!signal){el.classList.add('hidden');el.classList.remove('near','very-near');return}
+  el.classList.remove('hidden');
+  el.classList.toggle('near',Number(signal.d)<=250);
+  el.classList.toggle('very-near',Number(signal.d)<=100);
+  el.title=`${Math.max(10,Math.round(Number(signal.d)||10))}m 앞 신호 단속`;
+}
+
 function renderSpeedOrSignBadge(limit,candidates){
   const circle=$('speedLimit')?.closest('.speed-limit'),badge=$('roadSignBadge');
   const cameraTypes=new Set(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','section_speed_end','bus_lane_camera','mobile_camera']);
@@ -3747,9 +3782,9 @@ async function loadSafetyEvents(route){
     const regionalOthers=[];
     for(const e of supplemental){
       if(e?.type==='section_speed_camera'&&(e.sectionPosition==='start'||e.sectionPosition==='end')){
-        const m=nearestPointOnRoute(Number(e.lng),Number(e.lat),route.geometry||[]);
-        if(m&&Number(m.distance)<=55){
-          regionalSectionNodes.push({...e,routeIndex:Number(m.index),sectionLengthMeters:Number(e.sectionLengthMeters)||0});
+        const m=cameraRouteMatch(Number(e.lng),Number(e.lat),route,Number.isFinite(Number(e.heading))?Number(e.heading):null);
+        if(m&&Number(m.distance)<=32){
+          regionalSectionNodes.push({...e,routeIndex:Number(m.index),routeHeading:Number(m.heading),matchDistance:Number(m.distance),sectionLengthMeters:Number(e.sectionLengthMeters)||0});
         }
       }else if(e?.type!=='section_speed_camera')regionalOthers.push(e);
     }
@@ -3762,7 +3797,35 @@ async function loadSafetyEvents(route){
   renderSafetyMarkers();if(state.currentRouteIndex>=0)updateSafetyUI(state.currentRouteIndex)
 }
 function mergeSafetyEvents(events,geometry){
-  const seen=new Set(),out=[];for(const e of events){let lng=Number(e.lng),lat=Number(e.lat),idx=Number(e.routeIndex);if((!Number.isFinite(lng)||!Number.isFinite(lat))&&Number.isFinite(idx)){const rp=geometry[Math.max(0,Math.min(geometry.length-1,idx))];if(rp){lng=rp[0];lat=rp[1]}}if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;if(!Number.isFinite(idx))idx=nearestIndex(lng,lat,geometry);const p=geometry[idx];if(!p||hav(lat,lng,p[1],p[0])>(String(e.type||'').includes('camera')?45:320))continue;const k=`${e.type}:${Math.round(lat*10000)}:${Math.round(lng*10000)}`;if(seen.has(k))continue;seen.add(k);out.push({...e,lng,lat,routeIndex:idx})}return out.sort((a,b)=>a.routeIndex-b.routeIndex)
+  const priority=e=>{
+    const s=String(e?.source||'');
+    if(/sejong|daejeon/i.test(s))return 0;
+    if(/national-unmanned/i.test(s))return 1;
+    if(/전국무인교통단속|bundled|official/i.test(s))return 2;
+    if(/Kakao/i.test(s))return 3;
+    if(/OpenStreetMap/i.test(s))return 6;
+    return 4;
+  };
+  const sorted=[...(events||[])].sort((a,b)=>priority(a)-priority(b));
+  const seen=new Set(),out=[];
+  for(const e of sorted){
+    let lng=Number(e.lng),lat=Number(e.lat),idx=Number(e.routeIndex);
+    if((!Number.isFinite(lng)||!Number.isFinite(lat))&&Number.isFinite(idx)){
+      const rp=geometry[Math.max(0,Math.min(geometry.length-1,idx))];if(rp){lng=rp[0];lat=rp[1]}
+    }
+    if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;
+    const rm=cameraRouteMatch(lng,lat,state.route,Number.isFinite(Number(e.heading))?Number(e.heading):null);
+    if(String(e.type||'').includes('camera')||e.type==='section_speed_end'){
+      if(!rm||Number(rm.distance)>38)continue;
+      idx=Number(rm.index);
+    }else if(!Number.isFinite(idx))idx=nearestIndex(lng,lat,geometry);
+    const coordKey=`${Math.round(lat*100000)}:${Math.round(lng*100000)}`;
+    const family=(e.type==='section_speed_camera'||e.type==='section_speed_end')?'section':String(e.type||'').replace('signal_speed_camera','speed_camera');
+    const k=`${family}:${coordKey}`;
+    if(seen.has(k))continue;seen.add(k);
+    out.push({...e,lng,lat,routeIndex:idx,routeMatchDistance:Number(rm?.distance)||0});
+  }
+  return out.sort((a,b)=>a.routeIndex-b.routeIndex)
 }
 function clearSafetyMarkers(){for(const m of state.safetyMarkers||[])try{m.remove()}catch{}state.safetyMarkers=[]}
 

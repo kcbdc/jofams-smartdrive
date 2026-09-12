@@ -49,6 +49,23 @@ function flattenApiRows(d){
   return [];
 }
 function firstValue(x,keys){for(const k of keys){const v=x?.[k];if(v!==undefined&&v!==null&&String(v).trim()!=='')return v}return null}
+function normalizeSectionPositionText(raw,place=''){
+  const s=String(raw||'').trim(),p=String(place||'').trim();
+  if(/^(0?1|시점|시작|START)$/i.test(s))return 'start';
+  if(/^(0?2|종점|종료|끝|END)$/i.test(s))return 'end';
+  const t=`${s} ${p}`;
+  if(/구간.*(시점|시작)|(?:시점|시작).*구간|단속\s*시점|진입\s*(전|부|지점)|입구\s*(전|부|지점)/i.test(t))return 'start';
+  if(/구간.*(종점|종료)|(?:종점|종료).*구간|단속\s*종점|진출\s*(후|부|지점)|출구\s*(후|부|지점)/i.test(t))return 'end';
+  return '';
+}
+function directionDegrees(raw){
+  const s=String(raw||'').trim().toUpperCase();
+  const n=Number(s);if(Number.isFinite(n)&&n>=0&&n<=360)return n;
+  if(/동향|동쪽|EAST|\bE\b/.test(s))return 90;if(/서향|서쪽|WEST|\bW\b/.test(s))return 270;
+  if(/남향|남쪽|SOUTH|\bS\b/.test(s))return 180;if(/북향|북쪽|NORTH|\bN\b/.test(s))return 0;
+  if(/북동|NE/.test(s))return 45;if(/남동|SE/.test(s))return 135;if(/남서|SW/.test(s))return 225;if(/북서|NW/.test(s))return 315;
+  return null;
+}
 function normalizeRegionalCamera(x,source){
   const lat=Number(firstValue(x,['latitude','lat','LAT','la','LA','위도','Y','y','crdntY','CRDNT_Y','gpsY','GPS_Y']));
   const lng=Number(firstValue(x,['longitude','lng','lon','lot','LNG','LO','경도','X','x','crdntX','CRDNT_X','gpsX','GPS_X']));
@@ -57,18 +74,16 @@ function normalizeRegionalCamera(x,source){
   const rawType=String(firstValue(x,['cameraType','type','카메라구분','단속구분','regltSe','REG_SE','trctSe','TRCT_SE'])||'');
   const place=String(firstValue(x,['installationLocation','설치장소','location','LOCPLC','instlLc','INSTL_LC','addr','address','도로명주소'])||'무인단속카메라').trim();
   const posRaw=String(firstValue(x,['단속구간위치구분','sectionPosition','sectionPos','SECTION_POSITION','SECTION_POS','구간위치구분','구간구분','시종점구분'])||'').trim();
-  let sectionPosition=/^(0?1|시점|시작)$/i.test(posRaw)?'start':/^(0?2|종점|종료|끝)$/i.test(posRaw)?'end':'';
+  let sectionPosition=normalizeSectionPositionText(posRaw,place);
   const isSection=/구간/.test(rawType)||Boolean(sectionPosition);
-  if(isSection&&!sectionPosition){
-    if(/(시점|시작|진입|입구)/.test(place))sectionPosition='start';
-    else if(/(종점|종료|출구|진출)/.test(place))sectionPosition='end';
-  }
   let type=/신호/.test(rawType)&&/(과속|속도)/.test(rawType)?'signal_speed_camera':/신호/.test(rawType)?'signal_camera':isSection?'section_speed_camera':'speed_camera';
   const sectionLength=Number(firstValue(x,['과속단속구간길이','sectionLength','SECTION_LENGTH','구간길이']));
   return {type,lat,lng,maxspeed:Number.isFinite(sp)&&sp>0?sp:null,source,sectionPosition,
     sectionLengthMeters:Number.isFinite(sectionLength)&&sectionLength>0?(sectionLength<=50?sectionLength*1000:sectionLength):0,
     roadName:String(firstValue(x,['roadRouteName','roadName','도로노선명','도로명','rn','ROAD_NM','roadNm'])||'').trim(),
-    direction:String(firstValue(x,['roadRouteDirection','roadDirection','도로노선방향','direction','DIRECTION','drct'])||'').trim(),
+    direction:String(firstValue(x,['roadRouteDirection','roadDirection','도로노선방향','direction','DIRECTION','drct','방향'])||'').trim(),
+    heading:directionDegrees(firstValue(x,['roadRouteDirection','roadDirection','도로노선방향','direction','DIRECTION','drct','방향'])),
+    providerId:String(firstValue(x,['id','ID','관리번호','카메라관리번호','trctId','TRCT_ID','cctvId','CCTV_ID'])||'').trim(),
     name:place};
 }
 async function fetchRegionalCameraEndpoint(base,points,env,source){
@@ -78,12 +93,28 @@ async function fetchRegionalCameraEndpoint(base,points,env,source){
   for(const p of points){west=Math.min(west,p.lng);east=Math.max(east,p.lng);south=Math.min(south,p.lat);north=Math.max(north,p.lat)}
   for(const ep of endpoints){
     try{
-      const u=new URL(ep);u.searchParams.set('serviceKey',decodedKey(key));u.searchParams.set('pageNo','1');u.searchParams.set('numOfRows','1000');u.searchParams.set('type','json');u.searchParams.set('_type','json');
-      const r=await fetch(u,{headers:{accept:'application/json, application/xml;q=0.8'}});if(!r.ok)continue;
-      const text=await r.text();let d=null;try{d=JSON.parse(text)}catch{continue}
-      const rows=flattenApiRows(d);if(!rows.length)continue;
+      const collected=[];
+      for(let page=1;page<=20;page++){
+        const u=new URL(ep);
+        u.searchParams.set('serviceKey',decodedKey(key));
+        u.searchParams.set('pageNo',String(page));u.searchParams.set('numOfRows','500');
+        u.searchParams.set('pageIndex',String(page));u.searchParams.set('pageUnit','500');
+        u.searchParams.set('type','json');u.searchParams.set('_type','json');u.searchParams.set('dataTy','json');
+        const r=await fetch(u,{headers:{accept:'application/json, application/xml;q=0.8'}});if(!r.ok)break;
+        const text=await r.text();let d=null;try{d=JSON.parse(text)}catch{break}
+        const rows=flattenApiRows(d);if(!rows.length)break;
+        collected.push(...rows);
+        const total=Number(d?.response?.body?.totalCount??d?.totalCount??d?.totalCnt);
+        if(rows.length<500||(Number.isFinite(total)&&page*500>=total))break;
+      }
+      if(!collected.length)continue;
       const out=[];
-      for(const row of rows){const c=normalizeRegionalCamera(row,source);if(!c)continue;if(c.lng<west-.08||c.lng>east+.08||c.lat<south-.08||c.lat>north+.08)continue;if(cameraNearRoute(c,points,35))out.push(c)}
+      for(const row of collected){
+        const c=normalizeRegionalCamera(row,source);if(!c)continue;
+        if(c.lng<west-.05||c.lng>east+.05||c.lat<south-.05||c.lat>north+.05)continue;
+        // 지역 원자료는 좌표가 정확한 경우가 많으므로 주행경로 28m 이내만 채택한다.
+        if(cameraNearRoute(c,points,28))out.push(c)
+      }
       return out;
     }catch{}
   }
