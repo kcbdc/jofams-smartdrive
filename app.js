@@ -3526,19 +3526,20 @@ function updateDriveRoadGuideSign(idx,first,second,seg,remain){
   const box=$('driveRoadGuideSign');if(!box)return;
   const road=String(first?.name||first?.guidance||seg?.name||'').trim();
   const secondary=String(second?.guidance||second?.name||seg?.name||'진행 방향을 확인하세요').trim();
-  const d=first?Math.max(10,guideDisplayDistance(idx,first,remain)):Math.max(10,Number(remain)||10);
-  if(!road||d>1800){box.classList.add('hidden');return}
+  const d=first?Math.max(10,guideDisplayDistance(idx,first,remain)):Math.max(0,Number(remain)||0);
+  const stack=document.querySelector('#driveView .maneuver-stack');
+  if(!road||d>1800){
+    box.classList.add('hidden');
+    stack?.classList.remove('top-guide-active');
+    return
+  }
   box.classList.remove('hidden');
+  stack?.classList.add('top-guide-active');
   const no=routeNumberFromRoadName(road)||routeNumberFromRoadName(seg?.name||'');
   $('driveGuideRouteNo').textContent=no||'안내';
   $('driveGuidePrimary').textContent=road;
   $('driveGuideSecondary').textContent=secondary===road?'진행 차로를 유지하세요':secondary;
   $('driveGuideDistance').textContent=guideUiDistanceText(d);
-  // 통합 최상단 레이어의 주 안내는 maneuverRoad/Distance가 실제 표시를 담당한다.
-  if(first){
-    $('maneuverRoad').textContent=first.name||first.guidance||road||'교차로';
-    $('maneuverDistance').textContent=guideUiDistanceText(d);
-  }
 }
 function updateSpeedTrafficLight(candidates){
   const el=$('speedTrafficLight');if(!el)return;

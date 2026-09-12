@@ -8,21 +8,37 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
   <meta name="theme-color" content="#ffffff" />
   <meta name="description" content="다임·순식·훈민과 함께하는 조팸스 내비" />
+
+
+
+
+
+
+
+
+
+
+<title>조팸스 내비</title>
+  <link rel="canonical" href="https://jofams.pages.dev/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="조팸스 내비" />
+  <meta property="og:url" content="https://jofams.pages.dev/" />
   <meta property="og:title" content="조팸스 내비 | 빠르고 똑똑한 스마트 길안내" />
   <meta property="og:description" content="정확한 길안내·안전운전·실시간 지역정보를 한 번에" />
-  <meta property="og:image" content="https://jofams.pages.dev/assets/share-preview.png" />
-  <meta property="og:image:width" content="512" />
-  <meta property="og:image:height" content="250" />
+  <meta property="og:image" content="https://jofams.pages.dev/assets/kakao-share-7666.jpg" />
+  <meta property="og:image:secure_url" content="https://jofams.pages.dev/assets/kakao-share-7666.jpg" />
+  <meta property="og:image:type" content="image/jpeg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="조팸스 내비 스마트 길안내" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="조팸스 내비" />
   <meta name="twitter:description" content="빠르고 똑똑한 스마트 길안내" />
-  <meta name="twitter:image" content="https://jofams.pages.dev/assets/share-preview.png" />
-  <title>조팸스 내비</title>
+  <meta name="twitter:image" content="https://jofams.pages.dev/assets/kakao-share-7666.jpg" />
+
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.6.5" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.6.6" />
 </head>
 <body>
   <main id="app">
@@ -189,23 +205,17 @@
     <section id="driveView" class="screen drive-view hidden">
       <video id="driveArCamera" class="drive-ar-camera" autoplay playsinline muted aria-hidden="true"></video>
       <div id="driveArCharacter" class="drive-ar-character" aria-hidden="true"><img id="driveArCharacterImg" src="/assets/daim_car_rear.png" alt=""></div>
-      <div id="driveRoadGuideSign" class="drive-road-guide-sign hidden maneuver-main" aria-live="polite">
-        <div id="maneuverIcon" class="drive-guide-turn maneuver-svg" aria-hidden="true"></div>
-        <div class="drive-guide-copy">
-          <div class="drive-guide-distance-row">
-            <b id="maneuverDistance">--m</b>
-            <span id="driveGuideRouteNo" class="drive-guide-route-no">안내</span>
-          </div>
-          <strong id="maneuverRoad">경로 안내</strong>
-          <small id="driveGuideSecondary">진행 방향을 확인하세요</small>
+      <div id="driveRoadGuideSign" class="drive-road-guide-sign hidden" aria-live="polite">
+        <span id="driveGuideRouteNo" class="drive-guide-route-no">안내</span>
+        <div><b id="driveGuidePrimary">전방 도로 안내</b><small id="driveGuideSecondary">진행 방향을 확인하세요</small></div>
+        <strong id="driveGuideDistance">--m</strong>
+      </div>
+      <div class="maneuver-stack">
+        <div class="maneuver-main">
+          <div id="maneuverIcon" class="maneuver-svg"></div>
+          <div><b id="maneuverDistance">--m</b><span id="maneuverRoad">경로 안내</span></div>
         </div>
-        <div id="nextManeuver" class="drive-guide-next hidden">
-          <span id="nextManeuverIcon"></span>
-          <b id="nextManeuverDistance">--m</b>
-          <small id="nextManeuverText">다음 안내</small>
-        </div>
-        <span id="driveGuidePrimary" class="drive-guide-primary-shadow" aria-hidden="true"></span>
-        <strong id="driveGuideDistance" class="drive-guide-distance-shadow" aria-hidden="true">--m</strong>
+        <div id="nextManeuver" class="maneuver-next hidden"><span id="nextManeuverIcon"></span><b id="nextManeuverDistance">--m</b><small id="nextManeuverText">다음 안내</small></div>
       </div>
 
       <button id="driveVoiceBtn" class="floating-voice" aria-label="음성안내"><span data-icon="mic"></span></button>
@@ -752,8 +762,8 @@
     <div id="toast" class="toast hidden"></div>
   </main>
 
-  <script>window.__JOFAMS_BUILD__="7.6.6.5";</script>
+  <script>window.__JOFAMS_BUILD__="7.6.6.6";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.6.5"></script>
+  <script type="module" src="/app.js?v=7.6.6.6"></script>
 </body>
 </html>

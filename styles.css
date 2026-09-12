@@ -1744,127 +1744,61 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .speed-traffic-light{width:26px;height:42px;margin:-29px auto 4px;padding:4px;border-radius:8px;background:#222;display:grid;gap:2px;place-items:center;box-shadow:0 3px 8px rgba(0,0,0,.3)}.speed-traffic-light.hidden{display:none!important}.speed-traffic-light i{display:block;width:8px;height:8px;border-radius:50%;background:#4a4a4a}.speed-traffic-light i:nth-child(3){background:#38c96a;box-shadow:0 0 7px rgba(56,201,106,.8)}.speed-traffic-light.near i:nth-child(3){background:#4a4a4a;box-shadow:none}.speed-traffic-light.near i:nth-child(2){background:#ffc329;box-shadow:0 0 7px rgba(255,195,41,.9)}.speed-traffic-light.very-near i:nth-child(2){background:#4a4a4a;box-shadow:none}.speed-traffic-light.very-near i:nth-child(1){background:#ff4e45;box-shadow:0 0 8px rgba(255,78,69,.95)}
 @media(max-width:520px){.drive-road-guide-sign{width:min(72vw,360px);top:calc(var(--safeT) + 8px);min-height:54px;padding:7px 9px}.drive-road-guide-sign b{font-size:15px}.drive-road-guide-sign strong{font-size:14px}.drive-guide-route-no{min-width:34px;height:31px;font-size:11px}}
 
-/* === 7.6.6.5 unified top guidance / voice-display sync === */
-#driveView .maneuver-stack{display:none!important}
 
+/* === 7.6.6.6: 7.6.6.4 상단 T맵형 레이어 복원 + 중복/겹침 방지 === */
 #driveRoadGuideSign.drive-road-guide-sign{
-  position:absolute!important;
   z-index:60!important;
-  top:calc(var(--safeT) + 8px)!important;
-  left:8px!important;
-  right:8px!important;
-  transform:none!important;
-  width:auto!important;
-  min-height:104px!important;
-  max-height:128px!important;
-  padding:10px 12px!important;
-  display:grid!important;
-  grid-template-columns:78px minmax(0,1fr) auto!important;
-  align-items:center!important;
-  gap:10px!important;
-  border-radius:18px!important;
-  background:linear-gradient(180deg,rgba(9,102,67,.985),rgba(4,76,51,.985))!important;
-  border:1px solid rgba(255,255,255,.75)!important;
-  box-shadow:0 7px 22px rgba(0,35,25,.28)!important;
-  color:#fff!important;
-  pointer-events:none!important;
+  top:calc(var(--safeT) + 10px)!important;
 }
-#driveRoadGuideSign.hidden{display:none!important}
-#driveRoadGuideSign .drive-guide-turn{
-  width:72px!important;height:72px!important;
-  display:grid!important;place-items:center!important;
-}
-#driveRoadGuideSign .drive-guide-turn svg{width:68px!important;height:68px!important}
-#driveRoadGuideSign .drive-guide-copy{min-width:0!important}
-#driveRoadGuideSign .drive-guide-distance-row{
-  display:flex!important;align-items:center!important;gap:8px!important;min-width:0!important;
-}
-#driveRoadGuideSign #maneuverDistance{
-  display:block!important;
-  flex:0 0 auto!important;
-  font-size:38px!important;
-  line-height:1!important;
-  font-weight:950!important;
-  letter-spacing:-.055em!important;
-  color:#fff!important;
-  overflow:visible!important;
-}
-#driveRoadGuideSign #maneuverRoad{
-  display:block!important;
-  margin-top:5px!important;
-  font-size:18px!important;
-  line-height:1.15!important;
-  font-weight:900!important;
-  white-space:nowrap!important;
-  overflow:hidden!important;
-  text-overflow:ellipsis!important;
-}
-#driveRoadGuideSign #driveGuideSecondary{
-  display:block!important;
-  margin-top:4px!important;
-  font-size:11px!important;
-  color:#d9ffec!important;
-  white-space:nowrap!important;
-  overflow:hidden!important;
-  text-overflow:ellipsis!important;
-}
-#driveRoadGuideSign .drive-guide-route-no{
-  min-width:34px!important;height:28px!important;padding:0 6px!important;
-  border-radius:7px!important;background:#1457b8!important;border:2px solid #fff!important;
-  display:grid!important;place-items:center!important;font-size:10px!important;font-weight:900!important;
-}
-#driveRoadGuideSign .drive-guide-next{
-  min-width:92px!important;
-  max-width:126px!important;
-  min-height:64px!important;
-  padding-left:10px!important;
-  border-left:1px solid rgba(255,255,255,.28)!important;
-  display:grid!important;
-  grid-template-columns:26px 1fr!important;
-  grid-template-rows:auto auto!important;
-  align-items:center!important;
-  column-gap:5px!important;
-}
-#driveRoadGuideSign .drive-guide-next.hidden{display:none!important}
-#driveRoadGuideSign .drive-guide-next>span{grid-row:1/3;width:26px;height:26px}
-#driveRoadGuideSign .drive-guide-next svg{width:100%;height:100%}
-#driveRoadGuideSign .drive-guide-next b{font-size:15px!important;white-space:nowrap!important}
-#driveRoadGuideSign .drive-guide-next small{
-  font-size:8px!important;color:rgba(255,255,255,.8)!important;
-  white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
-}
-#driveRoadGuideSign .drive-guide-primary-shadow,
-#driveRoadGuideSign .drive-guide-distance-shadow{display:none!important}
 
-/* 최상단 안내 아래로 다른 레이어들을 내려 겹침 방지 */
-#driveView .floating-voice{top:calc(var(--safeT) + 122px)!important;right:12px!important;z-index:39!important}
-#driveView .floating-ar{top:calc(var(--safeT) + 184px)!important;right:12px!important;z-index:39!important}
-#driveView .safety-alert{top:calc(var(--safeT) + 122px)!important;z-index:40!important}
-#driveView .vms-banner{top:calc(var(--safeT) + 190px)!important;z-index:37!important}
-#driveView .traffic-status{top:calc(var(--safeT) + 232px)!important;z-index:36!important}
-#driveView #laneAssistLayer{top:calc(var(--safeT) + 278px)!important;z-index:35!important}
-
-/* 통합 레이어 안에서는 과거 maneuver-main 크기 규칙을 무효화 */
-#driveRoadGuideSign.maneuver-main{min-width:0!important}
-#driveRoadGuideSign.maneuver-main.long-distance #maneuverDistance,
-#driveRoadGuideSign.maneuver-main.very-long-distance #maneuverDistance{
-  font-size:34px!important;letter-spacing:-.06em!important;
+/* 상단 안내가 표시되는 동안 같은 회전/거리 정보를 다시 보여주는 기존 maneuver 레이어는 숨김 */
+#driveView .maneuver-stack.top-guide-active{
+  display:none!important;
 }
+
+/* 상단 안내를 가장 우선하고 나머지 레이어는 아래쪽 안전영역으로 분리 */
+#driveView .floating-voice{
+  top:calc(var(--safeT) + 84px)!important;
+  right:12px!important;
+  z-index:44!important;
+}
+#driveView .floating-ar{
+  top:calc(var(--safeT) + 140px)!important;
+  right:12px!important;
+  z-index:44!important;
+}
+#driveView .safety-alert{
+  top:calc(var(--safeT) + 84px)!important;
+  left:12px!important;
+  right:72px!important;
+  z-index:43!important;
+}
+#driveView .vms-banner{
+  top:calc(var(--safeT) + 150px)!important;
+  left:12px!important;
+  right:72px!important;
+  z-index:42!important;
+}
+#driveView .traffic-status{
+  top:calc(var(--safeT) + 194px)!important;
+  left:12px!important;
+  right:72px!important;
+  z-index:41!important;
+}
+#driveView #laneAssistLayer{
+  top:calc(var(--safeT) + 242px)!important;
+  z-index:40!important;
+}
+
+/* 좁은 화면에서는 상단 안내 폭을 유지하고 보조 레이어를 조금 더 아래로 내린다 */
 @media(max-width:520px){
   #driveRoadGuideSign.drive-road-guide-sign{
-    left:6px!important;right:6px!important;top:calc(var(--safeT) + 6px)!important;
-    min-height:94px!important;max-height:116px!important;
-    grid-template-columns:64px minmax(0,1fr) auto!important;padding:8px 9px!important;gap:7px!important;
+    top:calc(var(--safeT) + 8px)!important;
   }
-  #driveRoadGuideSign .drive-guide-turn{width:60px!important;height:60px!important}
-  #driveRoadGuideSign .drive-guide-turn svg{width:58px!important;height:58px!important}
-  #driveRoadGuideSign #maneuverDistance{font-size:32px!important}
-  #driveRoadGuideSign #maneuverRoad{font-size:15px!important}
-  #driveRoadGuideSign .drive-guide-next{min-width:78px!important;max-width:96px!important}
-  #driveView .floating-voice{top:calc(var(--safeT) + 108px)!important}
-  #driveView .floating-ar{top:calc(var(--safeT) + 166px)!important}
-  #driveView .safety-alert{top:calc(var(--safeT) + 108px)!important}
-  #driveView .vms-banner{top:calc(var(--safeT) + 176px)!important}
-  #driveView .traffic-status{top:calc(var(--safeT) + 216px)!important}
-  #driveView #laneAssistLayer{top:calc(var(--safeT) + 258px)!important}
+  #driveView .floating-voice{top:calc(var(--safeT) + 72px)!important}
+  #driveView .floating-ar{top:calc(var(--safeT) + 126px)!important}
+  #driveView .safety-alert{top:calc(var(--safeT) + 72px)!important;right:66px!important}
+  #driveView .vms-banner{top:calc(var(--safeT) + 136px)!important;right:66px!important}
+  #driveView .traffic-status{top:calc(var(--safeT) + 178px)!important;right:66px!important}
+  #driveView #laneAssistLayer{top:calc(var(--safeT) + 222px)!important}
 }
