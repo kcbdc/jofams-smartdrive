@@ -1,3 +1,8 @@
+/share.jpg
+  Content-Type: image/jpeg
+  Cache-Control: public, max-age=86400
+  Access-Control-Allow-Origin: *
+
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
