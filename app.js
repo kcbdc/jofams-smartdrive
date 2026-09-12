@@ -3492,7 +3492,7 @@ function updateProgressUI(idx){
   if(first){
     const d=guideDisplayDistance(idx,first,remain);
     $('maneuverIcon').innerHTML=turnSvg(first.type);
-    $('maneuverDistance').textContent=guideUiDistanceText(d);
+    $('maneuverDistance').textContent=km(Math.max(10,d));
     $('maneuverRoad').textContent=first.name||first.guidance||'교차로';
     maybeSpeakGuide(first,d);
   }else{
@@ -3505,13 +3505,11 @@ function updateProgressUI(idx){
     const d2=Math.max(8,guideDisplayDistance(idx,second,remain));
     $('nextManeuver').classList.remove('hidden');
     $('nextManeuverIcon').innerHTML=turnSvg(second.type);
-    $('nextManeuverDistance').textContent=guideUiDistanceText(d2);
+    $('nextManeuverDistance').textContent=km(d2);
     $('nextManeuverText').textContent=second.guidance||'다음 안내';
   }else $('nextManeuver').classList.add('hidden');
 
   updateSafetyUI(idx,safetyCandidates);updateSectionAverageSpeed(idx);updateLaneGuide(idx);updateVms(idx);
-  updateDriveRoadGuideSign(idx,first,second,seg,remain);
-  updateSpeedTrafficLight(safetyCandidates);
   checkArrival(remain);
   fitManeuverDistanceText();
 }
@@ -3521,34 +3519,6 @@ function updateProgressUI(idx){
 function routeNumberFromRoadName(name=''){
   const m=String(name||'').match(/(?:국도|지방도|고속도로)?\s*(\d{1,4})\s*(?:번|호선)?/);
   return m?m[1]:'';
-}
-function updateDriveRoadGuideSign(idx,first,second,seg,remain){
-  const box=$('driveRoadGuideSign');if(!box)return;
-  const road=String(first?.name||first?.guidance||seg?.name||'').trim();
-  const secondary=String(second?.guidance||second?.name||seg?.name||'진행 방향을 확인하세요').trim();
-  const d=first?Math.max(10,guideDisplayDistance(idx,first,remain)):Math.max(0,Number(remain)||0);
-  const stack=document.querySelector('#driveView .maneuver-stack');
-  if(!road||d>1800){
-    box.classList.add('hidden');
-    stack?.classList.remove('top-guide-active');
-    return
-  }
-  box.classList.remove('hidden');
-  stack?.classList.add('top-guide-active');
-  const no=routeNumberFromRoadName(road)||routeNumberFromRoadName(seg?.name||'');
-  $('driveGuideRouteNo').textContent=no||'안내';
-  $('driveGuidePrimary').textContent=road;
-  $('driveGuideSecondary').textContent=secondary===road?'진행 차로를 유지하세요':secondary;
-  $('driveGuideDistance').textContent=guideUiDistanceText(d);
-}
-function updateSpeedTrafficLight(candidates){
-  const el=$('speedTrafficLight');if(!el)return;
-  const signal=(candidates||[]).find(e=>['signal_camera','signal_speed_camera'].includes(e?.type)&&Number(e.d)>=0&&Number(e.d)<=550);
-  if(!signal){el.classList.add('hidden');el.classList.remove('near','very-near');return}
-  el.classList.remove('hidden');
-  el.classList.toggle('near',Number(signal.d)<=250);
-  el.classList.toggle('very-near',Number(signal.d)<=100);
-  el.title=`${Math.max(10,Math.round(Number(signal.d)||10))}m 앞 신호 단속`;
 }
 
 function renderSpeedOrSignBadge(limit,candidates){

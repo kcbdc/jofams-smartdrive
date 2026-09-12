@@ -1745,60 +1745,150 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 @media(max-width:520px){.drive-road-guide-sign{width:min(72vw,360px);top:calc(var(--safeT) + 8px);min-height:54px;padding:7px 9px}.drive-road-guide-sign b{font-size:15px}.drive-road-guide-sign strong{font-size:14px}.drive-guide-route-no{min-width:34px;height:31px;font-size:11px}}
 
 
-/* === 7.6.6.6: 7.6.6.4 상단 T맵형 레이어 복원 + 중복/겹침 방지 === */
-#driveRoadGuideSign.drive-road-guide-sign{
-  z-index:60!important;
-  top:calc(var(--safeT) + 10px)!important;
-}
+/* === 7.6.6.7: 7.6.6.3 주행 안내 레이어 복원 === */
+.maneuver-stack{position:absolute;z-index:30;top:calc(var(--safeT) + 8px);left:8px;width:min(500px,calc(100vw - 72px))}.maneuver-main{min-height:112px;padding:13px 16px;display:grid;grid-template-columns:100px 1fr;align-items:center;border-radius:0 0 16px 0;background:rgba(2,91,60,.95);color:#fff;box-shadow:0 8px 20px rgba(0,45,30,.22)}.maneuver-svg{width:88px;height:88px}.maneuver-svg svg{width:100%;height:100%}.maneuver-main b{display:block;font-size:52px;line-height:.95;letter-spacing:-.05em}.maneuver-main span{display:block;margin-top:9px;font-size:17px}.maneuver-next{display:inline-flex;align-items:center;gap:8px;margin-top:0;padding:9px 13px;background:rgba(5,92,65,.95);color:#fff;border-radius:0 0 12px 0;box-shadow:0 6px 14px rgba(0,45,30,.16)}.maneuver-next>span{width:30px;height:30px;display:grid;place-items:center}.maneuver-next svg{width:100%;height:100%}.maneuver-next b{font-size:20px}.maneuver-next small{font-size:10px;color:rgba(255,255,255,.84)}.floating-voice{position:absolute;z-index:31;top:calc(var(--safeT) + 30px);right:15px;width:56px;height:56px;border:2px solid #a9cbff;border-radius:50%;background:linear-gradient(180deg,#4669ff,#2795ef);color:#fff;box-shadow:0 8px 18px rgba(32,88,190,.28);display:grid;place-items:center}.floating-voice svg{width:25px;height:25px}.speed-panel{position:absolute;z-index:24;left:14px;bottom:180px;width:90px;padding:8px 8px 9px;border-radius:18px;background:rgba(255,255,255,.95);box-shadow:0 8px 22px rgba(20,38,68,.16);text-align:center}.speed-limit{width:62px;height:62px;margin:0 auto 5px;border:5px solid #e83e20;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff}.speed-limit small{font-size:7px;color:#444}.speed-limit b{font-size:29px;line-height:.9}.speed-panel>strong{font-size:28px}.speed-panel>span{display:block;font-size:8px;color:var(--muted)}.drive-bottom-card{position:absolute;z-index:32;left:8px;right:8px;bottom:calc(var(--safeB) + 8px);height:116px;padding:12px 14px;border-radius:24px;background:rgba(255,255,255,.98);box-shadow:0 14px 30px rgba(20,38,68,.18);display:grid;grid-template-columns:56px 1fr 56px;align-items:center;gap:9px}.drive-bottom-icon{width:48px;height:48px;border:0;background:transparent;color:#111;display:grid;place-items:center}.drive-bottom-icon svg{width:30px;height:30px}.drive-bottom-summary{text-align:center;min-width:0}.drive-bottom-summary>small{display:block;font-size:12px;color:#5e6878}.drive-bottom-summary>div{display:flex;justify-content:center;gap:17px;align-items:baseline;margin-top:4px}.drive-bottom-summary>div b{font-size:27px;letter-spacing:-.04em}.drive-bottom-summary>span{display:block;margin-top:3px;font-size:10px;color:var(--muted)}
 
-/* 상단 안내가 표시되는 동안 같은 회전/거리 정보를 다시 보여주는 기존 maneuver 레이어는 숨김 */
-#driveView .maneuver-stack.top-guide-active{
-  display:none!important;
-}
+/* MOVING CHARACTER CAR */
+.character-car-marker{width:94px;height:76px;position:relative;pointer-events:none;transform-origin:50% 60%}.character-car-marker::after{content:"";position:absolute;left:19px;right:19px;bottom:2px;height:12px;border-radius:50%;back
+.maneuver-main{min-height:112px;padding:13px 16px;display:grid;grid-template-columns:100px 1fr;align-items:center;border-radius:0 0 16px 0;background:rgba(2,91,60,.95);color:#fff;box-shadow:0 8px 20px rgba(0,45,30,.22)}.maneuver-svg{width:88px;height:88px}.maneuver-svg svg{width:100%;height:100%}.maneuver-main b{display:block;font-size:52px;line-height:.95;letter-spacing:-.05em}.maneuver-main span{display:block;margin-top:9px;font-size:17px}.maneuver-next{display:inline-flex;align-items:center;gap:8px;margin-top:0;padding:9px 13px;background:rgba(5,92,65,.95);color:#fff;border-radius:0 0 12px 0;box-shadow:0 6px 14px rgba(0,45,30,.16)}.maneuver-next>span{width:30px;height:30px;display:grid;place-items:center}.maneuver-next svg{width:100%;height:100%}.maneuver-next b{font-size:20px}.maneuver-next small{font-size:10px;color:rgba(255,255,255,.84)}.floating-voice{position:absolute;z-index:31;top:calc(var(--safeT) + 30px);right:15px;width:56px;height:56px;border:2px solid #a9cbff;border-radius:50%;background:linear-gradient(180deg,#4669ff,#2795ef);color:#fff;box-shadow:0 8px 18px rgba(32,88,190,.28);display:grid;place-items:center}.floating-voice svg{width:25px;height:25px}.speed-panel{position:absolute;z-index:24;left:14px;bottom:180px;width:90px;padding:8px 8px 9px;border-radius:18px;background:rgba(255,255,255,.95);box-shadow:0 8px 22px rgba(20,38,68,.16);text-align:center}.speed-limit{width:62px;height:62px;margin:0 auto 5px;border:5px solid #e83e20;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff}.speed-limit small{font-size:7px;color:#444}.speed-limit b{font-size:29px;line-height:.9}.speed-panel>strong{font-size:28px}.speed-panel>span{display:block;font-size:8px;color:var(--muted)}.drive-bottom-card{position:absolute;z-index:32;left:8px;right:8px;bottom:calc(var(--safeB) + 8px);height:116px;padding:12px 14px;border-radius:24px;background:rgba(255,255,255,.98);box-shadow:0 14px 30px rgba(20,38,68,.18);display:grid;grid-template-columns:56px 1fr 56px;align-items:center;gap:9px}.drive-bottom-icon{width:48px;height:48px;border:0;background:transparent;color:#111;display:grid;place-items:center}.drive-bottom-icon svg{width:30px;height:30px}.drive-bottom-summary{text-align:center;min-width:0}.drive-bottom-summary>small{display:block;font-size:12px;color:#5e6878}.drive-bottom-summary>div{display:flex;justify-content:center;gap:17px;align-items:baseline;margin-top:4px}.drive-bottom-summary>div b{font-size:27px;letter-spacing:-.04em}.drive-bottom-summary>span{display:block;margin-top:3px;font-size:10px;color:var(--muted)}
 
-/* 상단 안내를 가장 우선하고 나머지 레이어는 아래쪽 안전영역으로 분리 */
-#driveView .floating-voice{
-  top:calc(var(--safeT) + 84px)!important;
-  right:12px!important;
-  z-index:44!important;
-}
-#driveView .floating-ar{
-  top:calc(var(--safeT) + 140px)!important;
-  right:12px!important;
-  z-index:44!important;
-}
-#driveView .safety-alert{
-  top:calc(var(--safeT) + 84px)!important;
-  left:12px!important;
-  right:72px!important;
-  z-index:43!important;
-}
-#driveView .vms-banner{
-  top:calc(var(--safeT) + 150px)!important;
-  left:12px!important;
-  right:72px!important;
-  z-index:42!important;
-}
-#driveView .traffic-status{
-  top:calc(var(--safeT) + 194px)!important;
-  left:12px!important;
-  right:72px!important;
-  z-index:41!important;
-}
-#driveView #laneAssistLayer{
-  top:calc(var(--safeT) + 242px)!important;
-  z-index:40!important;
-}
+/* MOVING CHARACTER CAR */
+.character-car-marker{width:94px;height:76px;position:relative;pointer-events:none;transform-origin:50% 60%}.character-car-marker::after{content:"";position:absolute;left:19px;right:19px;bottom:2px;height:12px;border-radius:50%;background:rgba(8,22,42,.28);filter:blur(5px)}.character-car-marker img{position:relative;z-index:1;width:100%;height:100%;
+.maneuver-next{display:inline-flex;align-items:center;gap:8px;margin-top:0;padding:9px 13px;background:rgba(5,92,65,.95);color:#fff;border-radius:0 0 12px 0;box-shadow:0 6px 14px rgba(0,45,30,.16)}.maneuver-next>span{width:30px;height:30px;display:grid;place-items:center}.maneuver-next svg{width:100%;height:100%}.maneuver-next b{font-size:20px}.maneuver-next small{font-size:10px;color:rgba(255,255,255,.84)}.floating-voice{position:absolute;z-index:31;top:calc(var(--safeT) + 30px);right:15px;width:56px;height:56px;border:2px solid #a9cbff;border-radius:50%;background:linear-gradient(180deg,#4669ff,#2795ef);color:#fff;box-shadow:0 8px 18px rgba(32,88,190,.28);display:grid;place-items:center}.floating-voice svg{width:25px;height:25px}.speed-panel{position:absolute;z-index:24;left:14px;bottom:180px;width:90px;padding:8px 8px 9px;border-radius:18px;background:rgba(255,255,255,.95);box-shadow:0 8px 22px rgba(20,38,68,.16);text-align:center}.speed-limit{width:62px;height:62px;margin:0 auto 5px;border:5px solid #e83e20;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff}.speed-limit small{font-size:7px;color:#444}.speed-limit b{font-size:29px;line-height:.9}.speed-panel>strong{font-size:28px}.speed-panel>span{display:block;font-size:8px;color:var(--muted)}.drive-bottom-card{position:absolute;z-index:32;left:8px;right:8px;bottom:calc(var(--safeB) + 8px);height:116px;padding:12px 14px;border-radius:24px;background:rgba(255,255,255,.98);box-shadow:0 14px 30px rgba(20,38,68,.18);display:grid;grid-template-columns:56px 1fr 56px;align-items:center;gap:9px}.drive-bottom-icon{width:48px;height:48px;border:0;background:transparent;color:#111;display:grid;place-items:center}.drive-bottom-icon svg{width:30px;height:30px}.drive-bottom-summary{text-align:center;min-width:0}.drive-bottom-summary>small{display:block;font-size:12px;color:#5e6878}.drive-bottom-summary>div{display:flex;justify-content:center;gap:17px;align-items:baseline;margin-top:4px}.drive-bottom-summary>div b{font-size:27px;letter-spacing:-.04em}.drive-bottom-summary>span{display:block;margin-top:3px;font-size:10px;color:var(--muted)}
 
-/* 좁은 화면에서는 상단 안내 폭을 유지하고 보조 레이어를 조금 더 아래로 내린다 */
-@media(max-width:520px){
-  #driveRoadGuideSign.drive-road-guide-sign{
-    top:calc(var(--safeT) + 8px)!important;
+/* MOVING CHARACTER CAR */
+.character-car-marker{width:94px;height:76px;position:relative;pointer-events:none;transform-origin:50% 60%}.character-car-marker::after{content:"";position:absolute;left:19px;right:19px;bottom:2px;height:12px;border-radius:50%;background:rgba(8,22,42,.28);filter:blur(5px)}.character-car-marker img{position:relative;z-index:1;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 5px 6px rgba(0,0,0,.2))}
+/* 7.6.1.9: 도보 안내용 캐릭터(자동차 X)는 자동차보다 세로로 긴 비율이라 폭을 좁혀 표시한다. */
+.character-car-marker.walking-character-marker{width:58px;height:76px}
+.character-car-marker.walking-character-marker::after{left:16px;right:16px;width:auto}
+.ar-character-car.walking-character-marker{width:78px!important}
+.ar-character-car.walking-character-marker img{width:64px!important;height:82px!important;tran
+.floating-voice{position:absolute;z-index:31;top:calc(var(--safeT) + 30px);right:15px;width:56px;height:56px;border:2px solid #a9cbff;border-radius:50%;background:linear-gradient(180deg,#4669ff,#2795ef);color:#fff;box-shadow:0 8px 18px rgba(32,88,190,.28);display:grid;place-items:center}.floating-voice svg{width:25px;height:25px}.speed-panel{position:absolute;z-index:24;left:14px;bottom:180px;width:90px;padding:8px 8px 9px;border-radius:18px;background:rgba(255,255,255,.95);box-shadow:0 8px 22px rgba(20,38,68,.16);text-align:center}.speed-limit{width:62px;height:62px;margin:0 auto 5px;border:5px solid #e83e20;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff}.speed-limit small{font-size:7px;color:#444}.speed-limit b{font-size:29px;line-height:.9}.speed-panel>strong{font-size:28px}.speed-panel>span{display:block;font-size:8px;color:var(--muted)}.drive-bottom-card{position:absolute;z-index:32;left:8px;right:8px;bottom:calc(var(--safeB) + 8px);height:116px;padding:12px 14px;border-radius:24px;background:rgba(255,255,255,.98);box-shadow:0 14px 30px rgba(20,38,68,.18);display:grid;grid-template-columns:56px 1fr 56px;align-items:center;gap:9px}.drive-bottom-icon{width:48px;height:48px;border:0;background:transparent;color:#111;display:grid;place-items:center}.drive-bottom-icon svg{width:30px;height:30px}.drive-bottom-summary{text-align:center;min-width:0}.drive-bottom-summary>small{display:block;font-size:12px;color:#5e6878}.drive-bottom-summary>div{display:flex;justify-content:center;gap:17px;align-items:baseline;margin-top:4px}.drive-bottom-summary>div b{font-size:27px;letter-spacing:-.04em}.drive-bottom-summary>span{display:block;margin-top:3px;font-size:10px;color:var(--muted)}
+
+/* MOVING CHARACTER CAR */
+.character-car-marker{width:94px;height:76px;position:relative;pointer-events:none;transform-origin:50% 60%}.character-car-marker::after{content:"";position:absolute;left:19px;right:19px;bottom:2px;height:12px;border-radius:50%;background:rgba(8,22,42,.28);filter:blur(5px)}.character-car-marker img{position:relative;z-index:1;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 5px 6px rgba(0,0,0,.2))}
+/* 7.6.1.9: 도보 안내용 캐릭터(자동차 X)는 자동차보다 세로로 긴 비율이라 폭을 좁혀 표시한다. */
+.character-car-marker.walking-character-marker{width:58px;height:76px}
+.character-car-marker.walking-character-marker::after{left:16px;right:16px;width:auto}
+.ar-character-car.walking-character-marker{width:78px!important}
+.ar-character-car.walking-character-marker img{width:64px!important;height:82px!important;transform:none!important;filter:drop-shadow(0 8px 10px rgba(0,0,0,.35))!important}
+.ar-character-car.walking-character-marker::after{display:none}.destination-pin{width:34px;height:42px;position:relative}.destination-pin::before{content:"";position:absolute;left:4px;top:0;width:27px;height:27px;background:#ef4d49;border:3px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 4px 10px rg
+.floating-ar{position:absolute;z-index:31;top:calc(var(--safeT) + 94px);right:19px;width:48px;height:48px;border:2px solid #bed7ff;border-radius:50%;background:rgba(255,255,255,.96);color:#1964dd;box-shadow:0 8px 18px rgba(32,88,190,.18);font-weight:900;font-size:14px}
+.drive-menu-actions{grid-template-columns:repeat(4,1fr)}.ar-letter{width:28px!important;height:28px!important;display:grid;place-items:center;border:2px solid currentColor;border-radius:8px;font-size:10px;font-weight:900;color:#236be5}
+
+.ar-view{position:fixed;z-index:150;inset:0;background:#02070d;overflow:hidden}.ar-view video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.ar-view canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.ar-overlay-shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,10,18,.30),transparent 32%,transparent 68%,rgba(4,10,18,.36))}
+.ar-header{position:absolute;z-index:3;top:calc(var(--safeT) + 10px);left:10px;right:10px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.ar-close-btn{height:42px;padding:0 13px;border:1px solid rgba(255,255,255,.25);border-radius:14px;background:rgba(10,23,38,.72);color:#fff;display:flex;align-items:center;gap:6px;backdrop-filter:blur(10px)}.ar-close-btn span{width:17px;height:17px}.ar-close-btn b{font-size:10px}.ar-guide-card{min-width:min(280px,70vw);padding:11px 14px;border-radius:17px;background:rgba(8,25,46,.83);color:#fff;display:grid;grid-template-columns:58px 1fr;align-items:center;gap:8px;backdrop-filter:blur(10px);box-shadow:0 10px 24px rgba(0,0,0,.22)}.ar-turn-icon{width:52px;height:52px}.ar-turn-icon svg{width:100%;height:100%}.ar-guide-card b{display:block;font-size:29px;line-height:1}.ar-guide-card small{display:block;margin-top:5px;font-size:10px;color:#dbe8fb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ar-center-distance{position:absolute;z-index:3;left:50%;top:43%;transform:translate(-50%,-50%);font-size:42px;font-weight:900;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.55)}
+.ar-character-car{position:absolute;z-index:4;right:10px;bottom:calc(var(--safeB) + 96px);width:138px;height:122px;display:flex;align-items:flex-end;justify-content:flex-end}.ar-character-car img{width:116px;height:92px;object-fit:contain;filter:drop-shadow(0 8px 10px rgba(0,0,0,.35))}.ar-character-car>div{position:absolute;right:96px;bottom:61px;width:150px;padding:10px 11px;border-radius:15px 15px 4px 15px;background:rgba(255,255,255,.96);color:#172033;font-size:10px;font-weight:800;line-height:1.45;word-break:keep-all;box-shadow:0 7px 20px rgba(0,0,0,.18)}
+.ar-bottom-info{position:absolute;z-index:4;left:10px;bottom:calc(var(--safeB) + 12px);display:flex;gap:8px}.ar-bottom-info>div{min-height:70px;padding:10px 14px;border-radius:17px;background:rgba(7,20,35,.82);color:#fff;backdrop-filter:blur(9px);box-shadow:0 8px 18px rgba(0,0,0,.22)}.ar-bottom-info strong{font-size:34px;line-height:1}.ar-bottom-info span{display:block;margin-t
+.safety-alert{position:absolute;top:calc(env(safe-area-inset-top,0px) + 126px);left:50%;transform:translateX(-50%);z-index:34;width:min(calc(100% - 28px),430px);min-height:64px;display:grid;grid-template-columns:46px 1fr auto;align-items:center;gap:10px;padding:9px 13px 9px 10px;border-radius:18px;background:rgba(24,31,46,.94);color:#fff;box-shadow:0 10px 28px rgba(0,0,0,.22);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);pointer-events:none}
+.safety-alert.hidden{display:none!important}.safety-alert.camera{background:linear-gradient(135deg,rgba(181,28,36,.96),rgba(114,15,22,.96))}.safety-alert.school{background:linear-gradient(135deg,rgba(245,164,18,.97),rgba(210,112,5,.97));color:#171717}
+.safety-alert.warn{background:linear-gradient(135deg,rgba(255,196,0,.97),rgba(214,150,0,.97));color:#171717}.safety-alert.reg{background:linear-gradient(135deg,rgba(198,32,38,.97),rgba(140,14,20,.97))}.safety-alert.ins{background:linear-gradient(135deg,rgba(34,110,214,.97),rgba(20,70,150,.97))}.safety-alert.silver{background:linear-gradient(135deg,rgba(237,108,2,.97),rgba(180,74,2,.97))}.safety-alert.truck{background:linear-gradient(135deg,rgba(140,90,20,.97),rgba(90,58,10,.97))}
+.road-sign-badge{display:none;width:64px;height:64px;margin:7px auto 0;border-radius:50%;place-items:center;color:#fff;font-weight:800;box-shadow:0 4px 10px rgba(0,0,0,.18);text-align:center;line-height:1.05}
+.road-sign-badge b{display:block;font-size:15px}.road-sign-badge small{display:block;font-size:9px;opacity:.9;margin-top:1px}
+.road-sign-badge.camera{background:linear-gradient(135deg,rgba(181,28,36,.96),rgba(114,15,22,.96))}.road-sign-badge.school{background:linear-gradient(135deg,rgba(245,164,18,.97),rgba(210,112,5,.97));color:#171717}
+.road-sign-badge.warn{background:linear-gradient(135deg,rgba(255,196,0,.97),rgba(214,150,0,.97));color:#171717}.road-sign-badge.reg{background:linear-gradient(135deg,rgba(198,32,38,.97),rgba(140,14,20,.97))}.road-sign-badge.ins{background:linear-gradient(135deg,rgba(34,110,214,.97),rgba(20,70,150,.97))}.road-sign-badge.silver{background:linear-gradient(135deg,rgba(237,108,2,.97),rgba(180,74,2,.97))}.road-sign-badge.truck{background:linear-gradient(135deg,rgba(140,90,20,.97),rgba(90,58,10,.97))}.road-sign-badge.incident{background:linear-gradient(135deg,rgba(190,39,45,.97),rgba(114,17,25,.97))}.road-sign-badge.construction{background:linear-gradient(135deg,rgba(236,129,10,.97),rgba(188,82,5,.97))}.road-sign-badge.mobile{background:linear-gradient(135deg,rgba(107,70,184,.97),rgba(62,39,128,.97))}
+.safety-alert-icon{width:46px;height:46px;border-radius:15px;background:rgba(255,255,255,.16);display:grid;place-items:center;font-weight:900;font-size:15px;text-align:center;line-height:1.05}.safety-alert.school .safety-alert-icon{background:rgba(255,255,255,.35)}
+.safety-alert-icon svg{width:28px;height:28px;display:block}
+.safety-alert-copy{min-width:0;display:flex;flex-direction:column;gap:3px}.safety-alert-copy b{font-size:15px;line-heig
+.vms-banner{position:absolute;z-index:33;top:calc(var(--safeT) + 164px);left:50%;transform:translateX(-50%);width:min(440px,calc(100% - 120px));min-height:44px;padding:8px 12px;border-radius:13px;background:rgba(23,36,52,.94);color:#f8ffb3;box-shadow:0 8px 20px rgba(0,0,0,.22);display:flex;align-items:center;gap:9px;pointer-events:none}.vms-banner>span{padding:4px 7px;border-radius:7px;background:#162332;color:#72ff94;font-size:9px;font-weight:900}.vms-banner b{font-size:11px;line-height:1.35;word-break:keep-all}.vms-banner.hidden{display:none!important}
+.lane-guide-overlay{position:absolute;z-index:31;left:50%;bottom:calc(var(--safeB) + 122px);transform:translateX(-50%);min-width:180px;max-width:min(410px,70vw);padding:7px 10px;border-radius:12px;background:rgba(12,18,28,.82);color:#fff;text-align:center;backdrop-filter:blur(8px);pointer-events:none}.lane-guide-overlay>small{display:block;color:#c8d4e6;font-size:8px;margin-bottom:4px}.lane-guide-overlay>div{display:flex;justify-content:center;gap:3px}.lane-guide-overlay span{min-width:40px;padding:4px 5px;border-radius:6px;background:rgba(255,255,255,.12);font-size:18px;font-weight:900}.lane-guide-overlay span.recommended{background:#176cef;color:#fff}.lane-guide-overlay span small{display:block;font-size:7px;line-height:1.15;font-weight:700;word-break:keep-all}.lane-guide-overlay.hidden{display:none!important}
+.drive-map-controls{position:absolute;z-index:41;right:78px;bottom:calc(var(--safeB) + 145px);display:flex;gap:7px;padding:6px;border-radius:17px;background:rgba(255,255,255,.96);box-shadow:0 9px 24px rgba(20,38,68,.22)}.drive-map-controls.hidden{display:none!important}.drive-map-controls button{width:44px;height:44px;border:0;border-radius:12px;background:#f0f4fa;color:#152033;font-size:18px;font-weight:900}.drive-map-controls button:first-child{font-size:12px}.drive-map-controls button.active{background:#176cef;color:#fff}#mapSatelliteBtn{font-size:12px!important}
+.komsco-shorts-block.hidden{display:none}
+.komsco-shorts-scroll{display:flex;gap:10px;overflow-x:auto;padding-bottom:2px;scroll-snap-type:x proximity}
+.komsco-short-card{flex:0 0 118px;scroll-snap-align:start;border:0;background:transparent;text-align:left;padding:0}
+.komsco-short-thumb-wrap{position:relative;display:block;width:118px;height:158px;border-radius:14px;overflow:hidden;background:#eef0f3}
+.komsco-short-thumb-wrap img{width:100%;height:100%;object-fit:cover;display:block}
+.komsco-short-thumb-wrap i{position:absolute;left:50%;top:50%;width:30px;height:30px;transform:translate(-50%,-50%);color:#fff;filter:drop-shadow(0 2px 5px rgba(0,0,0,.45))}
+.komsco-short-thumb-wrap small{position:absolute;right:5px;bottom:5px;padding:2px 5px;border-radius:6px;background:rgba(0,0,0,.6);color:#fff;font-size:9px}
+.komsco-short-card b{display:block;margin-top:6px;font-size:11px;line-height:1.35;max-height:2.7em;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.komsco-short-s
+.traffic-status{position:absolute;z-index:25;right:14px;bottom:180px;max-width:min(250px,calc(100vw - 130px));min-height:58px;padding:10px 12px;border-radius:18px;background:rgba(255,255,255,.96);box-shadow:0 8px 22px rgba(20,38,68,.16);display:grid;grid-template-columns:14px 1fr;gap:9px;align-items:center;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.traffic-dot{width:12px;height:12px;border-radius:50%;background:#8b95a5;box-shadow:0 0 0 4px rgba(139,149,165,.13)}.traffic-status b{display:block;font-size:14px;line-height:1.15}.traffic-status small{display:block;margin-top:3px;color:#687386;font-size:10px;line-height:1.25;word-break:keep-all}.traffic-smooth .traffic-dot{background:#16a36a;box-shadow:0 0 0 4px rgba(22,163,106,.13)}.traffic-slow .traffic-dot{background:#f0a400;box-shadow:0 0 0 4px rgba(240,164,0,.14)}.traffic-delayed .traffic-dot{background:#ef6c35;box-shadow:0 0 0 4px rgba(239,108,53,.14)}.traffic-severe .traffic-dot{background:#d82f3c;box-shadow:0 0 0 4px rgba(216,47,60,.14)}
+.safety-alert.incident{background:linear-gradient(135deg,rgba(190,39,45,.97),rgba(114,17,25,.97))}.safety-alert.construction{background:linear-gradient(135deg,rgba(236,129,10,.97),rgba(188,82,5,.97));color:#fff}.safety-alert.mobile{background:linear-gradient(135deg,rgba(107,70,184,.97),rgba(62,39,128,.97))}
+.safety-map-marker.incident{background:#d82f3c}.safety-map-marker.construction{background:#ed8612}.safety-map-marker.mobile{background:#7650be}
+.safety-map-marker.warn{background:#ffc400;color:#171717}.safety-map-marker.silver{background:#ed6c02}.safety-map-marker.truck{background:#8c5a14}
+@media(max-width:420px){.traffic-status{right:10px;bottom:176px;max-width:205px;padding:9px 10px}.traffic-status small{font-size:9px}}
+.traffic-legend{margin:4px 0 14px;padding:12px;border-radius:16px;background:#f6f8fb}.traffic-legend>b{display:block;margin-bottom:8px;font-size:13px}.traffic-legend>div{display:grid;grid-template-columns:10px 72px 1fr;gap:7px;align-items:center;padding:4px 0}.traffic-legend>div>span{width:9px;height:9px;border-radius:50%}.traffic-legend .smooth{background:#16a36a}.traffic-legend .slow{background:#f0a400}.traffic-legend .delayed{background:#ef6c35}.traffic-legend .severe{background:#d82f3c}.traffic-legend strong{font-size:11px}.traffic-legend small{font-size:10px;color:#6b7585;text-align:right}.safety-alert{top:calc(env(safe-area-inset-top,0px) + 174px)}
+@media(max-width:420px){.safety-alert{top:calc(env(safe-area-inset-top,0px) + 166px)}}
+.speed-panel{position:absolute;z-index:24;left:14px;bottom:180px;width:90px;padding:8px 8px 9px;border-radius:18px;background:rgba(255,255,255,.95);box-shadow:0 8px 22px rgba(20,38,68,.16);text-align:center}.speed-limit{width:62px;height:62px;margin:0 auto 5px;border:5px solid #e83e20;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff}.speed-limit small{font-size:7px;color:#444}.speed-limit b{font-size:29px;line-height:.9}.speed-panel>strong{font-size:28px}.speed-panel>span{display:block;font-size:8px;color:var(--muted)}.drive-bottom-card{position:absolute;z-index:32;left:8px;right:8px;bottom:calc(var(--safeB) + 8px);height:116px;padding:12px 14px;border-radius:24px;background:rgba(255,255,255,.98);box-shadow:0 14px 30px rgba(20,38,68,.18);display:grid;grid-template-columns:56px 1fr 56px;align-items:center;gap:9px}.drive-bottom-icon{width:48px;height:48px;border:0;background:transparent;color:#111;display:grid;place-items:center}.drive-bottom-icon svg{width:30px;height:30px}.drive-bottom-summary{text-align:center;min-width:0}.drive-bottom-summary>small{display:block;font-size:12px;color:#5e6878}.drive-bottom-summary>div{display:flex;justify-content:center;gap:17px;align-items:baseline;margin-top:4px}.drive-bottom-summary>div b{font-size:27px;letter-spacing:-.04em}.drive-bottom-summary>span{display:block;margin-top:3px;font-size:10px;color:var(--muted)}
+
+/* MOVING CHARACTER CAR */
+.character-car-marker{width:94px;height:76px;position:relative;pointer-events:none;transform-origin:50% 60%}.character-car-marker::after{content:"";position:absolute;left:19px;right:19px;bottom:2px;height:12px;border-radius:50%;background:rgba(8,22,42,.28);filter:blur(5px)}.character-car-marker img{position:relative;z-index:1;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 5px 6px rgba(0,0,0,.2))}
+/* 7.6.1.9: 도보 안내용 캐릭터(자동차 X)는 자동차보다 세로로 긴 비율이라 폭을 좁혀 표시한다. */
+.character-car-marker.walking-character-marker{width:58px;height:76px}
+.character-car-marker.walking-character-marker::after{left:16px;right:16px;width:auto}
+.ar-character-car.walking-character-marker{width:78px!important}
+.ar-character-car.walking-character-marker img{width:64px!important;height:82px!important;transform:none!important;filter:drop-shadow(0 8px 10px rgba(0,0,0,.35))!important}
+.ar-character-car.walking-character-marker::after{display:none}.destination-pin{width:34px;height:42px;position:relative}.destination-pin::before{content:"";position:absolute;left:4px;top:0;width:27px;height:27px;background:#ef4d49;border:3px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 4px 10px rgba(130,20,20,.28)}
+
+/* DRIVE MENU */
+.bottom-modal,.modal{position:fixed;z-index:100;inset:0;pointer-events:auto}.bottom-modal-backdrop,.modal::before{content:"";position:absolute;inset:0;background:rgba(8,16,27,.38)}.bottom-modal-sheet{position:absolute;left:0;right:0;bottom:0;padding:8px 18px calc(18px + var(--safeB));border-ra
+.lane-assist-layer{
+  position:absolute!important;
+  z-index:28!important;
+  left:50%!important;
+  bottom:158px!important;
+  transform:translateX(-50%)!important;
+  width:auto!important;
+  max-width:min(78vw,320px)!important;
+  min-height:46px!important;
+  padding:6px 9px!important;
+  border-radius:16px!important;
+  background:rgba(20,27,38,.88)!important;
+  color:#fff!important;
+  box-shadow:0 8px 26px rgba(0,0,0,.24)!important;
+  backdrop-filter:blur(10px)!important;
+  display:grid!important;
+  grid-template-columns:34px auto minmax(0,1fr)!important;
+  align-items:center!important;
+  gap:7px!important;
+  pointer-events:none!important;
+}
+.lane-assist-layer.hidden{display:none!important}
+.lane-assist-icon{
+  width:34px!important;
+  height:34px!important;
+  border-radius:11px!important;
+  display:grid!important;
+  place-items:center!important;
+  background:rgba(255,255,255,.10)!important;
+  color:#fff!important;
+  font-size:21px!important;
+  font-weight:900!important;
+}
+.lane-assist-copy{
+  display:flex!important;
+  flex-direction:column!important;
+  min-width:72px!important;
+  line-height:1.05!important;
+}
+.lane-assist-copy small{font-size:8px!important;color:#aeb9c8!important}
+.lane-assist-copy b{
+  margin-top:2px!important;
+  font-size:12px!important;
+  color:#fff!important;
+  white-space:nowrap!important;
+}
+.lane-assist-road{
+  min-width:0!important;
+  max-width:120px!important;
+  padding-left:7px!important;
+  border-left:1px solid rgba(255,255,255,.14)!important;
+  font-size:9px!important;
+  color:#c9d2df!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+@media (orientation:landscape){
+  .lane-assist-layer{
+    bottom:96px!important;
+    min-height:42px!important;
+    padding:5px 8px!important;
+    max-width:min(48vw,300px)!important;
   }
-  #driveView .floating-voice{top:calc(var(--safeT) + 72px)!important}
-  #driveView .floating-ar{top:calc(var(--safeT) + 126px)!important}
-  #driveView .safety-alert{top:calc(var(--safeT) + 72px)!important;right:66px!important}
-  #driveView .vms-banner{top:calc(var(--safeT) + 136px)!important;right:66px!important}
-  #driveView .traffic-status{top:calc(var(--safeT) + 178px)!important;right:66px!important}
-  #driveView #laneAssistLayer{top:calc(var(--safeT) + 222px)!important}
+  .lane-assist-icon{width:32px!important;height:32px!important;font-size:19px!important}
+  .lane-assist-copy b{font-size:11px!important}
+  .lane-assist-road{max-width:110px!important;font-size:8px!important}
 }
