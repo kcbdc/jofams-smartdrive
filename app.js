@@ -4257,9 +4257,24 @@ function stopRouteSimulation({resumeGps=true}={}){
       state.deadReckoningDistance=restoreDistance;
     }
 
-    state.stationaryActive=Boolean(state.preSimulationStationaryActive)||state.user.speed<=0.05;
-    state.stationaryGpsAnchor=state.preSimulationStationaryGpsAnchor
-      ?{...state.preSimulationStationaryGpsAnchor}:null;
+    // 모의주행 종료 직후에는 이전 speed/맵매칭 잔여값을 재사용하지 않는다.
+    // 실제 GPS에서 이동이 다시 확인될 때까지 캐릭터를 복귀 지점에 완전히 고정한다.
+    state.user.speed=0;
+    state.user.simulation=false;
+    state.lastRealSpeedMps=0;
+    state.lastSpeedSample=null;
+    state.gpsEstimated=false;
+    state.deadReckoningLastAt=Date.now();
+    state.stationaryActive=true;
+    state.navigationStartAt=Date.now();
+    state.navigationStartReleased=false;
+    state.navigationStartAnchor={
+      lat:Number(state.user.lat),
+      lng:Number(state.user.lng),
+      routeDistance:Number.isFinite(restoreDistance)?restoreDistance:Number(state.user.routeDistance)
+    };
+    state.stationaryGpsAnchor={...state.navigationStartAnchor};
+    state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false};
 
     ensureUserMarker();
     const el=state.userMarker?.getElement?.();
@@ -4287,6 +4302,12 @@ function stopRouteSimulation({resumeGps=true}={}){
     startWatch();
     locate(false).then(u=>{
       if(!u||!state.tripStartedAt||state.simulationActive)return;
+      // 첫 실 GPS 한 번만으로는 모의주행 후 정지 latch를 해제하지 않는다.
+      // applyGps()의 실제 이동 확인 조건을 통과한 경우에만 navigationStartReleased가 true가 된다.
+      if(!state.navigationStartReleased){
+        state.user.speed=0;
+        state.stationaryActive=true;
+      }
       ensureUserMarker();
       const el=state.userMarker?.getElement?.();
       if(el){el.style.opacity='1';el.style.visibility='visible';el.style.display='block'}
