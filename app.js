@@ -3042,7 +3042,13 @@ function updateLaneGuide(idx){
   el.classList.remove('hidden');
   if(key!==state.activeLaneGuideKey&&model.d<=1000){
     state.activeLaneGuideKey=key;
-    speak(`${Math.max(100,Math.round(model.d/100)*100)}미터 앞 ${model.range||model.dir.label}를 이용하세요.`);
+    const upcoming=(state.route?.guides||[]).find(x=>Number(x.routeIndex)>Number(state.currentRouteIndex));
+    const upcomingD=upcoming?guideDisplayDistance(Number(state.currentRouteIndex),upcoming,Infinity):Infinity;
+    // 주요 회전 음성과 겹쳐 다른 거리값이 들리지 않도록, 임박한 회전안내가 없을 때만 차로 음성을 재생한다.
+    if(!Number.isFinite(upcomingD)||upcomingD>1100){
+      const laneMeters=guideUiDistanceMeters(model.d);
+      speak(`${laneMeters}미터 앞 ${model.range||model.dir.label}를 이용하세요.`);
+    }
   }
 }
 
@@ -3486,7 +3492,7 @@ function updateProgressUI(idx){
   if(first){
     const d=guideDisplayDistance(idx,first,remain);
     $('maneuverIcon').innerHTML=turnSvg(first.type);
-    $('maneuverDistance').textContent=km(Math.max(10,d));
+    $('maneuverDistance').textContent=guideUiDistanceText(d);
     $('maneuverRoad').textContent=first.name||first.guidance||'교차로';
     maybeSpeakGuide(first,d);
   }else{
@@ -3499,7 +3505,7 @@ function updateProgressUI(idx){
     const d2=Math.max(8,guideDisplayDistance(idx,second,remain));
     $('nextManeuver').classList.remove('hidden');
     $('nextManeuverIcon').innerHTML=turnSvg(second.type);
-    $('nextManeuverDistance').textContent=km(d2);
+    $('nextManeuverDistance').textContent=guideUiDistanceText(d2);
     $('nextManeuverText').textContent=second.guidance||'다음 안내';
   }else $('nextManeuver').classList.add('hidden');
 
@@ -3520,14 +3526,19 @@ function updateDriveRoadGuideSign(idx,first,second,seg,remain){
   const box=$('driveRoadGuideSign');if(!box)return;
   const road=String(first?.name||first?.guidance||seg?.name||'').trim();
   const secondary=String(second?.guidance||second?.name||seg?.name||'진행 방향을 확인하세요').trim();
-  const d=first?Math.max(10,guideDisplayDistance(idx,first,remain)):Math.max(0,Number(remain)||0);
+  const d=first?Math.max(10,guideDisplayDistance(idx,first,remain)):Math.max(10,Number(remain)||10);
   if(!road||d>1800){box.classList.add('hidden');return}
   box.classList.remove('hidden');
   const no=routeNumberFromRoadName(road)||routeNumberFromRoadName(seg?.name||'');
   $('driveGuideRouteNo').textContent=no||'안내';
   $('driveGuidePrimary').textContent=road;
   $('driveGuideSecondary').textContent=secondary===road?'진행 차로를 유지하세요':secondary;
-  $('driveGuideDistance').textContent=d<10?'곧':km(d);
+  $('driveGuideDistance').textContent=guideUiDistanceText(d);
+  // 통합 최상단 레이어의 주 안내는 maneuverRoad/Distance가 실제 표시를 담당한다.
+  if(first){
+    $('maneuverRoad').textContent=first.name||first.guidance||road||'교차로';
+    $('maneuverDistance').textContent=guideUiDistanceText(d);
+  }
 }
 function updateSpeedTrafficLight(candidates){
   const el=$('speedTrafficLight');if(!el)return;
@@ -3596,6 +3607,13 @@ function guideDisplayDistance(idx,guide,remain){
   if(Number(remain)>8)return Math.min(Number(remain),Math.max(15,Number(guide?.distance)||Number(remain)));
   return Math.max(0,Number(remain)||0);
 }
+function guideUiDistanceMeters(d){
+  const n=Math.max(10,Number(d)||10);
+  if(n<100)return Math.max(10,Math.round(n/10)*10);
+  if(n<1000)return Math.max(100,Math.round(n/50)*50);
+  return Math.max(1000,Math.round(n/100)*100);
+}
+function guideUiDistanceText(d){return km(guideUiDistanceMeters(d))}
 
 function maybeSpeakGuide(g,d){
   const cat=guideVoiceCategory(g);
@@ -3604,7 +3622,8 @@ function maybeSpeakGuide(g,d){
   const speedKmh=Math.max(0,(Number(state.user?.speed)||0)*3.6);
   const trigger=(cat==='ic'||cat==='fork'||cat==='toll')?(speedKmh>=70?450:300):(speedKmh>=60?260:190);
   if(d>trigger||d<8)return;
-  const meters=d<100?Math.max(20,Math.round(d/10)*10):Math.max(100,Math.round(d/50)*50);
+  const meters=guideUiDistanceMeters(d);
+  // 화면에 표시되는 거리와 음성안내의 거리값은 반드시 같은 공통 값을 사용한다.
   let text='';
   if(cat==='left')text=`${meters}미터 앞 좌회전입니다.`;
   else if(cat==='right')text=`${meters}미터 앞 우회전입니다.`;
