@@ -505,7 +505,7 @@ async function loadStaticCameraEvents(route){
     if(!routeMatch||!Number.isFinite(Number(routeMatch.index)))continue;
     const idx=Math.max(0,Math.min(geometry.length-1,Number(routeMatch.index)));
     const p=geometry[idx]; if(!p)continue;
-    const d=Number(routeMatch.distance); if(!Number.isFinite(d)||d>120)continue;
+    const d=Number(routeMatch.distance); if(!Number.isFinite(d)||d>180)continue;
     const maxspeed=Number(pickField(row,['제한속도','lmttVe','speedLimit']))||0;
     const protectedArea=String(pickField(row,['보호구역구분','protectedArea'])).trim();
     const roadName=String(pickField(row,['도로노선명','도로명','roadName'])).trim();
@@ -3272,7 +3272,16 @@ function startNavigation(){
   state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false};state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};state.routeLockedDistance=0;state.routeLockedAt=Date.now();state.offRouteHits=0;state.offRouteHeadingHits=0;state.offRouteSince=0;state.arrivalCandidateSince=0; // 새 주행마다 상보필터 상태 초기화
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
   if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 바로 요청해야 브라우저가 확실히 허용한다.
-  initializeDriveSummary();startWatch();ensureUserMarker();updateCarMarkerImage();drawRoute(state.route,{fit:false});updateDriving(true);if(state.routeMode==='car')startLiveRouteRefresh();else stopLiveRouteRefresh();applyNightMode();setTimeout(tryLandscapeFullscreen,100);}
+  initializeDriveSummary();startWatch();ensureUserMarker();updateCarMarkerImage();drawRoute(state.route,{fit:false});updateDriving(true);
+  if(state.routeMode==='car'){
+    // 최초 안내 시작 시 현재 선택 경로 기준으로 단속카메라 데이터를 반드시 다시 로드한다.
+    // 경로선택 화면에서 비동기 로딩이 끝나지 않았거나 취소되더라도 여기서 보장한다.
+    loadSafetyEvents(state.route).catch(e=>console.warn('navigation camera load failed',e));
+    startLiveRouteRefresh();
+  }else{
+    state.safetyEvents=[];clearSafetyMarkers();hideSafetyAlert();stopLiveRouteRefresh();
+  }
+  applyNightMode();setTimeout(tryLandscapeFullscreen,100);}
 function stopNavigation(){
   stopRouteSimulation({resumeGps:false});if($('laneAssistLayer'))$('laneAssistLayer').classList.add('hidden');
   const finishedDestination=state.destination?{...state.destination}:null;
@@ -3887,7 +3896,14 @@ async function loadSafetyEvents(route){
     }
     supplemental=[...regionalOthers,...buildSectionSpeedEvents(regionalSectionNodes,route)];
   }catch(e){if(seq!==state.safetyRequestSeq)return;console.warn('supplemental safety fetch failed',e)}
-  const merged=mergeSafetyEvents([...primary,...official,...supplemental],route.geometry);
+  let merged=mergeSafetyEvents([...primary,...official,...supplemental],route.geometry);
+  const mergedCameraCount=merged.filter(e=>String(e.type||'').includes('camera')||e.type==='section_speed_end').length;
+  if(mergedCameraCount===0&&official.length){
+    console.warn('[JOFAMS camera] merged camera count is zero; restoring official route cameras directly');
+    const nonCamera=merged.filter(e=>!(String(e.type||'').includes('camera')||e.type==='section_speed_end'));
+    const officialCameras=official.filter(e=>String(e.type||'').includes('camera')||e.type==='section_speed_end');
+    merged=[...nonCamera,...officialCameras].sort((a,b)=>(Number(a.routeIndex)||0)-(Number(b.routeIndex)||0));
+  }
   state.safetyEvents=merged;
   loadItsTraffic(route).then(()=>{if(state.tripStartedAt)updateDriving(true)}).catch(()=>{});
   applyRouteSpeedLimitHints(route,merged);
@@ -3896,6 +3912,9 @@ async function loadSafetyEvents(route){
   setTimeout(()=>{
     if(seq===state.safetyRequestSeq&&state.route?.geometry?.length&&state.safetyEvents?.length)renderSafetyMarkers();
   },350);
+  setTimeout(()=>{
+    if(seq===state.safetyRequestSeq&&state.route?.geometry?.length&&state.safetyEvents?.length)renderSafetyMarkers();
+  },1200);
   if(state.currentRouteIndex>=0)updateSafetyUI(state.currentRouteIndex)
 }
 function mergeSafetyEvents(events,geometry){
@@ -3916,10 +3935,19 @@ function mergeSafetyEvents(events,geometry){
       const rp=geometry[Math.max(0,Math.min(geometry.length-1,idx))];if(rp){lng=rp[0];lat=rp[1]}
     }
     if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;
-    const rm=cameraRouteMatch(lng,lat,state.route,Number.isFinite(Number(e.heading))?Number(e.heading):null);
-    if(String(e.type||'').includes('camera')||e.type==='section_speed_end'){
-      if(!rm||Number(rm.distance)>120)continue;
-      idx=Number(rm.index);
+    let rm=null;
+    const isCamera=String(e.type||'').includes('camera')||e.type==='section_speed_end';
+    if(isCamera){
+      // loadStaticCameraEvents/buildSectionSpeedEvents에서 이미 routeIndex가 확정된 항목은
+      // 두 번째 거리 필터를 적용하지 않는다. 이중 필터 때문에 실제 카메라가 전부 사라질 수 있었다.
+      if(Number.isFinite(idx)&&geometry[Math.max(0,Math.min(geometry.length-1,idx))]){
+        const rp=geometry[Math.max(0,Math.min(geometry.length-1,idx))];
+        rm={index:idx,distance:Number(e.routeMatchDistance)||0,heading:null,lng:rp[0],lat:rp[1]};
+      }else{
+        rm=cameraRouteMatch(lng,lat,state.route,Number.isFinite(Number(e.heading))?Number(e.heading):null);
+        if(!rm||Number(rm.distance)>180)continue;
+        idx=Number(rm.index);
+      }
     }else if(!Number.isFinite(idx))idx=nearestIndex(lng,lat,geometry);
     const coordKey=`${Math.round(lat*100000)}:${Math.round(lng*100000)}`;
     const family=(e.type==='section_speed_camera'||e.type==='section_speed_end')?'section':String(e.type||'').replace('signal_speed_camera','speed_camera');
@@ -3980,11 +4008,15 @@ function routeSnappedCameraItems(items){
   if(g.length<2)return items||[];
   const projected=[];
   for(const e of items||[]){
-    const match=nearestPointOnRoute(Number(e.lng),Number(e.lat),g);
-    if(!match||!Number.isFinite(match.index)||Number(match.distance)>120)continue;
-    const idx=Math.max(0,Math.min(g.length-1,Number(match.index)));
-    const p=g[idx];
-    projected.push({...e,lng:p[0],lat:p[1],routeIndex:idx,__routeM:Number(cum[idx])||0,__srcDist:Number(match.distance)||0});
+    let idx=Number(e.routeIndex),srcDist=Number(e.routeMatchDistance)||0;
+    if(!Number.isFinite(idx)){
+      const match=nearestPointOnRoute(Number(e.lng),Number(e.lat),g);
+      if(!match||!Number.isFinite(match.index)||Number(match.distance)>180)continue;
+      idx=Number(match.index);srcDist=Number(match.distance)||0;
+    }
+    idx=Math.max(0,Math.min(g.length-1,Math.round(idx)));
+    const p=g[idx];if(!p)continue;
+    projected.push({...e,lng:p[0],lat:p[1],routeIndex:idx,__routeM:Number(cum[idx])||0,__srcDist:srcDist});
   }
   projected.sort((a,b)=>a.__routeM-b.__routeM||cameraDisplayPriority(a)-cameraDisplayPriority(b));
   const out=[];
@@ -4011,10 +4043,9 @@ function renderSafetyMarkers(){
   for(const e of state.safetyEvents||[]){
     if(skip.includes(e.type))continue;
     if(cameraTypes.has(e.type)){
-      // 지도 표시용: 현재 위치 주변만 보지 않고 선택된 전체 경로 geometry 위에 있는
-      // 신호/과속/구간/기타 단속카메라를 모두 CCTV SVG로 표시한다.
-      // 실제 음성 경고는 updateSafetyUI의 현재 주행구간 필터를 계속 사용한다.
-      if(!state.tripStartedAt||cameraMatchesRouteRoad(e,state.route?.geometry||[],null,120))cameraItems.push(e)
+      // safetyEvents는 이미 경로 매칭을 통과한 결과다.
+      // 여기서 다시 거리검사를 하면 왕복 분리도로/하천도로 카메라가 중복 제거되므로 그대로 표시한다.
+      cameraItems.push(e);
     }else otherItems.push(e);
   }
 
@@ -5556,3 +5587,5 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.7.3: Daejeon-Sejong corridor public camera dataset + always-visible route camera icons
 
 // build 7.6.7.4: critical camera render filters 55m/45m fixed to 120m; partial dataset failures isolated
+
+// build 7.6.7.5: startNavigation camera reload + remove duplicate camera filters + direct official fallback
