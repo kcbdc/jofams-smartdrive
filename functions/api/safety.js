@@ -9,39 +9,23 @@ const KOROAD_LG='https://opendata.koroad.or.kr/data/rest/frequentzone/lg';
 function publicDataKey(env){return String(env.PUBLIC_DATA_SERVICE_KEY||env.DATA_GO_KR_SERVICE_KEY||'').trim()}
 function decodedKey(v){try{return decodeURIComponent(String(v||'').trim())}catch{return String(v||'').trim()}}
 function normalizeNationalCamera(x){
-  const lat=Number(firstValue(x,['latitude','lat','LAT','위도','la','crdntY','gpsY']));
-  const lng=Number(firstValue(x,['longitude','lng','lon','lot','LNG','경도','lo','crdntX','gpsX']));
-  if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat<33||lat>39||lng<124||lng>132)return null;
-
-  const sp=Number(firstValue(x,['limitSpeed','speedLimit','제한속도','restrictSpeed','lmttVe','lmtSpd']));
-  const rawType=String(firstValue(x,['cameraType','카메라구분','단속구분','enforcementType','regltSe','규제구분'])||'').trim();
-  const place=String(firstValue(x,['installationLocation','설치장소','itlpc','location','소재지도로명주소','소재지지번주소','rdnmadr','lnmadr'])||'무인교통단속카메라').trim();
-  const posRaw=firstValue(x,['단속구간위치구분','sectionPosition','구간위치구분','sectionPos']);
-  const pos=normalizeSectionPositionText(posRaw,place);
-  const sectionLength=Number(firstValue(x,['과속단속구간길이','sectionLength','sectionDistance']));
-  const typeText=`${rawType} ${place}`;
-  let type='traffic_camera';
-
-  if(pos||/구간단속|평균속도/i.test(typeText))type='section_speed_camera';
-  else if(/버스\s*전용\s*차로|버스\s*차로|전용차로.*버스|버스.*전용차로|BRT/i.test(typeText))type='bus_lane_camera';
-  else if(/신호.*과속|과속.*신호|신호.*속도|속도.*신호/i.test(rawType))type='signal_speed_camera';
-  else if(/속도|과속/i.test(rawType)||rawType==='1'||rawType==='01')type='speed_camera';
-  else if(/신호/i.test(rawType)||rawType==='2'||rawType==='02')type='signal_camera';
-  else if(/통행위반/i.test(rawType)||rawType==='3'||rawType==='03')type='traffic_camera';
-  else if(/불법주정차|주정차/i.test(rawType)||rawType==='4'||rawType==='04')type='parking_camera';
-  else if(rawType==='99')type=pos?'section_speed_camera':'traffic_camera';
-
-  return {
-    type,lat,lng,maxspeed:Number.isFinite(sp)&&sp>0?sp:null,
-    source:'data.go.kr-national-unmanned-camera',
-    sectionPosition:pos,
-    sectionLengthMeters:Number.isFinite(sectionLength)&&sectionLength>0?(sectionLength<=50?sectionLength*1000:sectionLength):0,
-    roadName:String(firstValue(x,['roadRouteName','roadName','도로노선명','roadRouteNm','rn'])||'').trim(),
-    direction:String(firstValue(x,['roadRouteDirection','roadDirection','도로노선방향','roadRouteDrc','direction'])||'').trim(),
-    heading:directionDegrees(firstValue(x,['roadRouteDirection','roadDirection','도로노선방향','roadRouteDrc','direction'])),
-    providerId:String(firstValue(x,['무인교통단속카메라관리번호','mnlssRegltCameraManageNo','cameraManageNo','id'])||'').trim(),
-    name:place
-  };
+  const lat=Number(x.latitude??x.lat??x.위도),lng=Number(x.longitude??x.lot??x.lng??x.경도);
+  if(!Number.isFinite(lat)||!Number.isFinite(lng))return null;
+  const sp=Number(x.limitSpeed??x.speedLimit??x.제한속도??x.restrictSpeed);
+  const rawType=String(x.cameraType??x.카메라구분??x.단속구분??x.enforcementType??'');
+  const place=String(x.installationLocation??x.설치장소??'무인교통단속카메라').trim();
+  const pos=normalizeSectionPositionText(x.단속구간위치구분??x.sectionPosition??x.구간위치구분??'',place);
+  let type='speed_camera';
+  if(/버스|전용차로|BRT/i.test(rawType+' '+place))type='bus_lane_camera';
+  else if(/구간|평균/i.test(rawType+' '+place)||pos)type='section_speed_camera';
+  else if(/신호/i.test(rawType)&&/(과속|속도)/i.test(rawType))type='signal_speed_camera';
+  else if(/신호/i.test(rawType))type='signal_camera';
+  return {type,lat,lng,maxspeed:Number.isFinite(sp)&&sp>0?sp:null,
+    source:'data.go.kr-national-unmanned-camera',sectionPosition:pos,
+    roadName:String(x.roadRouteName??x.roadName??x.도로노선명??'').trim(),
+    direction:String(x.roadRouteDirection??x.roadDirection??x.도로노선방향??'').trim(),
+    heading:directionDegrees(x.roadRouteDirection??x.roadDirection??x.도로노선방향??''),
+    name:place};
 }
 function nationalRows(d){
   const b=d?.response?.body||d?.body||d||{};
@@ -152,7 +136,7 @@ async function loadNationalRouteCameras(points,env){
   const key=publicDataKey(env);if(!key||!points?.length)return [];
   let west=Infinity,south=Infinity,east=-Infinity,north=-Infinity;
   for(const p of points){west=Math.min(west,p.lng);east=Math.max(east,p.lng);south=Math.min(south,p.lat);north=Math.max(north,p.lat)}
-  const out=[],perPage=1000,maxPages=60,pad=.12;
+  const out=[],perPage=1000,maxPages=40,pad=.08;
   for(let page=1;page<=maxPages;page++){
     const u=new URL(PUBLIC_CAMERA_API);
     u.searchParams.set('serviceKey',decodedKey(key));u.searchParams.set('pageNo',String(page));u.searchParams.set('numOfRows',String(perPage));u.searchParams.set('type','json');
@@ -160,7 +144,6 @@ async function loadNationalRouteCameras(points,env){
     const text=await r.text();let d;try{d=JSON.parse(text)}catch{break}
     const rows=nationalRows(d);if(!rows.length)break;
     for(const c of rows){
-      if(c.type==='parking_camera')continue;
       if(c.lng<west-pad||c.lng>east+pad||c.lat<south-pad||c.lat>north+pad)continue;
       if(cameraNearRoute(c,points,120))out.push(c);
     }
@@ -268,4 +251,4 @@ function dedupe(xs){const seen=new Set(),out=[];for(const e of xs){const k=`${e.
 function num(v){const m=String(v??'').match(/\d+(\.\d+)?/);return m?Number(m[0]):0}
 function json(data,status=200,maxAge=120){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':`public, max-age=${maxAge}`}})}
 
-// build 7.6.7.3: standard enforcement-code mapping + nationwide camera API field aliases
+// build 7.6.7.3: divided-road camera matching widened to 120m
