@@ -252,3 +252,5 @@ function num(v){const m=String(v??'').match(/\d+(\.\d+)?/);return m?Number(m[0])
 function json(data,status=200,maxAge=120){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':`public, max-age=${maxAge}`}})}
 
 // build 7.6.7.3: divided-road camera matching widened to 120m
+
+// build 7.6.7.4: Daejeon-Sejong divided-road API matching normalized to 120m
