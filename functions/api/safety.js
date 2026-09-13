@@ -12,11 +12,20 @@ function normalizeNationalCamera(x){
   const lat=Number(x.latitude??x.lat??x.위도),lng=Number(x.longitude??x.lot??x.lng??x.경도);
   if(!Number.isFinite(lat)||!Number.isFinite(lng))return null;
   const sp=Number(x.limitSpeed??x.speedLimit??x.제한속도??x.restrictSpeed);
-  return {type:'speed_camera',lat,lng,maxspeed:Number.isFinite(sp)&&sp>0?sp:null,
-    source:'data.go.kr-national-unmanned-camera',
+  const rawType=String(x.cameraType??x.카메라구분??x.단속구분??x.enforcementType??'');
+  const place=String(x.installationLocation??x.설치장소??'무인교통단속카메라').trim();
+  const pos=normalizeSectionPositionText(x.단속구간위치구분??x.sectionPosition??x.구간위치구분??'',place);
+  let type='speed_camera';
+  if(/버스|전용차로|BRT/i.test(rawType+' '+place))type='bus_lane_camera';
+  else if(/구간|평균/i.test(rawType+' '+place)||pos)type='section_speed_camera';
+  else if(/신호/i.test(rawType)&&/(과속|속도)/i.test(rawType))type='signal_speed_camera';
+  else if(/신호/i.test(rawType))type='signal_camera';
+  return {type,lat,lng,maxspeed:Number.isFinite(sp)&&sp>0?sp:null,
+    source:'data.go.kr-national-unmanned-camera',sectionPosition:pos,
     roadName:String(x.roadRouteName??x.roadName??x.도로노선명??'').trim(),
     direction:String(x.roadRouteDirection??x.roadDirection??x.도로노선방향??'').trim(),
-    name:String(x.installationLocation??x.설치장소??x.cameraType??x.카메라구분??'무인교통단속카메라').trim()};
+    heading:directionDegrees(x.roadRouteDirection??x.roadDirection??x.도로노선방향??''),
+    name:place};
 }
 function nationalRows(d){
   const b=d?.response?.body||d?.body||d||{};
@@ -76,7 +85,7 @@ function normalizeRegionalCamera(x,source){
   const posRaw=String(firstValue(x,['단속구간위치구분','sectionPosition','sectionPos','SECTION_POSITION','SECTION_POS','구간위치구분','구간구분','시종점구분'])||'').trim();
   let sectionPosition=normalizeSectionPositionText(posRaw,place);
   const isSection=/구간/.test(rawType)||Boolean(sectionPosition);
-  let type=/신호/.test(rawType)&&/(과속|속도)/.test(rawType)?'signal_speed_camera':/신호/.test(rawType)?'signal_camera':isSection?'section_speed_camera':'speed_camera';
+  let type=/버스|전용차로|BRT/i.test(rawType+' '+place)?'bus_lane_camera':/신호/.test(rawType)&&/(과속|속도)/.test(rawType)?'signal_speed_camera':/신호/.test(rawType)?'signal_camera':isSection?'section_speed_camera':'speed_camera';
   const sectionLength=Number(firstValue(x,['과속단속구간길이','sectionLength','SECTION_LENGTH','구간길이']));
   return {type,lat,lng,maxspeed:Number.isFinite(sp)&&sp>0?sp:null,source,sectionPosition,
     sectionLengthMeters:Number.isFinite(sectionLength)&&sectionLength>0?(sectionLength<=50?sectionLength*1000:sectionLength):0,
@@ -113,7 +122,7 @@ async function fetchRegionalCameraEndpoint(base,points,env,source){
         const c=normalizeRegionalCamera(row,source);if(!c)continue;
         if(c.lng<west-.05||c.lng>east+.05||c.lat<south-.05||c.lat>north+.05)continue;
         // 지역 원자료는 좌표가 정확한 경우가 많으므로 주행경로 28m 이내만 채택한다.
-        if(cameraNearRoute(c,points,28))out.push(c)
+        if(cameraNearRoute(c,points,90))out.push(c)
       }
       return out;
     }catch{}
@@ -136,7 +145,7 @@ async function loadNationalRouteCameras(points,env){
     const rows=nationalRows(d);if(!rows.length)break;
     for(const c of rows){
       if(c.lng<west-pad||c.lng>east+pad||c.lat<south-pad||c.lat>north+pad)continue;
-      if(cameraNearRoute(c,points,35))out.push(c);
+      if(cameraNearRoute(c,points,90))out.push(c);
     }
     const total=Number(d?.response?.body?.totalCount);
     if(rows.length<perPage||(Number.isFinite(total)&&page*perPage>=total))break;
