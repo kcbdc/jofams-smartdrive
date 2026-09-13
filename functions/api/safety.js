@@ -122,7 +122,7 @@ async function fetchRegionalCameraEndpoint(base,points,env,source){
         const c=normalizeRegionalCamera(row,source);if(!c)continue;
         if(c.lng<west-.05||c.lng>east+.05||c.lat<south-.05||c.lat>north+.05)continue;
         // 지역 원자료는 좌표가 정확한 경우가 많으므로 주행경로 28m 이내만 채택한다.
-        if(cameraNearRoute(c,points,120))out.push(c)
+        if(cameraNearRoute(c,points,180))out.push(c)
       }
       return out;
     }catch{}
@@ -145,7 +145,7 @@ async function loadNationalRouteCameras(points,env){
     const rows=nationalRows(d);if(!rows.length)break;
     for(const c of rows){
       if(c.lng<west-pad||c.lng>east+pad||c.lat<south-pad||c.lat>north+pad)continue;
-      if(cameraNearRoute(c,points,120))out.push(c);
+      if(cameraNearRoute(c,points,180))out.push(c);
     }
     const total=Number(d?.response?.body?.totalCount);
     if(rows.length<perPage||(Number.isFinite(total)&&page*perPage>=total))break;
@@ -254,3 +254,5 @@ function json(data,status=200,maxAge=120){return new Response(JSON.stringify(dat
 // build 7.6.7.3: divided-road camera matching widened to 120m
 
 // build 7.6.7.4: Daejeon-Sejong divided-road API matching normalized to 120m
+
+// build 7.6.7.5: regional divided-road camera tolerance 180m
