@@ -341,15 +341,20 @@ async function loadOfficialCameraRows(){
   return state.officialCameraPromise;
 }
 function pickField(obj,keys=[]){for(const k of keys){const v=obj?.[k];if(v!=null&&String(v).trim()!=='')return v}return ''}
-function officialCameraType(raw=''){
+function officialCameraType(raw='',row=null){
   const s=String(raw||'').trim();
-  if(/신호.*과속|과속.*신호|신호.*속도|속도.*신호/.test(s)||s==='3'||s==='4')return 'signal_speed_camera';
-  if(/신호/.test(s)||s==='2'||s==='02')return 'signal_camera';
-  // 표준데이터 단속구분 코드 '99'(기타)는 실제로는 대부분 구간(평균속도) 단속에 쓰인다.
-  // 짝이 되는 시점/종점 행이 없거나 위치구분 값이 비어 있는 개별 행이라도
-  // 일반 속도위반 카메라로 잘못 안내되지 않도록 구간단속으로 분류한다.
-  if(s==='99'||/구간/.test(s))return 'section_speed_camera';
+  const sectionPos=row?officialSectionPosition(row):'';
+  const place=row?String(pickField(row,['설치장소','itlpc','소재지도로명주소','소재지지번주소'])||''):'';
+  // 공공데이터 개방표준:
+  // 01 속도 / 02 신호 / 03 통행위반 / 04 불법주정차 / 99 기타
+  // 구간단속은 단속구간위치구분(01 시점, 02 종점)과 과속단속구간길이로 별도 식별한다.
+  if(sectionPos||/구간단속|평균속도/.test(`${s} ${place}`))return 'section_speed_camera';
+  if(/신호.*과속|과속.*신호|신호.*속도|속도.*신호/.test(s))return 'signal_speed_camera';
   if(/속도|과속/.test(s)||s==='1'||s==='01')return 'speed_camera';
+  if(/신호/.test(s)||s==='2'||s==='02')return 'signal_camera';
+  if(/버스\s*전용\s*차로|버스\s*차로|전용차로.*버스|버스.*전용차로|BRT/i.test(`${s} ${place}`))return 'bus_lane_camera';
+  if(/통행위반/.test(s)||s==='3'||s==='03')return 'traffic_camera';
+  if(/불법주정차|주정차/.test(s)||s==='4'||s==='04')return 'parking_camera';
   return 'traffic_camera';
 }
 function officialSectionPosition(row){
@@ -498,7 +503,7 @@ async function loadStaticCameraEvents(route){
     if(!routeMatch||!Number.isFinite(Number(routeMatch.index)))continue;
     const idx=Math.max(0,Math.min(geometry.length-1,Number(routeMatch.index)));
     const p=geometry[idx]; if(!p)continue;
-    const d=Number(routeMatch.distance); if(!Number.isFinite(d)||d>55)continue;
+    const d=Number(routeMatch.distance); if(!Number.isFinite(d)||d>120)continue;
     const maxspeed=Number(pickField(row,['제한속도','lmttVe','speedLimit']))||0;
     const protectedArea=String(pickField(row,['보호구역구분','protectedArea'])).trim();
     const roadName=String(pickField(row,['도로노선명','도로명','roadName'])).trim();
@@ -514,7 +519,8 @@ async function loadStaticCameraEvents(route){
       continue;
     }
 
-    const type=officialBusLaneCamera(row)?'bus_lane_camera':officialCameraType(pickField(row,['단속구분','regltSe','규제구분']));
+    const type=officialBusLaneCamera(row)?'bus_lane_camera':officialCameraType(pickField(row,['단속구분','regltSe','규제구분']),row);
+    if(type==='parking_camera')continue;
     const base={
       id:`local-camera:${manageNo}`,type,lat,lng,routeIndex:idx,name,maxspeed,
       authority:String(pickField(row,['관리기관명','institutionNm'])).trim(),
@@ -3959,7 +3965,7 @@ function routeSnappedCameraItems(items){
   const projected=[];
   for(const e of items||[]){
     const match=nearestPointOnRoute(Number(e.lng),Number(e.lat),g);
-    if(!match||!Number.isFinite(match.index)||Number(match.distance)>45)continue;
+    if(!match||!Number.isFinite(match.index)||Number(match.distance)>120)continue;
     const idx=Math.max(0,Math.min(g.length-1,Number(match.index)));
     const p=g[idx];
     projected.push({...e,lng:p[0],lat:p[1],routeIndex:idx,__routeM:Number(cum[idx])||0,__srcDist:Number(match.distance)||0});
@@ -3992,24 +3998,22 @@ function renderSafetyMarkers(){
       // 지도 표시용: 현재 위치 주변만 보지 않고 선택된 전체 경로 geometry 위에 있는
       // 신호/과속/구간/기타 단속카메라를 모두 CCTV SVG로 표시한다.
       // 실제 음성 경고는 updateSafetyUI의 현재 주행구간 필터를 계속 사용한다.
-      if(!state.tripStartedAt||cameraMatchesRouteRoad(e,state.route?.geometry||[],null,45))cameraItems.push(e)
+      if(!state.route?.geometry?.length||cameraMatchesRouteRoad(e,state.route.geometry,null,120))cameraItems.push(e)
     }else otherItems.push(e);
   }
 
   // 카메라는 실제 원본 좌표가 도로 가장자리여도 경로 선 정중앙으로 스냅하고,
   // 같은 진행 위치(약 32m)에 여러 레코드가 있어도 CCTV SVG 하나만 표시한다.
-  const routeCameraItems=state.tripStartedAt?routeSnappedCameraItems(cameraItems):cameraItems;
+  const routeCameraItems=state.route?.geometry?.length?routeSnappedCameraItems(cameraItems):cameraItems;
 
-  // 화면 가시폭이 1km 이상이면 CCTV는 숫자 클러스터로 묶는다.
-  if(mapVisibleWidthMeters()>=1000)renderCameraClusterMarkers(routeCameraItems);
-  else{
-    for(const e of routeCameraItems){
-      const el=document.createElement('div'),limit=Number(e.maxspeed)||0;
-      el.className=`safety-map-marker camera camera-pin${e.type==='mobile_camera'?' mobile':''}`;
-      el.title=e.type==='signal_speed_camera'?'신호·과속 단속카메라':e.type==='signal_camera'?'신호 단속카메라':e.type==='speed_camera'?'과속 단속카메라':e.type==='section_speed_camera'?'구간단속 시작':e.type==='section_speed_end'?'구간단속 종료':e.type==='bus_lane_camera'?'버스전용차로 단속':e.type==='mobile_camera'?'이동식 단속카메라':'단속 카메라';
-      el.innerHTML=`<span class="camera-pin-icon">${cctvMarkerSvg()}</span>${limit>0?`<small class="camera-pin-speed">${Math.round(limit)}</small>`:''}`;
-      try{state.safetyMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map))}catch{}
-    }
+  // 티맵처럼 선택 경로 위 단속카메라는 지도 축소 상태에서도 숫자 클러스터로 바꾸지 않고
+  // CCTV 아이콘 자체를 유지한다. 동일 진행지점은 routeSnappedCameraItems()에서 이미 중복 제거한다.
+  for(const e of routeCameraItems){
+    const el=document.createElement('div'),limit=Number(e.maxspeed)||0;
+    el.className=`safety-map-marker camera camera-pin${e.type==='mobile_camera'?' mobile':''}`;
+    el.title=e.type==='signal_speed_camera'?'신호·과속 단속카메라':e.type==='signal_camera'?'신호 단속카메라':e.type==='speed_camera'?'과속 단속카메라':e.type==='section_speed_camera'?'구간단속 시작':e.type==='section_speed_end'?'구간단속 종료':e.type==='bus_lane_camera'?'버스전용차로 단속':e.type==='mobile_camera'?'이동식 단속카메라':'단속 카메라';
+    el.innerHTML=`<span class="camera-pin-icon">${cctvMarkerSvg()}</span>${limit>0?`<small class="camera-pin-speed">${Math.round(limit)}</small>`:''}`;
+    try{state.safetyMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map))}catch{}
   }
 
   for(const e of otherItems){
@@ -5513,3 +5517,5 @@ function bootstrapApp(){
   setTimeout(()=>refreshPermissionState().catch(()=>{}),180);
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootstrapApp,{once:true});else bootstrapApp();
+
+// build 7.6.7.3: nationwide public camera data route-icon rendering / Daejeon-Sejong corridor fix
