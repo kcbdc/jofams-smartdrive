@@ -325,16 +325,23 @@ async function loadOfficialCameraRows(){
   if(Array.isArray(state.officialCameraRows))return state.officialCameraRows;
   if(state.officialCameraPromise)return state.officialCameraPromise;
   state.officialCameraPromise=Promise.all(CAMERA_DATASET_URLS.map(async url=>{
-    const r=await fetch(url,{cache:'force-cache'});
-    if(!r.ok)throw new Error(`camera dataset HTTP ${r.status}: ${url}`);
-    const d=await r.json();
-    return Array.isArray(d)?d:Array.isArray(d?.records)?d.records:Array.isArray(d?.response?.body?.items)?d.response.body.items:[];
+    try{
+      // 배포 직후 신규 카메라 JSON이 갱신되도록 no-cache 사용.
+      const r=await fetch(url,{cache:'no-cache'});
+      if(!r.ok)throw new Error(`HTTP ${r.status}`);
+      const d=await r.json();
+      return Array.isArray(d)?d:Array.isArray(d?.records)?d.records:Array.isArray(d?.response?.body?.items)?d.response.body.items:[];
+    }catch(e){
+      // 특정 파일 하나가 404/캐시 오류여도 나머지 전국 데이터는 반드시 사용한다.
+      console.warn('camera dataset partial load failed',url,e);
+      return [];
+    }
   })).then(parts=>{
     const rows=parts.flat();
     state.officialCameraRows=rows;
     return rows;
   }).catch(e=>{
-    console.warn('official camera dataset load failed',e);
+    console.warn('official camera dataset aggregate failed',e);
     state.officialCameraRows=[];
     return [];
   });
@@ -498,7 +505,7 @@ async function loadStaticCameraEvents(route){
     if(!routeMatch||!Number.isFinite(Number(routeMatch.index)))continue;
     const idx=Math.max(0,Math.min(geometry.length-1,Number(routeMatch.index)));
     const p=geometry[idx]; if(!p)continue;
-    const d=Number(routeMatch.distance); if(!Number.isFinite(d)||d>55)continue;
+    const d=Number(routeMatch.distance); if(!Number.isFinite(d)||d>120)continue;
     const maxspeed=Number(pickField(row,['제한속도','lmttVe','speedLimit']))||0;
     const protectedArea=String(pickField(row,['보호구역구분','protectedArea'])).trim();
     const roadName=String(pickField(row,['도로노선명','도로명','roadName'])).trim();
@@ -3873,7 +3880,7 @@ async function loadSafetyEvents(route){
     for(const e of supplemental){
       if(e?.type==='section_speed_camera'&&(e.sectionPosition==='start'||e.sectionPosition==='end')){
         const m=cameraRouteMatch(Number(e.lng),Number(e.lat),route,Number.isFinite(Number(e.heading))?Number(e.heading):null);
-        if(m&&Number(m.distance)<=90){
+        if(m&&Number(m.distance)<=120){
           regionalSectionNodes.push({...e,routeIndex:Number(m.index),routeHeading:Number(m.heading),matchDistance:Number(m.distance),sectionLengthMeters:Number(e.sectionLengthMeters)||0});
         }
       }else if(e?.type!=='section_speed_camera')regionalOthers.push(e);
@@ -3884,7 +3891,12 @@ async function loadSafetyEvents(route){
   state.safetyEvents=merged;
   loadItsTraffic(route).then(()=>{if(state.tripStartedAt)updateDriving(true)}).catch(()=>{});
   applyRouteSpeedLimitHints(route,merged);
-  renderSafetyMarkers();if(state.currentRouteIndex>=0)updateSafetyUI(state.currentRouteIndex)
+  renderSafetyMarkers();
+  // Android WebView/MapLibre에서 경로 직후 DOM marker 배치가 유실되는 경우 재렌더링.
+  setTimeout(()=>{
+    if(seq===state.safetyRequestSeq&&state.route?.geometry?.length&&state.safetyEvents?.length)renderSafetyMarkers();
+  },350);
+  if(state.currentRouteIndex>=0)updateSafetyUI(state.currentRouteIndex)
 }
 function mergeSafetyEvents(events,geometry){
   const priority=e=>{
@@ -3931,7 +3943,17 @@ function renderCameraClusterMarkers(items){
       el.className=`safety-map-marker camera camera-pin camera-${e.type}${e.type==='mobile_camera'?' mobile':''}`;
       el.title=e.type==='signal_speed_camera'?'신호·과속 단속카메라':e.type==='signal_camera'?'신호 단속카메라':e.type==='speed_camera'?'과속 단속카메라':'단속 카메라';
       el.innerHTML=`<span class="camera-pin-icon">${cctvMarkerSvg()}</span>${limit>0?`<small class="camera-pin-speed">${Math.round(limit)}</small>`:''}`;
-      try{state.safetyMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map))}catch{}
+      try{
+        const marker=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map);
+        const markerEl=marker.getElement?.();
+        if(markerEl){
+          markerEl.style.zIndex='58';
+          markerEl.style.visibility='visible';
+          markerEl.style.opacity='1';
+          markerEl.style.pointerEvents='none';
+        }
+        state.safetyMarkers.push(marker);
+      }catch{}
       continue;
     }
     const el=document.createElement('button');
@@ -3959,7 +3981,7 @@ function routeSnappedCameraItems(items){
   const projected=[];
   for(const e of items||[]){
     const match=nearestPointOnRoute(Number(e.lng),Number(e.lat),g);
-    if(!match||!Number.isFinite(match.index)||Number(match.distance)>45)continue;
+    if(!match||!Number.isFinite(match.index)||Number(match.distance)>120)continue;
     const idx=Math.max(0,Math.min(g.length-1,Number(match.index)));
     const p=g[idx];
     projected.push({...e,lng:p[0],lat:p[1],routeIndex:idx,__routeM:Number(cum[idx])||0,__srcDist:Number(match.distance)||0});
@@ -3998,7 +4020,14 @@ function renderSafetyMarkers(){
 
   // 카메라는 실제 원본 좌표가 도로 가장자리여도 경로 선 정중앙으로 스냅하고,
   // 같은 진행 위치(약 32m)에 여러 레코드가 있어도 CCTV SVG 하나만 표시한다.
-  const routeCameraItems=state.tripStartedAt?routeSnappedCameraItems(cameraItems):cameraItems;
+  const routeCameraItems=state.route?.geometry?.length?routeSnappedCameraItems(cameraItems):cameraItems;
+  if(state.route?.geometry?.length){
+    console.info('[JOFAMS camera]',{
+      safetyEvents:(state.safetyEvents||[]).length,
+      cameraCandidates:cameraItems.length,
+      routeCameraMarkers:routeCameraItems.length
+    });
+  }
 
   // 화면 가시폭이 1km 이상이면 CCTV는 숫자 클러스터로 묶는다.
   if(!state.route?.geometry?.length && mapVisibleWidthMeters()>=1000)renderCameraClusterMarkers(routeCameraItems);
@@ -4008,7 +4037,17 @@ function renderSafetyMarkers(){
       el.className=`safety-map-marker camera camera-pin camera-${e.type}${e.type==='mobile_camera'?' mobile':''}`;
       el.title=e.type==='signal_speed_camera'?'신호·과속 단속카메라':e.type==='signal_camera'?'신호 단속카메라':e.type==='speed_camera'?'과속 단속카메라':e.type==='section_speed_camera'?'구간단속 시작':e.type==='section_speed_end'?'구간단속 종료':e.type==='bus_lane_camera'?'버스전용차로 단속':e.type==='mobile_camera'?'이동식 단속카메라':'단속 카메라';
       el.innerHTML=`<span class="camera-pin-icon">${cctvMarkerSvg()}</span>${limit>0?`<small class="camera-pin-speed">${Math.round(limit)}</small>`:''}`;
-      try{state.safetyMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map))}catch{}
+      try{
+        const marker=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map);
+        const markerEl=marker.getElement?.();
+        if(markerEl){
+          markerEl.style.zIndex='58';
+          markerEl.style.visibility='visible';
+          markerEl.style.opacity='1';
+          markerEl.style.pointerEvents='none';
+        }
+        state.safetyMarkers.push(marker);
+      }catch{}
     }
   }
 
@@ -5515,3 +5554,5 @@ function bootstrapApp(){
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootstrapApp,{once:true});else bootstrapApp();
 
 // build 7.6.7.3: Daejeon-Sejong corridor public camera dataset + always-visible route camera icons
+
+// build 7.6.7.4: critical camera render filters 55m/45m fixed to 120m; partial dataset failures isolated
