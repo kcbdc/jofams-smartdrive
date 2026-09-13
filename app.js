@@ -3503,7 +3503,7 @@ function updateSectionAverageSpeed(idx){
   panel?.classList.toggle('over',Number(e.maxspeed)>0&&avg>Number(e.maxspeed));
 
   // 구간 진입 후 30초가 지나면 평균속도를 음성으로도 안내하고 이후 60초마다 갱신한다.
-  if(elapsed>=30 && (!st.lastAverageSpokenAt||now-st.lastAverageSpokenAt>=60000)){
+  if(elapsed>=10 && (!st.lastAverageSpokenAt||now-st.lastAverageSpokenAt>=20000)){
     st.lastAverageSpokenAt=now;
     const over=Number(e.maxspeed)>0&&avg>Number(e.maxspeed);
     speakNavOnce(
@@ -3873,7 +3873,7 @@ async function loadSafetyEvents(route){
     for(const e of supplemental){
       if(e?.type==='section_speed_camera'&&(e.sectionPosition==='start'||e.sectionPosition==='end')){
         const m=cameraRouteMatch(Number(e.lng),Number(e.lat),route,Number.isFinite(Number(e.heading))?Number(e.heading):null);
-        if(m&&Number(m.distance)<=32){
+        if(m&&Number(m.distance)<=90){
           regionalSectionNodes.push({...e,routeIndex:Number(m.index),routeHeading:Number(m.heading),matchDistance:Number(m.distance),sectionLengthMeters:Number(e.sectionLengthMeters)||0});
         }
       }else if(e?.type!=='section_speed_camera')regionalOthers.push(e);
@@ -3906,7 +3906,7 @@ function mergeSafetyEvents(events,geometry){
     if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;
     const rm=cameraRouteMatch(lng,lat,state.route,Number.isFinite(Number(e.heading))?Number(e.heading):null);
     if(String(e.type||'').includes('camera')||e.type==='section_speed_end'){
-      if(!rm||Number(rm.distance)>38)continue;
+      if(!rm||Number(rm.distance)>90)continue;
       idx=Number(rm.index);
     }else if(!Number.isFinite(idx))idx=nearestIndex(lng,lat,geometry);
     const coordKey=`${Math.round(lat*100000)}:${Math.round(lng*100000)}`;
@@ -4173,7 +4173,11 @@ function updateSafetyUI(idx,candidates){
   else if(e.type==='bus_lane_camera')text=`${meters}미터 앞 버스전용차로 단속카메라입니다.`;
   else if(e.type==='mobile_camera')text=`${meters}미터 앞 이동식 카메라 단속구역입니다.`;
   else if(e.type==='section_speed_camera')text=`${meters}미터 앞 구간단속 시작지점입니다.${guideLimit?` 제한속도 ${Math.round(guideLimit)}킬로미터입니다.`:''}`;
-  else if(e.type==='section_speed_end')text=`${meters}미터 앞 구간단속 종료지점입니다.`;
+  else if(e.type==='section_speed_end'){
+    const ss=state.sectionSpeedState;let avgText='';
+    if(ss&&Number(ss.enteredAt)>0){const elapsed=Math.max(1,(Date.now()-Number(ss.enteredAt))/1000),travelled=Math.max(0,(Number(ss.lastDistance)||0)-(Number(ss.enteredDistance)||0)),avg=Math.max(0,Math.min(250,travelled/elapsed*3.6));avgText=` 현재 구간 평균속도는 ${Math.round(avg)}킬로미터입니다.`}
+    text=`${meters}미터 앞 구간단속 종료지점입니다.${avgText}`;
+  }
   else if(e.type==='fog_zone')text=`${meters}미터 앞 안개 주의구간입니다.`;
   else if(e.type==='snow_ice_zone')text=`${meters}미터 앞 눈 또는 결빙 주의구간입니다.`;
   else if(e.type==='heavy_rain_zone')text=`${meters}미터 앞 강우 주의구간입니다.`;
@@ -5055,40 +5059,15 @@ function openKomscoShort(videoId,title,{fromList=false}={}){
   if(!videoId)return;
   state.komscoShortReturnToList=Boolean(fromList||!$('komscoShortsListModal')?.classList.contains('hidden'));
   if(state.komscoShortReturnToList)$('komscoShortsListModal')?.classList.add('hidden');
-
+  const player=$('komscoShortPlayer');
+  if(player)player.src=`https://www.youtube.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0`;
   if($('komscoShortTitle'))$('komscoShortTitle').textContent=title||'KOMSCO 소식';
   if($('komscoShortOpenYoutube'))$('komscoShortOpenYoutube').href=`https://www.youtube.com/watch?v=${videoId}`;
-
-  // 사용자 클릭 제스처가 살아있는 동안 플레이어 모달을 먼저 표시한 뒤
-  // autoplay 권한이 포함된 YouTube embed를 로드한다.
-  const modal=$('komscoShortModal');
-  modal?.classList.remove('hidden');
-
-  const player=$('komscoShortPlayer');
-  if(player){
-    const origin=encodeURIComponent(location.origin);
-    player.src=`https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1&playsinline=1&rel=0&enablejsapi=1&origin=${origin}`;
-
-    // 일부 Android WebView/브라우저가 autoplay 파라미터만으로 재생을 시작하지 않는 경우를 보완.
-    const requestPlay=()=>{
-      try{
-        player.contentWindow?.postMessage(JSON.stringify({
-          event:'command',
-          func:'playVideo',
-          args:[]
-        }),'https://www.youtube.com');
-      }catch{}
-    };
-    player.onload=()=>{
-      requestPlay();
-      setTimeout(requestPlay,180);
-      setTimeout(requestPlay,650);
-    };
-  }
+  $('komscoShortModal')?.classList.remove('hidden');
 }
 function closeKomscoShort(){
   $('komscoShortModal')?.classList.add('hidden');
-  const player=$('komscoShortPlayer');if(player){player.onload=null;player.src=''}
+  const player=$('komscoShortPlayer');if(player)player.src='';
   if(state.komscoShortReturnToList){
     state.komscoShortReturnToList=false;
     $('komscoShortsListModal')?.classList.remove('hidden');
