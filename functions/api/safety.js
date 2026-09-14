@@ -256,3 +256,5 @@ function json(data,status=200,maxAge=120){return new Response(JSON.stringify(dat
 // build 7.6.7.4: Daejeon-Sejong divided-road API matching normalized to 120m
 
 // build 7.6.7.5: regional divided-road camera tolerance 180m
+
+// build 7.6.8.0: camera API matching retained from 7.6.7.5; client no longer re-rejects matched cameras at 38m

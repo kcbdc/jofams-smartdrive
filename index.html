@@ -56,7 +56,7 @@
 
 <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.7.1" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.8.0" />
 </head>
 <body>
   <main id="app">
@@ -231,6 +231,14 @@
         <div id="nextManeuver" class="maneuver-next hidden"><span id="nextManeuverIcon"></span><b id="nextManeuverDistance">--m</b><small id="nextManeuverText">다음 안내</small></div>
       </div>
 
+
+      <div id="navRadioWidget" class="nav-radio-widget" aria-label="가상 라디오">
+        <button id="radioPlayBtn" type="button" aria-label="라디오 재생 또는 일시정지"><span id="radioPlayIcon">▶</span></button>
+        <div class="nav-radio-copy"><small>가상 라디오</small><b id="radioNowPlaying">방송 준비 중</b></div>
+        <button id="radioNextBtn" type="button" aria-label="다음 방송">다음</button>
+        <audio id="radioPlayer" preload="metadata"></audio>
+      </div>
+
       <button id="driveVoiceBtn" class="floating-voice" aria-label="음성안내"><span data-icon="mic"></span></button>
       <button id="arOpenBtn" class="floating-ar" aria-label="AR 안내">AR</button>
 
@@ -325,6 +333,11 @@
         <div class="guide-volume-row">
           <div><b>길안내 볼륨</b><small id="volumeValue">80%</small></div>
           <input id="guideVolume" type="range" min="0" max="100" value="80" />
+          <small id="navVolumeZeroHint" class="volume-zero-hint hidden">길안내는 화면으로만 표시되고 라디오만 재생됩니다.</small>
+        </div>
+        <div class="guide-volume-row radio-volume-row">
+          <div><b>라디오 볼륨</b><small id="radioVolumeValue">65%</small></div>
+          <input id="radioVolume" type="range" min="0" max="100" value="65" />
         </div>
         <div class="traffic-legend" aria-label="교통정보 기준">
           <b>교통정보</b>
@@ -525,7 +538,7 @@
       <section class="simple-sheet komsco-short-sheet">
         <header><b id="komscoShortTitle">KOMSCO 소식</b><button id="komscoShortClose" class="circle-btn"><span data-icon="close"></span></button></header>
         <div class="komsco-short-player-wrap">
-          <iframe id="komscoShortPlayer" class="komsco-short-player" src="" title="KOMSCO Shorts" frameborder="0" allow="autoplay; accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+          <iframe id="komscoShortPlayer" class="komsco-short-player" src="" title="KOMSCO Shorts" frameborder="0" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
         </div>
         <a id="komscoShortOpenYoutube" class="komsco-short-open-link" href="#" target="_blank" rel="noopener">유튜브에서 보기</a>
       </section>
@@ -775,8 +788,8 @@
     <div id="toast" class="toast hidden"></div>
   </main>
 
-  <script>window.__JOFAMS_BUILD__="7.6.7.1";</script>
+  <script>window.__JOFAMS_BUILD__="7.6.8.0";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.7.1"></script>
+  <script type="module" src="/app.js?v=7.6.8.0"></script>
 </body>
 </html>

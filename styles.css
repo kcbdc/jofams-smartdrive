@@ -1904,3 +1904,22 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   opacity:1!important;visibility:visible!important;
   box-shadow:0 5px 13px rgba(130,20,20,.34)!important;
 }
+
+/* === 7.6.8.0 Navigation x Virtual Radio === */
+.nav-radio-widget{
+  position:absolute;left:50%;bottom:98px;transform:translateX(-50%);
+  width:min(430px,calc(100% - 124px));height:50px;z-index:46;
+  display:grid;grid-template-columns:42px 1fr 44px;align-items:center;gap:7px;
+  padding:5px 8px;border-radius:16px;background:rgba(20,24,31,.88);
+  box-shadow:0 5px 18px rgba(0,0,0,.22);backdrop-filter:blur(10px);color:#fff;
+}
+.nav-radio-widget button{height:36px;min-width:36px;border:0;border-radius:12px;background:rgba(255,255,255,.12);color:#fff;font-weight:800}
+.nav-radio-copy{min-width:0;display:flex;flex-direction:column;line-height:1.05}
+.nav-radio-copy small{font-size:10px;opacity:.72}
+.nav-radio-copy b{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.radio-volume-row{margin-top:8px}
+.volume-zero-hint{display:block;margin-top:6px;font-size:11px;color:#ffb55b;line-height:1.35}
+.volume-zero-hint.hidden{display:none}
+@media (orientation:landscape){
+  .nav-radio-widget{bottom:72px;width:min(390px,calc(100% - 260px));}
+}

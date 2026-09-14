@@ -15,7 +15,7 @@ const characterDefs = {
 };
 const state = {
   map:null,mapReady:false,pendingRouteDraw:null,mapFallbackTried:false,mapWatchdog:0,user:null, destination:null, routeOptions:[], route:null, selectedRoute:0,
-  userMarker:null,destMarker:null,originMarker:null,watchId:null,character:'daim',voiceVolume:.8,sound:true,
+  userMarker:null,destMarker:null,originMarker:null,watchId:null,character:'daim',voiceVolume:.8,sound:true,radioVolume:.65,radioPlaying:false,radioIndex:0,radioDucked:false,radioDuckTimer:0,activeGuideSnapshot:null,
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
   savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:'B027',fuelData:null,fuelFetchedAt:0,fuelLoading:false,destinationSearchSort:'accuracy',lastDestinationQuery:'',routeMode:'car',carRouteOptions:[],walkingRoute:null,routeModeDurations:{car:null,walk:null},homeFacilityCategory:'주유소',homeFacilityItems:[],
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
@@ -3429,11 +3429,12 @@ async function refreshVslSpeedLimit(){
       if(!Number.isFinite(Number(x.speedLimit))||Number(x.speedLimit)<=0)continue;
       const snap=nearestPointOnRoute(Number(x.lng),Number(x.lat),state.route?.geometry||[]);
       const routeGap=Number(snap?.distance);
-      if(!Number.isFinite(routeGap)||routeGap>35)continue;
+      if(!Number.isFinite(routeGap)||routeGap>70)continue;
       const geo=hav(rawLat,rawLng,Number(x.lat),Number(x.lng));
       const candidateRoad=normalizeRoadName(x.roadName||'');
       const sameRoad=Boolean(currentRoad&&candidateRoad&&(currentRoad===candidateRoad||currentRoad.includes(candidateRoad)||candidateRoad.includes(currentRoad)));
-      const score=routeGap+Math.min(180,geo*.08)+(currentRoad&&candidateRoad&&!sameRoad?180:0)-(sameRoad?45:0);
+      if(currentRoad&&candidateRoad&&!sameRoad)continue;
+      const score=routeGap+Math.min(180,geo*.08)-(sameRoad?55:0);
       if(score<bestScore){best=x;bestScore=score;bestGeo=geo}
     }
     if(best&&bestGeo<=900){
@@ -3607,11 +3608,15 @@ function updateProgressUI(idx){
   let first=guides[0],second=guides[1];
   if(first){
     const d=guideDisplayDistance(idx,first,remain);
+    const distanceText=guideUiDistanceText(d);
+    const guideText=guidePanelText(first);
+    state.activeGuideSnapshot={routeIndex:Number(first.routeIndex),distanceText,guideText,type:first.type};
     $('maneuverIcon').innerHTML=turnSvg(first.type);
-    $('maneuverDistance').textContent=km(Math.max(10,d));
-    $('maneuverRoad').textContent=first.name||first.guidance||'교차로';
+    $('maneuverDistance').textContent=distanceText;
+    $('maneuverRoad').textContent=guideText;
     maybeSpeakGuide(first,d);
   }else{
+    state.activeGuideSnapshot=null;
     $('maneuverIcon').innerHTML=turnSvg(0);
     $('maneuverDistance').textContent=remain<10?'곧 도착':km(remain);
     $('maneuverRoad').textContent='목적지까지 직진';
@@ -3622,7 +3627,7 @@ function updateProgressUI(idx){
     $('nextManeuver').classList.remove('hidden');
     $('nextManeuverIcon').innerHTML=turnSvg(second.type);
     $('nextManeuverDistance').textContent=km(d2);
-    $('nextManeuverText').textContent=second.guidance||'다음 안내';
+    $('nextManeuverText').textContent=guidePanelText(second);
   }else $('nextManeuver').classList.add('hidden');
 
   updateSafetyUI(idx,safetyCandidates);updateSectionAverageSpeed(idx);updateLaneGuide(idx);updateVms(idx);
@@ -3641,7 +3646,9 @@ function renderSpeedOrSignBadge(limit,candidates){
   const circle=$('speedLimit')?.closest('.speed-limit'),badge=$('roadSignBadge');
   const cameraTypes=new Set(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','section_speed_end','bus_lane_camera','mobile_camera']);
   const camera=(candidates||[]).find(e=>cameraTypes.has(e?.type)&&Number(e.d)>=0&&Number(e.d)<=600);
-  const syncedLimit=camera?safetyGuidanceLimit(state.currentRouteIndex,camera):Number(limit);
+  // 좌측 원형 제한속도는 '현재 주행 도로'의 제한속도만 표시한다.
+  // 전방 카메라의 단속속도는 safetyAlert에서 별도 표기하여 현재 제한속도와 혼동하지 않는다.
+  const syncedLimit=Number(limit);
   const hasLimit=Number(syncedLimit)>0;
 
   if(circle)circle.style.setProperty('display',hasLimit?'grid':'none','important');
@@ -3702,21 +3709,36 @@ function guideUiDistanceMeters(d){
 }
 function guideUiDistanceText(d){return km(guideUiDistanceMeters(d))}
 
+
+function guidePanelText(g){
+  const raw=String(g?.guidance||g?.name||g?.roadName||'').trim();
+  if(raw)return raw;
+  const cat=guideVoiceCategory(g);
+  if(cat==='left')return '좌회전';
+  if(cat==='right')return '우회전';
+  if(cat==='toll')return '톨게이트';
+  if(cat==='ic')return 'IC 진입';
+  if(cat==='fork')return '갈림길 방향 확인';
+  return '경로 안내';
+}
+function guideSpokenDistance(display=''){
+  const s=String(display||'');
+  if(/km$/i.test(s))return s.replace(/km$/i,'킬로미터');
+  if(/m$/i.test(s))return s.replace(/m$/i,'미터');
+  return s;
+}
+
 function maybeSpeakGuide(g,d){
   const cat=guideVoiceCategory(g);
   if(!cat)return;
-  // 기존 320m/80m 2단계 안내를 한 번으로 축소. 일반 도로는 약 170~230m, 고속/IC는 조금 더 앞에서 안내.
   const speedKmh=Math.max(0,(Number(state.user?.speed)||0)*3.6);
   const trigger=(cat==='ic'||cat==='fork'||cat==='toll')?(speedKmh>=70?450:300):(speedKmh>=60?260:190);
   if(d>trigger||d<8)return;
-  const meters=guideUiDistanceMeters(d);
-  // 화면에 표시되는 거리와 음성안내의 거리값은 반드시 같은 공통 값을 사용한다.
-  let text='';
-  if(cat==='left')text=`${meters}미터 앞 좌회전입니다.`;
-  else if(cat==='right')text=`${meters}미터 앞 우회전입니다.`;
-  else if(cat==='toll')text=`${meters}미터 앞 톨게이트입니다.`;
-  else if(cat==='ic')text=`${meters}미터 앞 IC 안내입니다. ${g.guidance||g.name||''}`;
-  else if(cat==='fork')text=`${meters}미터 앞 ${g.guidance||g.name||'갈림길에서 방향을 확인하세요.'}`;
+  const snap=state.activeGuideSnapshot;
+  const displayDistance=snap?.routeIndex===Number(g?.routeIndex)?snap.distanceText:guideUiDistanceText(d);
+  const displayText=snap?.routeIndex===Number(g?.routeIndex)?snap.guideText:guidePanelText(g);
+  // 음성은 좌측(상단) 안내표지판에 보이는 거리와 안내문구를 그대로 읽는다.
+  const text=`${guideSpokenDistance(displayDistance)} 앞 ${displayText}`;
   if(text)speakNavOnce(`guide:${g.id||g.routeIndex}:${cat}`,text,10000);
 }
 function updateTrafficStatus(seg){
@@ -4200,19 +4222,19 @@ function computeSafetyCandidates(idx){
   }).sort((a,b)=>(SAFETY_PRIORITY[a.type]??9)-(SAFETY_PRIORITY[b.type]??9)||a.d-b.d);
 }
 function safetyGuidanceLimit(idx,e){
-  const freshVsl=Number.isFinite(Number(state.vslSpeedLimit))&&Date.now()-Number(state.vslSpeedLimitAt||0)<30000?Number(state.vslSpeedLimit):0;
-  if(freshVsl>0)return freshVsl;
+  // 단속카메라 안내에서는 해당 카메라 공공데이터의 설정속도를 최우선 사용.
   const eventLimit=normalizeSpeedLimitValue(e?.maxspeed);
   if(eventLimit>0)return eventLimit;
+  const freshVsl=Number.isFinite(Number(state.vslSpeedLimit))&&Date.now()-Number(state.vslSpeedLimitAt||0)<30000?Number(state.vslSpeedLimit):0;
+  if(freshVsl>0)return freshVsl;
   const seg=(state.route?.roadSegments||[]).find(s=>idx>=s.startIndex&&idx<=s.endIndex);
   return effectiveSpeedLimit(idx,seg);
 }
 
 function updateSafetyUI(idx,candidates){
-  candidates=(candidates||computeSafetyCandidates(idx)).filter(e=>{
-    const isCam=['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','section_speed_end','bus_lane_camera','mobile_camera'].includes(e.type);
-    return !isCam||cameraMatchesRouteRoad(e,state.route?.geometry||[],state.currentRouteIndex,38);
-  });
+  // safetyEvents에 들어온 카메라는 이미 경로/방향 매칭을 통과한 결과다.
+  // 여기서 38m로 재필터링하면 왕복 분리도로의 실제 카메라가 음성안내에서 다시 사라진다.
+  candidates=(candidates||computeSafetyCandidates(idx));
   const e=candidates[0];
   if(!e){hideSafetyAlert();state.activeSafetyEvent=null;return}
   if(Number(e.routeIndex)<idx-1||Number(e.d)<0){hideSafetyAlert();state.activeSafetyEvent=null;return}
@@ -4591,15 +4613,112 @@ function pickDaimVoice(){
   return voices.find(v=>female.test(`${v.name||''} ${v.voiceURI||''}`)) || voices[0] || null;
 }
 
+
+const RADIO_VOLUME_KEY='jofams.radioVolume';
+const NAV_VOLUME_KEY='jofams.navVolume';
+const RADIO_INDEX_KEY='jofams.radioIndex';
+
+function radioPlayer(){return $('radioPlayer')}
+function setRadioVolume(v,persist=true){
+  state.radioVolume=Math.max(0,Math.min(1,Number(v)));
+  if(persist)try{localStorage.setItem(RADIO_VOLUME_KEY,String(state.radioVolume))}catch{}
+  const el=radioPlayer();
+  if(el)el.volume=state.radioDucked?state.radioVolume*.25:state.radioVolume;
+  if($('radioVolume'))$('radioVolume').value=Math.round(state.radioVolume*100);
+  if($('radioVolumeValue'))$('radioVolumeValue').textContent=`${Math.round(state.radioVolume*100)}%`;
+}
+function setNavVolume(v,persist=true){
+  state.voiceVolume=Math.max(0,Math.min(1,Number(v)));
+  if(persist)try{localStorage.setItem(NAV_VOLUME_KEY,String(state.voiceVolume))}catch{}
+  updateVolumeUI();
+  const hint=$('navVolumeZeroHint');if(hint)hint.classList.toggle('hidden',state.voiceVolume>0);
+}
+function setRadioDucked(ducked){
+  state.radioDucked=Boolean(ducked);
+  const el=radioPlayer();if(!el)return;
+  const target=state.radioDucked?state.radioVolume*.25:state.radioVolume;
+  const start=Number(el.volume)||0,steps=6;let n=0;
+  clearInterval(state.radioDuckTimer);
+  state.radioDuckTimer=setInterval(()=>{
+    n++;el.volume=Math.max(0,Math.min(1,start+(target-start)*(n/steps)));
+    if(n>=steps){clearInterval(state.radioDuckTimer);state.radioDuckTimer=0}
+  },50);
+}
+function scheduleRadioUnduck(text=''){
+  clearTimeout(state.radioUnduckTimeout);
+  const ms=Math.max(1200,Math.min(9000,700+String(text).length*95));
+  state.radioUnduckTimeout=setTimeout(()=>setRadioDucked(false),ms);
+}
+async function loadRadioSchedule(){
+  try{
+    const r=await fetch('/assets/radio/schedule.json',{cache:'no-cache'});
+    const d=await r.json();
+    state.radioSchedule=Array.isArray(d.items)?d.items:[];
+  }catch(e){console.warn('radio schedule load failed',e);state.radioSchedule=[]}
+  return state.radioSchedule;
+}
+function updateRadioUI(){
+  const item=state.radioSchedule?.[state.radioIndex];
+  if($('radioNowPlaying'))$('radioNowPlaying').textContent=item?.name||'방송 준비 중';
+  if($('radioPlayIcon'))$('radioPlayIcon').textContent=state.radioPlaying?'Ⅱ':'▶';
+}
+async function radioLoadIndex(index,autoplay=false){
+  if(!state.radioSchedule?.length)await loadRadioSchedule();
+  if(!state.radioSchedule?.length)return;
+  state.radioIndex=((Number(index)||0)%state.radioSchedule.length+state.radioSchedule.length)%state.radioSchedule.length;
+  try{localStorage.setItem(RADIO_INDEX_KEY,String(state.radioIndex))}catch{}
+  const item=state.radioSchedule[state.radioIndex],el=radioPlayer();
+  if(!el)return;
+  el.src=item.src;el.volume=state.radioDucked?state.radioVolume*.25:state.radioVolume;
+  updateRadioUI();
+  if(autoplay){
+    try{await el.play();state.radioPlaying=true}catch(e){console.warn('radio autoplay blocked',e);state.radioPlaying=false}
+    updateRadioUI();
+  }
+}
+async function toggleRadio(){
+  const el=radioPlayer();if(!el)return;
+  if(!el.src)await radioLoadIndex(state.radioIndex,false);
+  if(el.paused){try{await el.play();state.radioPlaying=true}catch(e){toast('라디오 재생 버튼을 다시 눌러 주세요.');state.radioPlaying=false}}
+  else{el.pause();state.radioPlaying=false}
+  updateRadioUI();
+}
+async function nextRadio(){await radioLoadIndex(state.radioIndex+1,true)}
+async function initVirtualRadio(){
+  const rv=Number(localStorage.getItem(RADIO_VOLUME_KEY));if(Number.isFinite(rv))state.radioVolume=Math.max(0,Math.min(1,rv));
+  const nv=Number(localStorage.getItem(NAV_VOLUME_KEY));if(Number.isFinite(nv))state.voiceVolume=Math.max(0,Math.min(1,nv));
+  const ri=Number(localStorage.getItem(RADIO_INDEX_KEY));if(Number.isFinite(ri))state.radioIndex=Math.max(0,ri);
+  await loadRadioSchedule();
+  await radioLoadIndex(state.radioIndex,false);
+  setRadioVolume(state.radioVolume,false);setNavVolume(state.voiceVolume,false);updateRadioUI();
+  const el=radioPlayer();if(el){
+    el.onended=()=>radioLoadIndex(state.radioIndex+1,true);
+    el.onplay=()=>{state.radioPlaying=true;updateRadioUI()};
+    el.onpause=()=>{state.radioPlaying=false;updateRadioUI()};
+  }
+}
+window.addEventListener('jofams-native-audio-duck',e=>setRadioDucked(Boolean(e?.detail?.ducked)));
+
 function speak(text,retry=0){
-  if(!state.sound||!text)return;
+  if(!state.sound||!text||Number(state.voiceVolume)<=0)return;
   const c=characterDefs[state.character];
   const rate=state.character==='sunsik'?.82:state.character==='hunmin'?1.08:c.rate;
   const pitch=state.character==='sunsik'?.58:state.character==='hunmin'?.92:c.pitch;
-  try{if(window.JofamsTtsBridge){if(window.JofamsTtsBridge.isReady?.()){window.JofamsTtsBridge.speak(String(text),state.character,rate,pitch,state.voiceVolume);return}if(retry<8){setTimeout(()=>speak(text,retry+1),300);return}}}catch(e){console.warn('native TTS failed; falling back',e)}
+  try{
+    if(window.JofamsTtsBridge){
+      if(window.JofamsTtsBridge.isReady?.()){
+        setRadioDucked(true);
+        window.JofamsTtsBridge.speak(String(text),state.character,rate,pitch,state.voiceVolume);
+        scheduleRadioUnduck(text); // native duck 이벤트 미지원 WebView용 fallback
+        return;
+      }
+      if(retry<8){setTimeout(()=>speak(text,retry+1),300);return}
+    }
+  }catch(e){console.warn('native TTS failed; falling back',e)}
   if(!('speechSynthesis' in window)||typeof SpeechSynthesisUtterance==='undefined')return;
   const u=new SpeechSynthesisUtterance(text);u.lang='ko-KR';u.volume=state.voiceVolume;u.rate=rate;u.pitch=pitch;
   if(state.character==='sunsik')u.voice=pickMaleKoreanVoice('sunsik');else if(state.character==='hunmin')u.voice=pickMaleKoreanVoice('hunmin');else u.voice=pickDaimVoice();
+  u.onstart=()=>setRadioDucked(true);u.onend=()=>setRadioDucked(false);u.onerror=()=>setRadioDucked(false);
   speechSynthesis.cancel();speechSynthesis.speak(u);
 }
 
@@ -4891,7 +5010,7 @@ function syncCharacterUI(){
 }
 function setCharacter(key){if(!characterDefs[key])return;state.character=key;syncCharacterUI();saveLocalSettings();saveCloudPrefs();speak(`${characterDefs[key].name} 가이드로 변경했습니다.`)}
 function updateVolumeUI(){const pct=Math.round(state.voiceVolume*100);$('guideVolume').value=pct;$('myGuideVolume').value=pct;$('volumeValue').textContent=`${pct}%`;$('myVolumeValue').textContent=`${pct}%`}
-function changeVolume(v){state.voiceVolume=Math.max(0,Math.min(1,Number(v)/100));updateVolumeUI();saveLocalSettings();saveCloudPrefs()}
+function changeVolume(v){setNavVolume(Number(v)/100,true);saveLocalSettings();saveCloudPrefs()}
 
 /* ---------- FIRST-RUN PERMISSIONS ---------- */
 async function permissionStatus(name){
@@ -5579,6 +5698,13 @@ function bootstrapApp(){
   Promise.resolve().then(()=>initFirebase()).catch(e=>console.warn('firebase init failed',e));
   try{loadSavedWaypointCourses();renderProfile();updateOriginUI();renderRouteWaypoints();renderSavedWaypointCourses();updateTripHistorySummary();setView('home')}catch(e){console.error('initial render failed',e)}
   try{loadHomeShorts()}catch(e){console.warn('komsco shorts init failed',e)}
+  try{
+    $('radioPlayBtn')&&($('radioPlayBtn').onclick=toggleRadio);
+    $('radioNextBtn')&&($('radioNextBtn').onclick=nextRadio);
+    $('radioVolume')&&($('radioVolume').oninput=e=>setRadioVolume(Number(e.target.value)/100,true));
+    $('guideVolume')&&($('guideVolume').oninput=e=>changeVolume(e.target.value));
+    Promise.resolve().then(initVirtualRadio).catch(e=>console.warn('virtual radio init failed',e));
+  }catch(e){console.warn('radio UI bind failed',e)}
   if('speechSynthesis'in window){try{speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices()}catch{}}
   setTimeout(()=>refreshPermissionState().catch(()=>{}),180);
 }
@@ -5589,3 +5715,5 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.7.4: critical camera render filters 55m/45m fixed to 120m; partial dataset failures isolated
 
 // build 7.6.7.5: startNavigation camera reload + remove duplicate camera filters + direct official fallback
+
+// build 7.6.8.0: virtual radio integration, camera voice filter fix, precise speed source priority, guide sign/voice sync
