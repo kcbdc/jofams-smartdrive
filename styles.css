@@ -1908,5 +1908,10 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 
 /* === 7.6.8.1 compact radio control === */
 .drive-radio-btn{display:flex!important;align-items:center;justify-content:center;width:52px!important;height:52px!important;padding:0!important;border-radius:17px!important;border:1px solid rgba(255,255,255,.66)!important;box-shadow:0 7px 20px rgba(0,0,0,.18)!important;backdrop-filter:blur(10px);transition:background .18s ease,color .18s ease,transform .12s ease,box-shadow .18s ease}
-.drive-radio-btn .drive-radio-icon{width:24px;height:24px;display:grid;place-items:center;margin-top:-4px}.drive-radio-btn .drive-radio-icon svg{width:24px;height:24px}.drive-radio-btn .drive-radio-air{position:absolute;bottom:5px;left:0;right:0;text-align:center;font-size:7px;font-weight:900;letter-spacing:.32px;line-height:1}
-.drive-radio-btn.on{background:#1677ff!important;color:#fff!important;box-shadow:0 8px 22px rgba(22,119,255,.34)!important}.drive-radio-btn.off{background:rgba(255,255,255,.96)!important;color:#1a2230!important;border-color:rgba(33,53,82,.16)!important}.drive-radio-btn:active{transform:scale(.94)}
+.drive-radio-btn .drive-radio-icon{width:24px;height:24px;display:grid;place-items:center;margin-top:-4px}.drive-radio-btn .drive-radio-icon svg{width:24px;height:24px}.drive-radio-btn.on{background:#1677ff!important;color:#fff!important;box-shadow:0 8px 22px rgba(22,119,255,.34)!important}.drive-radio-btn.off{background:rgba(255,255,255,.96)!important;color:#1a2230!important;border-color:rgba(33,53,82,.16)!important}.drive-radio-btn:active{transform:scale(.94)}
+
+/* === 7.6.8.2 radio/AR tap fix === */
+.drive-radio-btn{z-index:62!important;pointer-events:auto!important;touch-action:manipulation!important;cursor:pointer!important}
+.floating-ar{z-index:61!important;pointer-events:auto!important;touch-action:manipulation!important;cursor:pointer!important}
+.drive-radio-btn .drive-radio-icon{margin:0!important;width:27px!important;height:27px!important}
+.drive-radio-btn .drive-radio-icon svg{width:27px!important;height:27px!important}

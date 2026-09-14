@@ -319,7 +319,7 @@ function fuseGpsFix(raw,now){
 }
 
 
-const CAMERA_DATASET_URLS=['/data/daejeon_sejong_corridor_cameras.json','/data/unmanned_traffic_cameras_part1.json','/data/unmanned_traffic_cameras_part2.json'];
+const CAMERA_DATASET_URLS=['/data/sejong_daejeon_expressway_cameras.json','/data/daejeon_sejong_corridor_cameras.json','/data/unmanned_traffic_cameras_part1.json','/data/unmanned_traffic_cameras_part2.json'];
 
 async function loadOfficialCameraRows(){
   if(Array.isArray(state.officialCameraRows))return state.officialCameraRows;
@@ -330,7 +330,8 @@ async function loadOfficialCameraRows(){
       const r=await fetch(url,{cache:'no-cache'});
       if(!r.ok)throw new Error(`HTTP ${r.status}`);
       const d=await r.json();
-      return Array.isArray(d)?d:Array.isArray(d?.records)?d.records:Array.isArray(d?.response?.body?.items)?d.response.body.items:[];
+      const rows=Array.isArray(d)?d:Array.isArray(d?.records)?d.records:Array.isArray(d?.response?.body?.items)?d.response.body.items:[];
+      return /sejong_daejeon_expressway_cameras\.json$/i.test(url)?rows.map(x=>({...x,__priorityExpressway:true})):rows;
     }catch(e){
       // 특정 파일 하나가 404/캐시 오류여도 나머지 전국 데이터는 반드시 사용한다.
       console.warn('camera dataset partial load failed',url,e);
@@ -505,7 +506,7 @@ async function loadStaticCameraEvents(route){
     if(!routeMatch||!Number.isFinite(Number(routeMatch.index)))continue;
     const idx=Math.max(0,Math.min(geometry.length-1,Number(routeMatch.index)));
     const p=geometry[idx]; if(!p)continue;
-    const d=Number(routeMatch.distance); if(!Number.isFinite(d)||d>180)continue;
+    const d=Number(routeMatch.distance); const cameraTolerance=row.__priorityExpressway?320:180; if(!Number.isFinite(d)||d>cameraTolerance)continue;
     const maxspeed=Number(pickField(row,['제한속도','lmttVe','speedLimit']))||0;
     const protectedArea=String(pickField(row,['보호구역구분','protectedArea'])).trim();
     const roadName=String(pickField(row,['도로노선명','도로명','roadName'])).trim();
@@ -521,11 +522,12 @@ async function loadStaticCameraEvents(route){
       continue;
     }
 
-    const type=officialBusLaneCamera(row)?'bus_lane_camera':officialCameraType(pickField(row,['단속구분','regltSe','규제구분']));
+    let type=officialBusLaneCamera(row)?'bus_lane_camera':officialCameraType(pickField(row,['단속구분','regltSe','규제구분']));
+    if(row.__priorityExpressway&&type==='section_speed_camera'&&!sectionPosition)type='traffic_camera';
     const base={
       id:`local-camera:${manageNo}`,type,lat,lng,routeIndex:idx,name,maxspeed,
       authority:String(pickField(row,['관리기관명','institutionNm'])).trim(),
-      protectedArea,roadName,source:'전국무인교통단속카메라표준데이터(로컬 파일)'
+      protectedArea,roadName,priorityExpressway:Boolean(row.__priorityExpressway),source:row.__priorityExpressway?'전국무인교통단속카메라표준데이터(세종→대전 고속화도로 우선보정)':'전국무인교통단속카메라표준데이터(로컬 파일)'
     };
     out.push(base);
     if(/어린이|스쿨|school/i.test(protectedArea)){
@@ -4669,7 +4671,7 @@ function updateRadioUI(){
   btn.classList.toggle('on',Boolean(state.radioPlaying));
   btn.classList.toggle('off',!state.radioPlaying);
   btn.setAttribute('aria-label',state.radioPlaying?'라디오 멈춤':'라디오 재생');
-  const air=btn.querySelector('.drive-radio-air');if(air)air.textContent=state.radioPlaying?'ON AIR':'OFF';
+  btn.setAttribute('aria-pressed',state.radioPlaying?'true':'false');
 }
 async function radioLoadIndex(index,autoplay=false){
   if(!state.radioSchedule?.length)await loadRadioSchedule();
@@ -5666,7 +5668,7 @@ function bindUI(){
     if($('fuelModalClose'))$('fuelModalClose').onclick=closeFuelModal;
     if($('fuelModal'))$('fuelModal').addEventListener('click',e=>{if(e.target===$('fuelModal'))closeFuelModal()});
   }catch(e){console.warn('fuel UI bind failed',e)}
-  try{$('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=recenterDriveMap;$('mapCompassBtn').onclick=resetDriveCompass;$('map3dBtn').onclick=e=>{e.stopPropagation();state.map3D=!state.map3D;applyDriveMapMode();toggleMapControls(true)};$('mapSatelliteBtn').onclick=e=>{e.stopPropagation();toggleMapSatellite();toggleMapControls(true)};$('mapZoomInBtn').onclick=e=>{e.stopPropagation();state.map?.zoomIn({duration:180});toggleMapControls(true)};$('mapZoomOutBtn').onclick=e=>{e.stopPropagation();state.map?.zoomOut({duration:180});toggleMapControls(true)};$('driveView').addEventListener('click',e=>{if(e.target.closest('button,input,.maneuver-stack,.drive-bottom-card,.safety-alert,.traffic-status,.vms-banner,.lane-assist-layer'))return;toggleMapControls(true)});$('driveVoiceBtn').onclick=startVoiceCommand;$('arOpenBtn').onclick=startAR;$('driveArBtn').onclick=startAR;$('routeInfoBtn').onclick=openRouteInfo;if($('simulationStartBtn'))$('simulationStartBtn').onclick=startRouteSimulation;document.querySelectorAll('[data-simulation-speed]').forEach(b=>b.onclick=()=>setSimulationSpeed(b.dataset.simulationSpeed));$('driveSearchBtn').onclick=openDriveSearch;$('routeInfoClose').onclick=closeRouteInfo;$('routeInfoModal').addEventListener('click',e=>{if(e.target===$('routeInfoModal'))closeRouteInfo()});$('driveSearchClose').onclick=closeDriveSearch;$('driveSearchSubmit').onclick=()=>searchDriveDestinations($('driveSearchInput').value);$('driveSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchDriveDestinations(e.target.value)});$('driveSearchModal').addEventListener('click',e=>{if(e.target===$('driveSearchModal'))closeDriveSearch()});document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{stopRouteSimulation({resumeGps:false});closeDriveMenu();stopWatch();setView('route');loadRouteOptions()};$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;}catch(e){console.warn('UI bind section 9 failed',e)}
+  try{$('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=recenterDriveMap;$('mapCompassBtn').onclick=resetDriveCompass;$('map3dBtn').onclick=e=>{e.stopPropagation();state.map3D=!state.map3D;applyDriveMapMode();toggleMapControls(true)};$('mapSatelliteBtn').onclick=e=>{e.stopPropagation();toggleMapSatellite();toggleMapControls(true)};$('mapZoomInBtn').onclick=e=>{e.stopPropagation();state.map?.zoomIn({duration:180});toggleMapControls(true)};$('mapZoomOutBtn').onclick=e=>{e.stopPropagation();state.map?.zoomOut({duration:180});toggleMapControls(true)};$('driveView').addEventListener('click',e=>{if(e.target.closest('button,input,.maneuver-stack,.drive-bottom-card,.safety-alert,.traffic-status,.vms-banner,.lane-assist-layer'))return;toggleMapControls(true)});if($('driveVoiceBtn'))$('driveVoiceBtn').onclick=startVoiceCommand;if($('driveRadioBtn'))$('driveRadioBtn').onclick=toggleRadio;if($('arOpenBtn'))$('arOpenBtn').onclick=startAR;if($('driveArBtn'))$('driveArBtn').onclick=startAR;$('routeInfoBtn').onclick=openRouteInfo;if($('simulationStartBtn'))$('simulationStartBtn').onclick=startRouteSimulation;document.querySelectorAll('[data-simulation-speed]').forEach(b=>b.onclick=()=>setSimulationSpeed(b.dataset.simulationSpeed));$('driveSearchBtn').onclick=openDriveSearch;$('routeInfoClose').onclick=closeRouteInfo;$('routeInfoModal').addEventListener('click',e=>{if(e.target===$('routeInfoModal'))closeRouteInfo()});$('driveSearchClose').onclick=closeDriveSearch;$('driveSearchSubmit').onclick=()=>searchDriveDestinations($('driveSearchInput').value);$('driveSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchDriveDestinations(e.target.value)});$('driveSearchModal').addEventListener('click',e=>{if(e.target===$('driveSearchModal'))closeDriveSearch()});document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{stopRouteSimulation({resumeGps:false});closeDriveMenu();stopWatch();setView('route');loadRouteOptions()};$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;}catch(e){console.warn('UI bind section 9 failed',e)}
   try{$('guideVolume').oninput=e=>changeVolume(e.target.value);$('myGuideVolume').oninput=e=>changeVolume(e.target.value);$('myCloseBtn').onclick=closeMy;$('myModal').addEventListener('click',e=>{if(e.target===$('myModal'))closeMy()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;$('myFavoritesBtn').onclick=openFavoritesList;$('tripHistoryBtn').onclick=openTripHistory;$('noticeBtn').onclick=openNotices;if($('appPrivacyBtn'))$('appPrivacyBtn').onclick=openAppPrivacy;if($('permissionSettingBtn'))$('permissionSettingBtn').onclick=()=>toggleSettingPanel('permissionSettingBtn','permissionSettingPanel');if($('locationConsentToggle'))$('locationConsentToggle').onchange=e=>setPermissionPreference('location',e.target.checked);if($('cameraConsentToggle'))$('cameraConsentToggle').onchange=e=>setPermissionPreference('camera',e.target.checked);$('infoModalClose').onclick=closeInfoModal;$('infoModal').addEventListener('click',e=>{if(e.target===$('infoModal'))closeInfoModal()});}catch(e){console.warn('UI bind section 10 failed',e)}
   try{if($('hamburgerCloseBtn'))$('hamburgerCloseBtn').onclick=closeHamburgerMenu;if($('hamburgerMenuModal'))$('hamburgerMenuModal').addEventListener('click',e=>{if(e.target===$('hamburgerMenuModal'))closeHamburgerMenu()});}catch(e){console.warn('UI bind section 11 failed',e)}
   try{if($('hambPlaceManageBtn'))$('hambPlaceManageBtn').onclick=openDestinationManager;if($('hambRecentBtn'))$('hambRecentBtn').onclick=openRecentDestinationAll;if($('hambWaypointBtn'))$('hambWaypointBtn').onclick=openWaypointSaved;if($('hambTrafficBtn'))$('hambTrafficBtn').onclick=openTrafficDetail;if($('hambRoutePriorityBtn'))$('hambRoutePriorityBtn').onclick=openRoutePrioritySettings;if($('hambCameraSettingsBtn'))$('hambCameraSettingsBtn').onclick=openCameraAlertSettings;if($('hambSupportBtn'))$('hambSupportBtn').onclick=openSupportTerms;}catch(e){console.warn('UI bind section 12 failed',e)}
@@ -5726,3 +5728,5 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.8.0: virtual radio integration, camera voice filter fix, precise speed source priority, guide sign/voice sync
 
 // build 7.6.8.1: compact radio toggle in mic position + stronger stationary start lock
+
+// build 7.6.8.2: radio SVG-only UI, AR/radio click binding repair, Sejong->Daejeon verified expressway camera priority supplement
