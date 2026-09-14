@@ -4678,12 +4678,37 @@ async function loadRadioSchedule(){
   }catch(e){console.warn('radio schedule load failed',e);state.radioSchedule=[]}
   return state.radioSchedule;
 }
+
+function radioToggleSvg(isOn){
+  if(isOn){
+    // ON: 안테나 + 전파 + 재생중 표시(파란 배경 위 흰색)
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="4" y="8" width="16" height="10" rx="2.5"></rect>
+      <path d="M8 8 15 4"></path>
+      <circle cx="9" cy="13" r="2.2"></circle>
+      <path d="M14.5 12.2h2.7M14.5 15h2.7"></path>
+      <path d="M18.3 5.2c1 .7 1.7 1.6 2.1 2.8"></path>
+      <path d="M16.8 6.5c.6.4 1 .9 1.3 1.6"></path>
+    </svg>`;
+  }
+  // OFF: 라디오 본체 + 정지 사각형(흰 배경 위 파란색)
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <rect x="4" y="8" width="16" height="10" rx="2.5"></rect>
+    <path d="M8 8 15 4"></path>
+    <circle cx="9" cy="13" r="2.2"></circle>
+    <rect x="14.5" y="11.5" width="3.3" height="3.3" rx=".5" fill="currentColor" stroke="none"></rect>
+  </svg>`;
+}
+
 function updateRadioUI(){
   const btn=$('driveRadioBtn');if(!btn)return;
-  btn.classList.toggle('on',Boolean(state.radioPlaying));
-  btn.classList.toggle('off',!state.radioPlaying);
-  btn.setAttribute('aria-label',state.radioPlaying?'라디오 멈춤':'라디오 재생');
-  btn.setAttribute('aria-pressed',state.radioPlaying?'true':'false');
+  const on=Boolean(state.radioPlaying);
+  btn.classList.toggle('on',on);
+  btn.classList.toggle('off',!on);
+  btn.setAttribute('aria-label',on?'라디오 정지':'라디오 재생');
+  btn.setAttribute('aria-pressed',String(on));
+  const icon=btn.querySelector('.drive-radio-icon');
+  if(icon)icon.innerHTML=radioToggleSvg(on);
 }
 async function radioLoadIndex(index,autoplay=false){
   const el=radioPlayer();if(!el){console.warn('radio player element missing');return false}
@@ -5770,3 +5795,5 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.8.2: radio SVG-only UI, AR/radio click binding repair, Sejong->Daejeon verified expressway camera priority supplement
 
 // build 7.6.8.3: restore hidden audio player + radio volume UI + direct navigation-start autoplay
+
+// build 7.6.8.4: radio ON/OFF swaps both color and SVG icon for unmistakable state

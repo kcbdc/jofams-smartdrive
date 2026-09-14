@@ -1946,3 +1946,43 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   padding-top:10px!important;
   border-top:1px solid rgba(20,42,74,.08);
 }
+
+/* === 7.6.8.4 radio toggle visual states === */
+.drive-radio-btn{
+  width:52px!important;
+  height:52px!important;
+  border-radius:16px!important;
+  display:grid!important;
+  place-items:center!important;
+  transition:background-color .16s ease,color .16s ease,box-shadow .16s ease,transform .08s ease!important;
+}
+.drive-radio-btn .drive-radio-icon{
+  width:27px!important;
+  height:27px!important;
+  display:grid!important;
+  place-items:center!important;
+  margin:0!important;
+}
+.drive-radio-btn .drive-radio-icon svg{
+  width:27px!important;
+  height:27px!important;
+  display:block!important;
+}
+.drive-radio-btn.on{
+  background:#1677ff!important;
+  color:#ffffff!important;
+  border:1px solid #1677ff!important;
+  box-shadow:0 7px 18px rgba(22,119,255,.34)!important;
+}
+.drive-radio-btn.off{
+  background:#ffffff!important;
+  color:#1677ff!important;
+  border:1px solid rgba(22,119,255,.38)!important;
+  box-shadow:0 6px 16px rgba(20,42,74,.16)!important;
+}
+.drive-radio-btn:active{
+  transform:scale(.91)!important;
+}
+.drive-radio-btn.on:active{
+  box-shadow:0 3px 9px rgba(22,119,255,.3)!important;
+}
