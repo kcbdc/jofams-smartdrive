@@ -3277,11 +3277,23 @@ function startNavigation(){
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
   if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 바로 요청해야 브라우저가 확실히 허용한다.
   initializeDriveSummary();startWatch();ensureUserMarker();updateCarMarkerImage();drawRoute(state.route,{fit:false});updateDriving(true);
-  Promise.resolve().then(async()=>{
-    if(!radioPlayer()?.src)await radioLoadIndex(state.radioIndex,false);
-    try{await radioPlayer()?.play();state.radioPlaying=true;updateRadioUI()}
-    catch(e){console.warn('drive radio autoplay blocked',e);state.radioPlaying=false;updateRadioUI()}
-  });
+  // 안내 시작 버튼의 사용자 제스처 컨텍스트에서 즉시 재생을 요청한다.
+  {
+    const rp=radioPlayer();
+    if(rp){
+      if(!rp.getAttribute('src'))rp.src='/assets/radio/radio_1.mp3';
+      rp.volume=state.radioDucked?state.radioVolume*.25:state.radioVolume;
+      const playPromise=rp.play();
+      if(playPromise?.then)playPromise.then(()=>{
+        state.radioPlaying=true;updateRadioUI();
+      }).catch(async e=>{
+        console.warn('drive radio autoplay blocked',e);
+        const ok=await radioLoadIndex(state.radioIndex,true);
+        state.radioPlaying=Boolean(ok);updateRadioUI();
+      });
+      else{state.radioPlaying=true;updateRadioUI()}
+    }
+  }
   if(state.routeMode==='car'){
     // 최초 안내 시작 시 현재 선택 경로 기준으로 단속카메라 데이터를 반드시 다시 로드한다.
     // 경로선택 화면에서 비동기 로딩이 끝나지 않았거나 취소되더라도 여기서 보장한다.
@@ -4674,28 +4686,53 @@ function updateRadioUI(){
   btn.setAttribute('aria-pressed',state.radioPlaying?'true':'false');
 }
 async function radioLoadIndex(index,autoplay=false){
+  const el=radioPlayer();if(!el){console.warn('radio player element missing');return false}
   if(!state.radioSchedule?.length)await loadRadioSchedule();
-  if(!state.radioSchedule?.length)return;
+  // schedule.json 로딩이 늦어도 기본 음원으로 즉시 재생 가능하게 한다.
+  if(!state.radioSchedule?.length){
+    state.radioSchedule=[{id:'radio-1',name:'가상 라디오',src:'/assets/radio/radio_1.mp3'}];
+  }
   state.radioIndex=((Number(index)||0)%state.radioSchedule.length+state.radioSchedule.length)%state.radioSchedule.length;
   try{localStorage.setItem(RADIO_INDEX_KEY,String(state.radioIndex))}catch{}
-  const item=state.radioSchedule[state.radioIndex],el=radioPlayer();
-  if(!el)return;
-  el.src=item.src;el.volume=state.radioDucked?state.radioVolume*.25:state.radioVolume;
+  const item=state.radioSchedule[state.radioIndex];
+  const wanted=new URL(item.src,location.href).href;
+  if(el.src!==wanted)el.src=item.src;
+  el.volume=state.radioDucked?state.radioVolume*.25:state.radioVolume;
+  el.load?.();
   updateRadioUI();
   if(autoplay){
-    try{await el.play();state.radioPlaying=true}catch(e){console.warn('radio autoplay blocked',e);state.radioPlaying=false}
-    updateRadioUI();
+    try{
+      await el.play();state.radioPlaying=true;updateRadioUI();return true;
+    }catch(e){
+      console.warn('radio autoplay blocked',e);state.radioPlaying=false;updateRadioUI();return false;
+    }
   }
+  return true;
 }
 async function toggleRadio(){
-  const el=radioPlayer();if(!el)return;
-  if(!el.src)await radioLoadIndex(state.radioIndex,false);
-  if(el.paused){try{await el.play();state.radioPlaying=true}catch(e){toast('라디오 재생 버튼을 다시 눌러 주세요.');state.radioPlaying=false}}
-  else{el.pause();state.radioPlaying=false}
+  const el=radioPlayer();
+  if(!el){toast('라디오 재생기를 불러오지 못했습니다.');return}
+  try{
+    if(el.paused){
+      if(!el.getAttribute('src'))el.src='/assets/radio/radio_1.mp3';
+      el.volume=state.radioDucked?state.radioVolume*.25:state.radioVolume;
+      await el.play();
+      state.radioPlaying=true;
+    }else{
+      el.pause();
+      state.radioPlaying=false;
+    }
+  }catch(e){
+    console.warn('radio toggle failed',e);
+    state.radioPlaying=false;
+    toast('라디오 재생에 실패했습니다.');
+  }
   updateRadioUI();
 }
 async function nextRadio(){await radioLoadIndex(state.radioIndex+1,true)}
 async function initVirtualRadio(){
+  const player=radioPlayer();
+  if(player&&!player.getAttribute('src'))player.src='/assets/radio/radio_1.mp3';
   const rv=Number(localStorage.getItem(RADIO_VOLUME_KEY));if(Number.isFinite(rv))state.radioVolume=Math.max(0,Math.min(1,rv));
   const nv=Number(localStorage.getItem(NAV_VOLUME_KEY));if(Number.isFinite(nv))state.voiceVolume=Math.max(0,Math.min(1,nv));
   const ri=Number(localStorage.getItem(RADIO_INDEX_KEY));if(Number.isFinite(ri))state.radioIndex=Math.max(0,ri);
@@ -5669,7 +5706,7 @@ function bindUI(){
     if($('fuelModal'))$('fuelModal').addEventListener('click',e=>{if(e.target===$('fuelModal'))closeFuelModal()});
   }catch(e){console.warn('fuel UI bind failed',e)}
   try{$('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=recenterDriveMap;$('mapCompassBtn').onclick=resetDriveCompass;$('map3dBtn').onclick=e=>{e.stopPropagation();state.map3D=!state.map3D;applyDriveMapMode();toggleMapControls(true)};$('mapSatelliteBtn').onclick=e=>{e.stopPropagation();toggleMapSatellite();toggleMapControls(true)};$('mapZoomInBtn').onclick=e=>{e.stopPropagation();state.map?.zoomIn({duration:180});toggleMapControls(true)};$('mapZoomOutBtn').onclick=e=>{e.stopPropagation();state.map?.zoomOut({duration:180});toggleMapControls(true)};$('driveView').addEventListener('click',e=>{if(e.target.closest('button,input,.maneuver-stack,.drive-bottom-card,.safety-alert,.traffic-status,.vms-banner,.lane-assist-layer'))return;toggleMapControls(true)});if($('driveVoiceBtn'))$('driveVoiceBtn').onclick=startVoiceCommand;if($('driveRadioBtn'))$('driveRadioBtn').onclick=toggleRadio;if($('arOpenBtn'))$('arOpenBtn').onclick=startAR;if($('driveArBtn'))$('driveArBtn').onclick=startAR;$('routeInfoBtn').onclick=openRouteInfo;if($('simulationStartBtn'))$('simulationStartBtn').onclick=startRouteSimulation;document.querySelectorAll('[data-simulation-speed]').forEach(b=>b.onclick=()=>setSimulationSpeed(b.dataset.simulationSpeed));$('driveSearchBtn').onclick=openDriveSearch;$('routeInfoClose').onclick=closeRouteInfo;$('routeInfoModal').addEventListener('click',e=>{if(e.target===$('routeInfoModal'))closeRouteInfo()});$('driveSearchClose').onclick=closeDriveSearch;$('driveSearchSubmit').onclick=()=>searchDriveDestinations($('driveSearchInput').value);$('driveSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchDriveDestinations(e.target.value)});$('driveSearchModal').addEventListener('click',e=>{if(e.target===$('driveSearchModal'))closeDriveSearch()});document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{stopRouteSimulation({resumeGps:false});closeDriveMenu();stopWatch();setView('route');loadRouteOptions()};$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;}catch(e){console.warn('UI bind section 9 failed',e)}
-  try{$('guideVolume').oninput=e=>changeVolume(e.target.value);$('myGuideVolume').oninput=e=>changeVolume(e.target.value);$('myCloseBtn').onclick=closeMy;$('myModal').addEventListener('click',e=>{if(e.target===$('myModal'))closeMy()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;$('myFavoritesBtn').onclick=openFavoritesList;$('tripHistoryBtn').onclick=openTripHistory;$('noticeBtn').onclick=openNotices;if($('appPrivacyBtn'))$('appPrivacyBtn').onclick=openAppPrivacy;if($('permissionSettingBtn'))$('permissionSettingBtn').onclick=()=>toggleSettingPanel('permissionSettingBtn','permissionSettingPanel');if($('locationConsentToggle'))$('locationConsentToggle').onchange=e=>setPermissionPreference('location',e.target.checked);if($('cameraConsentToggle'))$('cameraConsentToggle').onchange=e=>setPermissionPreference('camera',e.target.checked);$('infoModalClose').onclick=closeInfoModal;$('infoModal').addEventListener('click',e=>{if(e.target===$('infoModal'))closeInfoModal()});}catch(e){console.warn('UI bind section 10 failed',e)}
+  try{$('guideVolume').oninput=e=>changeVolume(e.target.value);if($('radioVolume'))$('radioVolume').oninput=e=>setRadioVolume(Number(e.target.value)/100,true);$('myGuideVolume').oninput=e=>changeVolume(e.target.value);$('myCloseBtn').onclick=closeMy;$('myModal').addEventListener('click',e=>{if(e.target===$('myModal'))closeMy()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;$('myFavoritesBtn').onclick=openFavoritesList;$('tripHistoryBtn').onclick=openTripHistory;$('noticeBtn').onclick=openNotices;if($('appPrivacyBtn'))$('appPrivacyBtn').onclick=openAppPrivacy;if($('permissionSettingBtn'))$('permissionSettingBtn').onclick=()=>toggleSettingPanel('permissionSettingBtn','permissionSettingPanel');if($('locationConsentToggle'))$('locationConsentToggle').onchange=e=>setPermissionPreference('location',e.target.checked);if($('cameraConsentToggle'))$('cameraConsentToggle').onchange=e=>setPermissionPreference('camera',e.target.checked);$('infoModalClose').onclick=closeInfoModal;$('infoModal').addEventListener('click',e=>{if(e.target===$('infoModal'))closeInfoModal()});}catch(e){console.warn('UI bind section 10 failed',e)}
   try{if($('hamburgerCloseBtn'))$('hamburgerCloseBtn').onclick=closeHamburgerMenu;if($('hamburgerMenuModal'))$('hamburgerMenuModal').addEventListener('click',e=>{if(e.target===$('hamburgerMenuModal'))closeHamburgerMenu()});}catch(e){console.warn('UI bind section 11 failed',e)}
   try{if($('hambPlaceManageBtn'))$('hambPlaceManageBtn').onclick=openDestinationManager;if($('hambRecentBtn'))$('hambRecentBtn').onclick=openRecentDestinationAll;if($('hambWaypointBtn'))$('hambWaypointBtn').onclick=openWaypointSaved;if($('hambTrafficBtn'))$('hambTrafficBtn').onclick=openTrafficDetail;if($('hambRoutePriorityBtn'))$('hambRoutePriorityBtn').onclick=openRoutePrioritySettings;if($('hambCameraSettingsBtn'))$('hambCameraSettingsBtn').onclick=openCameraAlertSettings;if($('hambSupportBtn'))$('hambSupportBtn').onclick=openSupportTerms;}catch(e){console.warn('UI bind section 12 failed',e)}
   try{if($('routePriorityClose'))$('routePriorityClose').onclick=()=>$('routePriorityModal').classList.add('hidden');document.querySelectorAll('[data-route-pref]').forEach(b=>b.onclick=()=>chooseRoutePreference(b.dataset.routePref));}catch(e){console.warn('UI bind section 13 failed',e)}
@@ -5711,6 +5748,7 @@ function bootstrapApp(){
   try{loadHomeShorts()}catch(e){console.warn('komsco shorts init failed',e)}
   try{
     $('driveRadioBtn')&&($('driveRadioBtn').onclick=toggleRadio);
+    $('radioVolume')&&($('radioVolume').oninput=e=>setRadioVolume(Number(e.target.value)/100,true));
     $('guideVolume')&&($('guideVolume').oninput=e=>changeVolume(e.target.value));
     Promise.resolve().then(initVirtualRadio).catch(e=>console.warn('virtual radio init failed',e));
   }catch(e){console.warn('radio UI bind failed',e)}
@@ -5730,3 +5768,5 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.8.1: compact radio toggle in mic position + stronger stationary start lock
 
 // build 7.6.8.2: radio SVG-only UI, AR/radio click binding repair, Sejong->Daejeon verified expressway camera priority supplement
+
+// build 7.6.8.3: restore hidden audio player + radio volume UI + direct navigation-start autoplay

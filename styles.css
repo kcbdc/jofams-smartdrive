@@ -1915,3 +1915,34 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .floating-ar{z-index:61!important;pointer-events:auto!important;touch-action:manipulation!important;cursor:pointer!important}
 .drive-radio-btn .drive-radio-icon{margin:0!important;width:27px!important;height:27px!important}
 .drive-radio-btn .drive-radio-icon svg{width:27px!important;height:27px!important}
+
+/* === 7.6.8.3 radio state + volume restore === */
+.drive-radio-btn{
+  pointer-events:auto!important;
+  cursor:pointer!important;
+}
+.drive-radio-btn.on{
+  background:#1677ff!important;
+  color:#ffffff!important;
+  border-color:#1677ff!important;
+}
+.drive-radio-btn.off{
+  background:#ffffff!important;
+  color:#1677ff!important;
+  border-color:rgba(22,119,255,.28)!important;
+}
+.drive-radio-btn .drive-radio-icon,
+.drive-radio-btn .drive-radio-icon svg{
+  color:inherit!important;
+  stroke:currentColor!important;
+}
+#radioPlayer{
+  position:absolute!important;
+  width:1px!important;height:1px!important;
+  opacity:0!important;pointer-events:none!important;
+}
+.radio-volume-row{
+  margin-top:10px!important;
+  padding-top:10px!important;
+  border-top:1px solid rgba(20,42,74,.08);
+}
