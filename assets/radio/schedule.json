@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "radio-1",
+      "name": "네트워크 톡톡",
+      "src": "/assets/radio/radio_1.mp3"
+    },
+    {
+      "id": "radio-2",
+      "name": "유퀴즈 온 더 블럭",
+      "src": "/assets/radio/radio_2.mp3"
+    },
+    {
+      "id": "radio-3",
+      "name": "주영진의 뉴스브리핑",
+      "src": "/assets/radio/radio_3.mp3"
+    },
+    {
+      "id": "radio-4",
+      "name": "뮤직 라디오 3",
+      "src": "/assets/radio/radio_4.mp3"
+    },
+    {
+      "id": "radio-5",
+      "name": "뮤직 라디오 2",
+      "src": "/assets/radio/radio_5.mp3"
+    },
+    {
+      "id": "radio-6",
+      "name": "관계자외 출입금지",
+      "src": "/assets/radio/radio_6.mp3"
+    }
+  ]
+}
