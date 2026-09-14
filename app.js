@@ -23,7 +23,7 @@ const state = {
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,adminVerified:false,adminVerifiedEmail:'',loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,simulationActive:false,simulationSpeed:1,simulationDistance:null,simulationLastAt:0,simulationRaf:0,
   compassHeading:null,compassAt:0,compassReady:false,activeLaneGuideKey:'',nativeLocationAt:0,nativeLocationActive:false,imu:{at:0,yawRateDegS:0,accelMagnitude:0,headingDeg:null},mapMatch:{index:0,routeDistance:0,score:Infinity,confidence:0,at:0},offRouteHeadingHits:0,gpsFix:{lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false},
   whereToTab:'local',wakeLock:null,savedPlaceGroups:[],savedPlaceGroupMap:{},activeSavedGroup:'all',
-  navigationStartAnchor:null,navigationStartReleased:false,navigationStartAt:0,
+  navigationStartAnchor:null,navigationStartReleased:false,navigationStartAt:0,navigationMoveConfirmHits:0,
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
 };
 
@@ -1596,6 +1596,10 @@ function updateCarMarkerImage(){
 }
 function makeDestMarker(){const el=document.createElement('div');el.className='destination-pin';return new maplibregl.Marker({element:el,anchor:'bottom'})}
 function updateUserMarkerMotion(){
+  if(state.tripStartedAt&&!state.simulationActive&&!state.navigationStartReleased){
+    if(Number.isFinite(Number(state.driveMarkerRenderedDistance)))state.driveMarkerTargetDistance=Number(state.driveMarkerRenderedDistance);
+    return;
+  }
   const moving=Boolean(state.tripStartedAt)&&Math.max(0,Number(state.user?.speed)||0)>.35;
   const el=state.userMarker?.getElement();if(el)el.classList.toggle('jofams-car-moving',moving);
   if(state.tripStartedAt)setTimeout(alignDriveCharacterWithSpeedLimit,0);
@@ -1835,16 +1839,14 @@ function applyGps(pos,fly=false){
       Number(state.navigationStartAnchor.lat),Number(state.navigationStartAnchor.lng),
       rawLat,rawLng
     );
-    const confirmedMoving=Number.isFinite(reportedSpeed)&&reportedSpeed>=1.0;
-    if(confirmedMoving||startMoved>=12){
-      state.navigationStartReleased=true;
-      state.stationaryActive=false;
-      state.stationaryGpsAnchor=null;
-    }else{
-      startupStationary=true;
-      state.stationaryActive=true;
-      stateObj.speed=0;
-    }
+    const confirmedMoving=Number.isFinite(reportedSpeed)&&reportedSpeed>=1.4;
+    if(confirmedMoving)state.navigationMoveConfirmHits=(Number(state.navigationMoveConfirmHits)||0)+1;
+    else state.navigationMoveConfirmHits=0;
+    const moveReleased=state.navigationMoveConfirmHits>=2 || startMoved>=20;
+    if(moveReleased){
+      state.navigationStartReleased=true;state.navigationMoveConfirmHits=0;state.stationaryActive=false;state.stationaryGpsAnchor=null;
+    }else{startupStationary=true;state.stationaryActive=true;stateObj.speed=0;}
+
   }
   const tunnelZeroGps=Boolean(
     state.tripStartedAt &&
@@ -2423,7 +2425,7 @@ function resumeNavigationWithSelectedRoute(){
   state.arrivalCandidateSince=0;
   state.navigationStartAt=Date.now();
   state.navigationStartAnchor=pointValid(state.user)?{lat:Number(state.user.lat),lng:Number(state.user.lng),routeDistance:Number(state.user.routeDistance)}:null;
-  state.navigationStartReleased=false;
+  state.navigationStartReleased=false;state.navigationMoveConfirmHits=0;
   state.stationaryActive=true;
   state.stationaryGpsAnchor=state.navigationStartAnchor?{...state.navigationStartAnchor}:null;
   state.lastRealSpeedMps=0;
@@ -3264,7 +3266,7 @@ function startNavigation(){
   if((state.waypoints||[]).filter(pointValid).length)saveCurrentWaypointCourse();if(!state.route||!state.destination)return;cancelAutoStart();state.tripStartedAt=Date.now();
   state.navigationStartAt=state.tripStartedAt;
   state.navigationStartAnchor=pointValid(state.user)?{lat:Number(state.user.lat),lng:Number(state.user.lng),routeDistance:Number(state.user.routeDistance)}:null;
-  state.navigationStartReleased=false;
+  state.navigationStartReleased=false;state.navigationMoveConfirmHits=0;
   state.stationaryActive=true;
   state.stationaryGpsAnchor=state.navigationStartAnchor?{...state.navigationStartAnchor}:null;
   state.lastRealSpeedMps=0;
@@ -3273,6 +3275,11 @@ function startNavigation(){
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
   if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 바로 요청해야 브라우저가 확실히 허용한다.
   initializeDriveSummary();startWatch();ensureUserMarker();updateCarMarkerImage();drawRoute(state.route,{fit:false});updateDriving(true);
+  Promise.resolve().then(async()=>{
+    if(!radioPlayer()?.src)await radioLoadIndex(state.radioIndex,false);
+    try{await radioPlayer()?.play();state.radioPlaying=true;updateRadioUI()}
+    catch(e){console.warn('drive radio autoplay blocked',e);state.radioPlaying=false;updateRadioUI()}
+  });
   if(state.routeMode==='car'){
     // 최초 안내 시작 시 현재 선택 경로 기준으로 단속카메라 데이터를 반드시 다시 로드한다.
     // 경로선택 화면에서 비동기 로딩이 끝나지 않았거나 취소되더라도 여기서 보장한다.
@@ -4658,9 +4665,11 @@ async function loadRadioSchedule(){
   return state.radioSchedule;
 }
 function updateRadioUI(){
-  const item=state.radioSchedule?.[state.radioIndex];
-  if($('radioNowPlaying'))$('radioNowPlaying').textContent=item?.name||'방송 준비 중';
-  if($('radioPlayIcon'))$('radioPlayIcon').textContent=state.radioPlaying?'Ⅱ':'▶';
+  const btn=$('driveRadioBtn');if(!btn)return;
+  btn.classList.toggle('on',Boolean(state.radioPlaying));
+  btn.classList.toggle('off',!state.radioPlaying);
+  btn.setAttribute('aria-label',state.radioPlaying?'라디오 멈춤':'라디오 재생');
+  const air=btn.querySelector('.drive-radio-air');if(air)air.textContent=state.radioPlaying?'ON AIR':'OFF';
 }
 async function radioLoadIndex(index,autoplay=false){
   if(!state.radioSchedule?.length)await loadRadioSchedule();
@@ -5699,9 +5708,7 @@ function bootstrapApp(){
   try{loadSavedWaypointCourses();renderProfile();updateOriginUI();renderRouteWaypoints();renderSavedWaypointCourses();updateTripHistorySummary();setView('home')}catch(e){console.error('initial render failed',e)}
   try{loadHomeShorts()}catch(e){console.warn('komsco shorts init failed',e)}
   try{
-    $('radioPlayBtn')&&($('radioPlayBtn').onclick=toggleRadio);
-    $('radioNextBtn')&&($('radioNextBtn').onclick=nextRadio);
-    $('radioVolume')&&($('radioVolume').oninput=e=>setRadioVolume(Number(e.target.value)/100,true));
+    $('driveRadioBtn')&&($('driveRadioBtn').onclick=toggleRadio);
     $('guideVolume')&&($('guideVolume').oninput=e=>changeVolume(e.target.value));
     Promise.resolve().then(initVirtualRadio).catch(e=>console.warn('virtual radio init failed',e));
   }catch(e){console.warn('radio UI bind failed',e)}
@@ -5717,3 +5724,5 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.7.5: startNavigation camera reload + remove duplicate camera filters + direct official fallback
 
 // build 7.6.8.0: virtual radio integration, camera voice filter fix, precise speed source priority, guide sign/voice sync
+
+// build 7.6.8.1: compact radio toggle in mic position + stronger stationary start lock
