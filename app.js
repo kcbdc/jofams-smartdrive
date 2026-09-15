@@ -4707,7 +4707,7 @@ async function loadRadioSchedule(){
 
 function radioToggleMarkup(isOn){
   if(isOn){
-    // ON: 라디오 본체 + 전파(재생중) — 파란 배경 위 흰색 아이콘(기존 느낌 유지)
+    // ON: 라디오 본체 + 전파(재생중) — 파란 배경 위 흰색 아이콘
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <rect x="3.4" y="9" width="14" height="9.6" rx="2.4"></rect>
       <path d="M7.4 9 13 4.4"></path>
@@ -4716,8 +4716,16 @@ function radioToggleMarkup(isOn){
       <path d="M19.4 8.5c1.5 1 2.5 2.65 2.5 4.6s-1 3.6-2.5 4.6" opacity=".62"></path>
     </svg>`;
   }
-  // OFF: 사용자가 선택한 미니멀 블루 라디오 아이콘 이미지로 교체
-  return `<img src="/assets/radio/radio_off_icon_7686.png" alt="" draggable="false" class="drive-radio-off-art" />`;
+  // OFF: PNG 대신 동일 위치/크기 기준의 벡터(SVG) 아이콘 사용
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" class="drive-radio-off-svg">
+    <circle cx="12" cy="12" r="10.2" fill="#ffffff" stroke="#8fc3ff" stroke-width="1.4"></circle>
+    <g fill="none" stroke="#1677ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="6.4" y="9.6" width="11.2" height="6.9" rx="1.9"></rect>
+      <path d="M8.5 9.5 12.2 6.5"></path>
+      <circle cx="9.3" cy="13" r="1.35"></circle>
+      <path d="M12.8 12h2.8M12.8 14.1h2.8"></path>
+    </g>
+  </svg>`;
 }
 
 function updateRadioUI(){
@@ -5820,3 +5828,4 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
 // build 7.6.8.5: confirmed Sejong→Daejeon section-camera pairing, wider corridor camera snap, radio OFF blue icon, Sodam/Mannyeon Onnuri refresh
 // build 7.6.8.6: OFF radio button now uses selected image asset, Onnuri visibility/UI upgraded, home map safety markers hidden unless guiding
+// build 7.6.8.7: OFF radio button switched back to SVG and aligned to the same icon size/position as ON
