@@ -897,6 +897,15 @@ function onnuriShopSvg(){
     <circle cx="24.2" cy="7.8" r="3.2" fill="currentColor"/>
   </svg>`;
 }
+function onnuriUseFlags(item){
+  const flags=[];
+  if(item?.paper===true)flags.push('지류');
+  if(item?.digital===true)flags.push('디지털');
+  return flags;
+}
+function onnuriRegionLabel(item){
+  return [item?.city,item?.district,item?.town].filter(Boolean).join(' ');
+}
 function clearOnnuriMarkers(){
   for(const m of state.onnuriMarkers||[])try{m.remove()}catch{}
   state.onnuriMarkers=[];
@@ -938,7 +947,7 @@ function renderOnnuriShopMarkers(items){
     const el=document.createElement('button');
     el.type='button';el.className='onnuri-shop-marker';
     el.title=item.name||'온누리상품권 가맹점';
-    el.innerHTML=onnuriShopSvg();
+    el.innerHTML=`${onnuriShopSvg()}<span class="onnuri-shop-badge">온</span>`;
     el.onclick=e=>{e.stopPropagation();openOnnuriStoreInfo(item)};
     try{state.onnuriMarkers.push(new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([Number(item.lng),Number(item.lat)]).addTo(state.map))}catch{}
   }
@@ -994,15 +1003,18 @@ function renderWhereToList(){
       const loc=approx
         ? `${x.market||x.matchedAddress||'시장·상점가 대표 위치'}`
         : `${x.matchedAddress||x.address||x.market||'위치 확인됨'}`;
+      const region=onnuriRegionLabel(x);
+      const use=onnuriUseFlags(x).join(' · ');
       const tag=approx
         ? (Number(x.fallbackCount)>1?`대표 구역 위치 · 원천 ${Number(x.fallbackCount).toLocaleString()}곳`:'대표 구역 위치')
         : (x.precision==='exact-address-geocode'?'상세주소 위치 확인':'가맹점 위치 확인');
-      return `<button type="button" class="where-to-item ${approx?'where-to-zone-item':''}" data-where-index="${i}">
+      return `<button type="button" class="where-to-item where-to-item-onnuri ${approx?'where-to-zone-item':''}" data-where-index="${i}">
         <span class="where-to-rank">${i+1}</span>
         <span class="where-to-info">
           <b>${escapeHtml(x.name||'온누리상품권 가맹점')}</b>
           <small>${escapeHtml(loc)}</small>
           <em>온누리상품권 · ${escapeHtml(x.market||'상점가 미상')} · ${tag}</em>
+          <span class="where-to-meta-pills">${region?`<i>${escapeHtml(region)}</i>`:''}${use?`<i>${escapeHtml(use)}</i>`:'<i>사용수단 확인</i>'}</span>
         </span>
         <strong>${whereDistanceLabel(x._distance)}</strong>
       </button>`;
@@ -1115,7 +1127,7 @@ function renderOnnuriMarkers(data){
 
   // 정확히 찾은 점포는 기존 개별 가맹점 마커로 표시
   if(precise.length){
-    if(mapVisibleWidthMeters()<1200)renderOnnuriShopMarkers(precise);
+    if(mapVisibleWidthMeters()<1600)renderOnnuriShopMarkers(precise);
     else renderOnnuriClusterMarkers(clusterMapItemsByPixel(precise,68));
   }
 
@@ -3246,9 +3258,10 @@ function setView(view){
         }
       }catch{}
       scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh();
+      clearSafetyMarkers();
     },320);
   }else{
-    $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearOnnuriMarkers();clearHomeCameraMarkers();
+    $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearOnnuriMarkers();clearHomeCameraMarkers();clearSafetyMarkers();
   }
   if(view==='route')renderSavedWaypointCourses();
   if(view==='drive'){setTimeout(tryLandscapeFullscreen,80);setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),500)}
@@ -4088,7 +4101,9 @@ function routeSnappedCameraItems(items){
 }
 
 function renderSafetyMarkers(){
-  if(!state.map||!maplibregl?.Marker)return;clearSafetyMarkers();
+  if(!state.map||!maplibregl?.Marker)return;
+  clearSafetyMarkers();
+  if(!state.tripStartedAt||$('driveView')?.classList.contains('hidden'))return;
   const skip=['speed_limit','tunnel','curve_left','curve_right','double_curve'];
   const cameraTypes=new Set(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','section_speed_end','bus_lane_camera','mobile_camera']);
   const cameraItems=[];
@@ -4690,7 +4705,7 @@ async function loadRadioSchedule(){
   return state.radioSchedule;
 }
 
-function radioToggleSvg(isOn){
+function radioToggleMarkup(isOn){
   if(isOn){
     // ON: 라디오 본체 + 전파(재생중) — 파란 배경 위 흰색 아이콘(기존 느낌 유지)
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -4701,13 +4716,8 @@ function radioToggleSvg(isOn){
       <path d="M19.4 8.5c1.5 1 2.5 2.65 2.5 4.6s-1 3.6-2.5 4.6" opacity=".62"></path>
     </svg>`;
   }
-  // OFF: 같은 라디오 본체만 표시 — 흰 배경 위 파란색 아이콘(취소선 없음)
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <rect x="3.4" y="9" width="17.2" height="9.6" rx="2.4"></rect>
-    <path d="M7.4 9 13 4.4"></path>
-    <circle cx="8.1" cy="13.7" r="1.9"></circle>
-    <path d="M13.2 13.1h4.4M13.2 15.7h4.4"></path>
-  </svg>`;
+  // OFF: 사용자가 선택한 미니멀 블루 라디오 아이콘 이미지로 교체
+  return `<img src="/assets/radio/radio_off_icon_7686.png" alt="" draggable="false" class="drive-radio-off-art" />`;
 }
 
 function updateRadioUI(){
@@ -4718,7 +4728,7 @@ function updateRadioUI(){
   btn.setAttribute('aria-label',on?'라디오 정지':'라디오 재생');
   btn.setAttribute('aria-pressed',String(on));
   const icon=btn.querySelector('.drive-radio-icon');
-  if(icon)icon.innerHTML=radioToggleSvg(on);
+  if(icon)icon.innerHTML=radioToggleMarkup(on);
 }
 async function radioLoadIndex(index,autoplay=false){
   const el=radioPlayer();if(!el){console.warn('radio player element missing');return false}
@@ -5809,3 +5819,4 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.8.4: radio ON/OFF swaps both color and SVG icon for unmistakable state
 
 // build 7.6.8.5: confirmed Sejong→Daejeon section-camera pairing, wider corridor camera snap, radio OFF blue icon, Sodam/Mannyeon Onnuri refresh
+// build 7.6.8.6: OFF radio button now uses selected image asset, Onnuri visibility/UI upgraded, home map safety markers hidden unless guiding

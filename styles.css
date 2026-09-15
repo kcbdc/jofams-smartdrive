@@ -1338,15 +1338,20 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 
 /* === 온누리상품권: 주황색 개별 SVG/클러스터 === */
 .onnuri-shop-marker{
-  width:38px;height:38px;border:2px solid #ef7d00;border-radius:12px;
-  background:#fff;color:#ef7d00;display:grid;place-items:center;padding:4px;
-  box-shadow:0 4px 12px rgba(116,62,0,.25);pointer-events:auto;touch-action:manipulation;
+  position:relative;width:42px;height:42px;border:2px solid rgba(239,125,0,.42);border-radius:14px;
+  background:rgba(255,255,255,.985);color:#ef7d00;display:grid;place-items:center;padding:5px;
+  box-shadow:0 6px 16px rgba(116,62,0,.22);pointer-events:auto;touch-action:manipulation;
 }
 .onnuri-shop-marker svg{width:28px;height:28px;display:block}
+.onnuri-shop-badge{
+  position:absolute;right:-5px;top:-6px;min-width:18px;height:18px;padding:0 4px;
+  border:2px solid #fff;border-radius:999px;background:#ef7d00;color:#fff;
+  font-size:9px;font-weight:900;line-height:14px;display:grid;place-items:center;
+}
 .onnuri-cluster-marker{
-  width:38px;height:38px;border:3px solid #fff;border-radius:50%;
+  width:40px;height:40px;border:3px solid #fff;border-radius:50%;
   background:#ef7d00;color:#fff;display:grid;place-items:center;
-  box-shadow:0 4px 12px rgba(134,67,0,.34);pointer-events:auto;touch-action:manipulation;
+  box-shadow:0 5px 14px rgba(134,67,0,.34);pointer-events:auto;touch-action:manipulation;
 }
 .onnuri-cluster-marker.medium{width:44px;height:44px}
 .onnuri-cluster-marker.large{width:50px;height:50px}
@@ -1985,4 +1990,37 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 }
 .drive-radio-btn.on:active{
   box-shadow:0 3px 9px rgba(22,119,255,.3)!important;
+}
+.drive-radio-btn .drive-radio-icon img,
+.drive-radio-btn .drive-radio-icon .drive-radio-off-art{
+  width:100%!important;
+  height:100%!important;
+  display:block!important;
+  object-fit:contain!important;
+  user-select:none!important;
+  -webkit-user-drag:none!important;
+}
+.drive-radio-btn.off{
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+}
+.drive-radio-btn.off .drive-radio-icon{
+  width:46px!important;
+  height:46px!important;
+}
+.drive-radio-btn.off .drive-radio-off-art{
+  filter:drop-shadow(0 5px 12px rgba(18,40,74,.16))!important;
+}
+.where-to-item-onnuri{
+  border-color:#ffd7ab!important;
+  background:linear-gradient(180deg,#fffdf9 0%,#fff8f1 100%)!important;
+}
+.where-to-meta-pills{
+  display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;
+}
+.where-to-meta-pills i{
+  display:inline-flex;align-items:center;min-height:20px;padding:0 7px;border-radius:999px;
+  background:#fff2e2;color:#bf6100;font-style:normal;font-size:9px;font-weight:800;
+  border:1px solid rgba(232,130,28,.22);
 }
