@@ -364,8 +364,10 @@ function officialSectionPosition(row){
   // 대전경찰 공개 목록에서 확인되는 세종→대전 구즉세종로 6.7km 구간단속 시·종점 보정.
   // 원천 표준데이터 일부 행은 '단속구간위치구분'이 비어 있어 자동 짝짓기가 실패하므로 관리번호를 우선 사용한다.
   const manageNo=String(pickField(row,['무인교통단속카메라관리번호','mnlssRegltCameraManageNo'])||'').trim().toUpperCase();
-  if(manageNo==='K0117')return 'start'; // 둔곡터널 전(→대전)
-  if(manageNo==='K0118')return 'end';   // 시알들네거리 합류지점
+  if(manageNo==='K0117')return 'start'; // 세종→대전: 둔곡터널 전
+  if(manageNo==='K0118')return 'end';   // 세종→대전: 시알들네거리 합류지점(경찰청 공개 종점)
+  if(manageNo==='K0119')return 'start'; // 대전→세종: 지수체육공원 뒤
+  if(manageNo==='K0120')return 'end';   // 대전→세종: 둔곡교차로
   const raw=String(pickField(row,['단속구간위치구분','sectionPosition','sectionPos'])||'').trim();
   if(/^(0?1|시점|시작)$/i.test(raw))return 'start';
   if(/^(0?2|종점|종료|끝)$/i.test(raw))return 'end';
@@ -489,6 +491,35 @@ function buildSectionSpeedEvents(nodes,route){
   // 시점·종점 짝이 확인되지 않은 구간단속 레코드는 오안내 방지를 위해 안내하지 않는다.
   return events;
 }
+function buildKnownGujikSectionEvents(nodes,route){
+  const g=route?.geometry||[],cum=buildCumulative(route);if(!g.length||!cum.length)return {events:[],remaining:nodes||[]};
+  const known=new Map((nodes||[]).map(n=>[String(n.manageNo||'').toUpperCase(),n]));
+  const pairs=[['K0117','K0118','세종→대전'],['K0119','K0120','대전→세종']];
+  const used=new Set(),events=[];
+  for(const [startNo,endNo,label] of pairs){
+    const st=known.get(startNo),en=known.get(endNo);if(!st||!en)continue;
+    // 현재 경로에서 시점이 종점보다 먼저 나타나는 방향의 쌍만 활성화한다.
+    // 반대편 차로의 구간단속 쌍이 같은 도로에 가까이 있어도 교차 매칭하지 않는다.
+    if(!(Number(st.routeIndex)<Number(en.routeIndex)))continue;
+    const startPoint=g[st.routeIndex],endPoint=g[en.routeIndex];if(!startPoint||!endPoint)continue;
+    const sectionLength=Math.max(0,(cum[en.routeIndex]||0)-(cum[st.routeIndex]||0));
+    if(sectionLength<250||sectionLength>30000)continue;
+    events.push({
+      id:`section-speed:known:${startNo}:${endNo}`,type:'section_speed_camera',
+      lat:startPoint[1],lng:startPoint[0],routeIndex:st.routeIndex,endLat:endPoint[1],endLng:endPoint[0],endRouteIndex:en.routeIndex,
+      maxspeed:Number(st.maxspeed)||Number(en.maxspeed)||80,roadName:st.roadName||en.roadName||'구즉세종로',name:`${label} 구간단속`,
+      sectionLength,sectionPosition:'start',source:'대전경찰청 공개 무인교통단속장비 현황(확정 시·종점)'
+    });
+    events.push({
+      id:`section-speed-end:known:${startNo}:${endNo}`,type:'section_speed_end',
+      lat:endPoint[1],lng:endPoint[0],routeIndex:en.routeIndex,maxspeed:Number(st.maxspeed)||Number(en.maxspeed)||80,
+      roadName:en.roadName||st.roadName||'구즉세종로',name:`${label} 구간단속 종료`,sectionPosition:'end',
+      source:'대전경찰청 공개 무인교통단속장비 현황(확정 종점)'
+    });
+    used.add(startNo);used.add(endNo);
+  }
+  return {events,remaining:(nodes||[]).filter(n=>!used.has(String(n.manageNo||'').toUpperCase()))};
+}
 function geometryBounds(geometry=[]){
   let minLng=Infinity,maxLng=-Infinity,minLat=Infinity,maxLat=-Infinity;
   for(const p of geometry){const lng=Number(p?.[0]),lat=Number(p?.[1]);if(!Number.isFinite(lng)||!Number.isFinite(lat))continue; if(lng<minLng)minLng=lng;if(lng>maxLng)maxLng=lng;if(lat<minLat)minLat=lat;if(lat>maxLat)maxLat=lat}
@@ -511,7 +542,12 @@ async function loadStaticCameraEvents(route){
     if(!routeMatch||!Number.isFinite(Number(routeMatch.index)))continue;
     const idx=Math.max(0,Math.min(geometry.length-1,Number(routeMatch.index)));
     const p=geometry[idx]; if(!p)continue;
-    const d=Number(routeMatch.distance); const cameraTolerance=row.__priorityExpressway?450:180; if(!Number.isFinite(d)||d>cameraTolerance)continue;
+    const d=Number(routeMatch.distance);
+    const dataDate=String(pickField(row,['데이터기준일자','dataReferenceDate'])||'');
+    const authorityRaw=String(pickField(row,['관리기관명','institutionNm'])||'');
+    const currentPolice=/경찰청/.test(authorityRaw)&&/^202[5-9]-/.test(dataDate);
+    const cameraTolerance=row.__priorityExpressway?450:(currentPolice?240:180);
+    if(!Number.isFinite(d)||d>cameraTolerance)continue;
     const maxspeed=Number(pickField(row,['제한속도','lmttVe','speedLimit']))||0;
     const protectedArea=String(pickField(row,['보호구역구분','protectedArea'])).trim();
     const roadName=String(pickField(row,['도로노선명','도로명','roadName'])).trim();
@@ -521,7 +557,7 @@ async function loadStaticCameraEvents(route){
 
     if(sectionPosition&&maxspeed>0){
       sectionNodes.push({
-        id:`local-section-node:${manageNo}`,sectionPosition,lat,lng,routeIndex:idx,name,maxspeed,roadName,
+        id:`local-section-node:${manageNo}`,manageNo:String(manageNo).toUpperCase(),sectionPosition,lat,lng,routeIndex:idx,name,maxspeed,roadName,
         sectionLengthMeters:statedSectionLengthMeters(row),source:'전국무인교통단속카메라표준데이터'
       });
       continue;
@@ -531,7 +567,7 @@ async function loadStaticCameraEvents(route){
     if(row.__priorityExpressway&&type==='section_speed_camera'&&!sectionPosition)type='traffic_camera';
     const base={
       id:`local-camera:${manageNo}`,type,lat,lng,routeIndex:idx,name,maxspeed,
-      authority:String(pickField(row,['관리기관명','institutionNm'])).trim(),
+      authority:String(pickField(row,['관리기관명','institutionNm'])).trim(),dataDate,currentOfficial:currentPolice,
       protectedArea,roadName,priorityExpressway:Boolean(row.__priorityExpressway),source:row.__priorityExpressway?'전국무인교통단속카메라표준데이터(세종→대전 고속화도로 우선보정)':'전국무인교통단속카메라표준데이터(로컬 파일)'
     };
     out.push(base);
@@ -539,7 +575,8 @@ async function loadStaticCameraEvents(route){
       out.push({...base,id:`${base.id}:school`,type:'school_zone',name:`${name} 어린이보호구역`,maxspeed:maxspeed||30});
     }
   }
-  out.push(...buildSectionSpeedEvents(sectionNodes,route));
+  const known=buildKnownGujikSectionEvents(sectionNodes,route);
+  out.push(...known.events,...buildSectionSpeedEvents(known.remaining,route));
   return mergeSafetyEvents(out,geometry);
 }
 function normalizeRoadName(v=''){return String(v||'').replace(/\s+/g,'').replace(/(대로|로|길|거리)$/,'').toLowerCase()}
@@ -3558,11 +3595,19 @@ function updateSectionAverageSpeed(idx){
   const now=Date.now(),cum=state.routeCumulative||[],routeNow=Number(state.user?.routeDistance);
   const currentDistance=Number.isFinite(routeNow)?routeNow:(cum[idx]||0),startDistance=cum[Number(e.routeIndex)]||0,endDistance=cum[Number(e.endRouteIndex)]||startDistance;
   if(!state.sectionSpeedState||state.sectionSpeedState.id!==e.id){
+    const totalLength=Math.max(1,endDistance-startDistance);
+    const progressed=Math.max(0,currentDistance-startDistance);
+    const progressRatio=Math.min(1,progressed/totalLength);
+    const remainAtInit=Math.max(0,endDistance-currentDistance);
     state.sectionSpeedState={
       id:e.id,enteredAt:now,enteredDistance:Math.max(startDistance,currentDistance),
-      lastDistance:currentDistance,lastAt:now,lastAverageSpokenAt:0
+      lastDistance:currentDistance,lastAt:now,lastAverageSpokenAt:0,lateEntry:progressRatio>.25
     };
-    speakNavOnce(`section:${e.id}` ,`구간단속 시작 구간입니다.${e.maxspeed?` 제한속도 ${e.maxspeed}킬로미터입니다.`:''}`,12000);
+    // 실시간 경로 갱신/GPS 재매칭으로 구간 중후반에서 상태가 다시 만들어진 경우
+    // 종점 직전에 '구간단속 시작'을 잘못 말하지 않는다. 시작점 부근에서 진입한 경우에만 안내한다.
+    if(progressRatio<=.25&&progressed<=900&&remainAtInit>=500){
+      speakNavOnce(`section:${e.id}` ,`구간단속 시작 구간입니다.${e.maxspeed?` 제한속도 ${e.maxspeed}킬로미터입니다.`:''}`,12000);
+    }
   }
   const st=state.sectionSpeedState;
   // 맵매칭 노이즈로 후진하지 않도록 누적 진행거리는 단조 증가로 유지한다.
@@ -4261,7 +4306,7 @@ function hideSafetyAlert(){const el=$('safetyAlert');if(el)el.classList.add('hid
    safety-alert 배너와 좌측 표지판 배지가 동일한 후보 목록을 공유한다. */
 const SAFETY_PRIORITY={accident:0,accident_hotspot:1,fog_zone:1,heavy_rain_zone:1,snow_ice_zone:1,school_zone:1,school_nearby:1,silver_zone:1,disabled_zone:1,double_curve:1,
   chronic_congestion:2,construction:2,curve_left:2,curve_right:2,railway_crossing:2,height_limit:2,weight_limit:2,width_limit:2,no_entry:2,
-  crosswalk:3,no_overtaking:3,truck_prohibited:3,roundabout:3,section_speed_camera:4,bus_lane_camera:4,mobile_camera:4,signal_speed_camera:5,signal_camera:5,
+  crosswalk:3,no_overtaking:3,truck_prohibited:3,roundabout:3,section_speed_end:3,section_speed_camera:4,bus_lane_camera:4,mobile_camera:4,signal_speed_camera:5,signal_camera:5,
   speed_camera:6,traffic_camera:6,motorway:8,speed_limit:9,tunnel:9};
 function computeSafetyCandidates(idx){
   if(!state.routeCumulative.length)return[];
@@ -4274,7 +4319,8 @@ function computeSafetyCandidates(idx){
     if(!(e.routeIndex>=idx-2&&e.d>=0&&e.d<=800))return false;
     if(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','section_speed_end'].includes(e.type)){
       // 카메라 존재 안내는 현재 속도와 무관하게 제공. 과속 경고는 updateOverspeed가 별도로 담당한다.
-      return e.d<=600&&cameraMatchesRouteRoad(e,state.route?.geometry||[],idx,38);
+      const matchMeters=e.priorityExpressway?120:(e.currentOfficial||/경찰청|전국무인교통단속/i.test(String(e.source||''))?75:50);
+      return e.d<=600&&cameraMatchesRouteRoad(e,state.route?.geometry||[],idx,matchMeters);
     }
     return true;
   }).sort((a,b)=>(SAFETY_PRIORITY[a.type]??9)-(SAFETY_PRIORITY[b.type]??9)||a.d-b.d);
@@ -5841,3 +5887,4 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.8.6: OFF radio button now uses selected image asset, Onnuri visibility/UI upgraded, home map safety markers hidden unless guiding
 // build 7.6.8.7: OFF radio button switched back to SVG and aligned to the same icon size/position as ON
 // build 7.6.8.8: OFF radio icon now replaces the whole circular button art, and home-map voucher/onnuri refresh/visibility are more aggressive while panning
+// build 7.6.8.9: official Daejeon camera matching strengthened; Gujeuk-Sejong section endpoints direction-locked; late section-start voice at the end fixed
