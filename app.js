@@ -3305,6 +3305,12 @@ function startNavigation(){
   applyNightMode();setTimeout(tryLandscapeFullscreen,100);}
 function stopNavigation(){
   stopRouteSimulation({resumeGps:false});if($('laneAssistLayer'))$('laneAssistLayer').classList.add('hidden');
+  // 길안내 종료 시 가상 라디오도 함께 자동 종료한다.
+  try{
+    const rp=radioPlayer();
+    if(rp&&!rp.paused)rp.pause();
+    state.radioPlaying=false;updateRadioUI();
+  }catch(e){console.warn('drive radio stop failed',e)}
   const finishedDestination=state.destination?{...state.destination}:null;
   // 안내 종료는 어떤 부가기능 오류가 발생해도 반드시 홈 화면까지 복귀해야 한다.
   try{if(state.tripStartedAt)logTrip('finish')}catch(e){console.warn('finish log failed',e)}
@@ -4681,22 +4687,21 @@ async function loadRadioSchedule(){
 
 function radioToggleSvg(isOn){
   if(isOn){
-    // ON: 안테나 + 전파 + 재생중 표시(파란 배경 위 흰색)
+    // ON: 라디오 본체 + 전파(재생중) — 파란 배경 위 흰색 아이콘(기존 느낌 유지)
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <rect x="4" y="8" width="16" height="10" rx="2.5"></rect>
-      <path d="M8 8 15 4"></path>
-      <circle cx="9" cy="13" r="2.2"></circle>
-      <path d="M14.5 12.2h2.7M14.5 15h2.7"></path>
-      <path d="M18.3 5.2c1 .7 1.7 1.6 2.1 2.8"></path>
-      <path d="M16.8 6.5c.6.4 1 .9 1.3 1.6"></path>
+      <rect x="3.4" y="9" width="14" height="9.6" rx="2.4"></rect>
+      <path d="M7.4 9 13 4.4"></path>
+      <circle cx="8.1" cy="13.7" r="1.9"></circle>
+      <path d="M17.3 10.5c.85.6 1.4 1.55 1.4 2.6s-.55 2-1.4 2.6"></path>
+      <path d="M19.4 8.5c1.5 1 2.5 2.65 2.5 4.6s-1 3.6-2.5 4.6" opacity=".62"></path>
     </svg>`;
   }
-  // OFF: 라디오 본체 + 정지 사각형(흰 배경 위 파란색)
+  // OFF: 동일한 라디오 본체 + 사선(정지) — 흰 배경 위 파란색 아이콘
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <rect x="4" y="8" width="16" height="10" rx="2.5"></rect>
-    <path d="M8 8 15 4"></path>
-    <circle cx="9" cy="13" r="2.2"></circle>
-    <rect x="14.5" y="11.5" width="3.3" height="3.3" rx=".5" fill="currentColor" stroke="none"></rect>
+    <rect x="3.4" y="9" width="14" height="9.6" rx="2.4"></rect>
+    <path d="M7.4 9 13 4.4"></path>
+    <circle cx="8.1" cy="13.7" r="1.9"></circle>
+    <path d="M20.4 4.6 3.6 19.6" stroke-width="2.1"></path>
   </svg>`;
 }
 
