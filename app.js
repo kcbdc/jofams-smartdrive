@@ -361,6 +361,11 @@ function officialCameraType(raw=''){
   return 'traffic_camera';
 }
 function officialSectionPosition(row){
+  // 대전경찰 공개 목록에서 확인되는 세종→대전 구즉세종로 6.7km 구간단속 시·종점 보정.
+  // 원천 표준데이터 일부 행은 '단속구간위치구분'이 비어 있어 자동 짝짓기가 실패하므로 관리번호를 우선 사용한다.
+  const manageNo=String(pickField(row,['무인교통단속카메라관리번호','mnlssRegltCameraManageNo'])||'').trim().toUpperCase();
+  if(manageNo==='K0117')return 'start'; // 둔곡터널 전(→대전)
+  if(manageNo==='K0118')return 'end';   // 시알들네거리 합류지점
   const raw=String(pickField(row,['단속구간위치구분','sectionPosition','sectionPos'])||'').trim();
   if(/^(0?1|시점|시작)$/i.test(raw))return 'start';
   if(/^(0?2|종점|종료|끝)$/i.test(raw))return 'end';
@@ -506,7 +511,7 @@ async function loadStaticCameraEvents(route){
     if(!routeMatch||!Number.isFinite(Number(routeMatch.index)))continue;
     const idx=Math.max(0,Math.min(geometry.length-1,Number(routeMatch.index)));
     const p=geometry[idx]; if(!p)continue;
-    const d=Number(routeMatch.distance); const cameraTolerance=row.__priorityExpressway?320:180; if(!Number.isFinite(d)||d>cameraTolerance)continue;
+    const d=Number(routeMatch.distance); const cameraTolerance=row.__priorityExpressway?450:180; if(!Number.isFinite(d)||d>cameraTolerance)continue;
     const maxspeed=Number(pickField(row,['제한속도','lmttVe','speedLimit']))||0;
     const protectedArea=String(pickField(row,['보호구역구분','protectedArea'])).trim();
     const roadName=String(pickField(row,['도로노선명','도로명','roadName'])).trim();
@@ -4696,12 +4701,12 @@ function radioToggleSvg(isOn){
       <path d="M19.4 8.5c1.5 1 2.5 2.65 2.5 4.6s-1 3.6-2.5 4.6" opacity=".62"></path>
     </svg>`;
   }
-  // OFF: 동일한 라디오 본체 + 사선(정지) — 흰 배경 위 파란색 아이콘
+  // OFF: 같은 라디오 본체만 표시 — 흰 배경 위 파란색 아이콘(취소선 없음)
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <rect x="3.4" y="9" width="14" height="9.6" rx="2.4"></rect>
+    <rect x="3.4" y="9" width="17.2" height="9.6" rx="2.4"></rect>
     <path d="M7.4 9 13 4.4"></path>
     <circle cx="8.1" cy="13.7" r="1.9"></circle>
-    <path d="M20.4 4.6 3.6 19.6" stroke-width="2.1"></path>
+    <path d="M13.2 13.1h4.4M13.2 15.7h4.4"></path>
   </svg>`;
 }
 
@@ -5802,3 +5807,5 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.8.3: restore hidden audio player + radio volume UI + direct navigation-start autoplay
 
 // build 7.6.8.4: radio ON/OFF swaps both color and SVG icon for unmistakable state
+
+// build 7.6.8.5: confirmed Sejong→Daejeon section-camera pairing, wider corridor camera snap, radio OFF blue icon, Sodam/Mannyeon Onnuri refresh
