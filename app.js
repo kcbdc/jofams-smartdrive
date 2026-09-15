@@ -3640,6 +3640,14 @@ function isGenericInstitutionDestination(dest){
   return institution.test(t)&&!specific.test(t);
 }
 function arrivalRadiusMeters(dest){return isGenericInstitutionDestination(dest)?90:50}
+function institutionArrivalLeadMeters(dest){
+  if(!isGenericInstitutionDestination(dest))return 0;
+  const t=`${dest?.name||''} ${dest?.address||''}`;
+  // 대형 사업장·청사 POI는 지도상의 중심점이 부지 안쪽에 잡히는 경우가 많다.
+  // 한국조폐공사 본사는 내부 건물까지 진입시키지 않고 정문 접근도로에서 안내를 종료한다.
+  if(/한국조폐공사|조폐공사/.test(t))return 180;
+  return 110;
+}
 
 function checkArrival(routeRemain){
   if(!state.tripStartedAt||!state.destination||!state.route?.geometry?.length)return false;
@@ -3657,7 +3665,13 @@ function checkArrival(routeRemain){
   // 한국조폐공사처럼 부지가 넓은 공사·공단·청사 등은 정문 근처(더 넓은 반경)에서 종료하고,
   // 그 외 목적지는 목적지 주변(약 ±10m 여유를 둔 좁은 반경)에 오면 종료한다.
   const radius=arrivalRadiusMeters(state.destination);
-  const reached=(rawToRouteEnd<=radius)||(Number(routeRemain)<=30&&rawToRouteEnd<=radius+25)||(rawToPoi<=radius);
+  const lead=institutionArrivalLeadMeters(state.destination);
+  const remain=Number(routeRemain);
+  // 기관·공사·공단 등 대형 부지는 라우팅 endpoint가 부지 내부 건물까지 이어질 수 있다.
+  // 이 경우 정문/진입도로에 해당하는 마지막 110~180m 구간에 들어오면 도착으로 판정한다.
+  // 일반 목적지는 기존처럼 실제 endpoint/POI 근접을 기준으로 유지한다.
+  const institutionGateReached=lead>0&&Number.isFinite(remain)&&remain<=lead&&rawToRouteEnd<=lead+90;
+  const reached=institutionGateReached||(rawToRouteEnd<=radius)||(remain<=30&&rawToRouteEnd<=radius+25)||(rawToPoi<=radius);
   if(!reached){state.arrivalCandidateSince=0;return false}
 
   if(!state.arrivalCandidateSince)state.arrivalCandidateSince=Date.now();
@@ -5888,3 +5902,5 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.8.7: OFF radio button switched back to SVG and aligned to the same icon size/position as ON
 // build 7.6.8.8: OFF radio icon now replaces the whole circular button art, and home-map voucher/onnuri refresh/visibility are more aggressive while panning
 // build 7.6.8.9: official Daejeon camera matching strengthened; Gujeuk-Sejong section endpoints direction-locked; late section-start voice at the end fixed
+
+// build 7.6.9.0: Gapcheon riverside cameras priority match + institution front-gate arrival finish
