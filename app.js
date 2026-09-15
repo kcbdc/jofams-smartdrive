@@ -726,10 +726,21 @@ async function initMap(){
       state.map.on('zoomend',()=>{
         if(state.onnuriData)renderOnnuriMarkers(state.onnuriData);
         if(state.localVoucherData)renderLocalVoucherMarkers(state.localVoucherData);
+        if(!state.tripStartedAt&&!$('homeView')?.classList.contains('hidden')){
+          scheduleLocalVoucherRefresh(true);
+          scheduleOnnuriRefresh(true);
+        }
         if(state.route?.geometry?.length&&state.safetyEvents?.length)renderSafetyMarkers();
         ensureDestinationMarker();
       });
-      state.map.on('moveend',()=>{scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh();ensureDestinationMarker()});
+      state.map.on('moveend',()=>{
+        // 홈에서 지도를 옮긴 새 화면 범위를 기준으로 두 상품권 가맹점을 빠르게 재조회한다.
+        if(!state.tripStartedAt&&!$('homeView')?.classList.contains('hidden')){
+          scheduleLocalVoucherRefresh(true);
+          scheduleOnnuriRefresh(true);
+        }
+        scheduleHomeCameraRefresh();ensureDestinationMarker();
+      });
       state.map.on('style.load',()=>{if(state.mapReady)restoreMapOverlaysAfterStyleChange();setTimeout(ensureDestinationMarker,0)});
       if(state.pendingRouteDraw){const p=state.pendingRouteDraw;state.pendingRouteDraw=null;drawRoute(p.route,p.options)}
       permissionStatus('geolocation').then(async status=>{
@@ -1127,7 +1138,7 @@ function renderOnnuriMarkers(data){
 
   // 정확히 찾은 점포는 기존 개별 가맹점 마커로 표시
   if(precise.length){
-    if(mapVisibleWidthMeters()<1600)renderOnnuriShopMarkers(precise);
+    if(mapVisibleWidthMeters()<2400)renderOnnuriShopMarkers(precise);
     else renderOnnuriClusterMarkers(clusterMapItemsByPixel(precise,68));
   }
 
@@ -1177,9 +1188,9 @@ async function loadOnnuriMap({force=false}={}){
     if(!state.onnuriLoadedCenter)return true;
     const d=voucherGeoMeters(state.onnuriLoadedCenter.lat,state.onnuriLoadedCenter.lng,center.lat,center.lng);
     const r=voucherVisibleRadiusMeters();
-    return d>=Math.max(600,Number.isFinite(r)?r*.35:1200);
+    return d>=Math.max(260,Number.isFinite(r)?r*.16:700);
   })();
-  if(!force&&!moved&&state.onnuriData?.items?.length&&Date.now()-Number(state.onnuriLoadedAt||0)<90000)return;
+  if(!force&&!moved&&state.onnuriData?.items?.length&&Date.now()-Number(state.onnuriLoadedAt||0)<18000)return;
 
   try{
     const b=state.map.getBounds?.(),u=new URL('/api/onnuri-voucher',location.origin);
@@ -1237,7 +1248,7 @@ async function loadOnnuriMap({force=false}={}){
 }
 function scheduleOnnuriRefresh(force=false){
   clearTimeout(state.onnuriLoadTimer);
-  state.onnuriLoadTimer=setTimeout(()=>loadOnnuriMap({force:Boolean(force)}),320);
+  state.onnuriLoadTimer=setTimeout(()=>loadOnnuriMap({force:Boolean(force)}),force?120:180);
 }
 function voucherGeoMeters(aLat,aLng,bLat,bLng){
   const r=6371000,toRad=Math.PI/180,dLat=(bLat-aLat)*toRad,dLng=(bLng-aLng)*toRad;
@@ -1424,7 +1435,7 @@ function renderLocalVoucherMarkers(data){
   // 늘어서 보이는 문제까지) 발생했다. 이제는 구역별로 묶어 큰/중간/작은 숫자 배지의 클러스터로
   // 표시하고, 화면 폭이 1km 미만으로 확대되었을 때만 개별 가맹점 SVG 아이콘을 표시한다.
   const visibleWidthMeters=voucherVisibleRadiusMeters()*2;
-  const zoomedInEnoughForIndividualPins=Number.isFinite(visibleWidthMeters)&&visibleWidthMeters<1000;
+  const zoomedInEnoughForIndividualPins=Number.isFinite(visibleWidthMeters)&&visibleWidthMeters<1600;
 
   if(zoomedInEnoughForIndividualPins){
     renderVoucherShopMarkers(items);
@@ -1498,17 +1509,17 @@ async function loadLocalVoucherMap({force=false}={}){
     if(!last)return true;
     const dist=voucherGeoMeters(last.lat,last.lng,center.lat,center.lng);
     const radius=voucherVisibleRadiusMeters();
-    const threshold=Number.isFinite(radius)&&radius>0?Math.max(800,radius*0.35):1500;
+    const threshold=Number.isFinite(radius)&&radius>0?Math.max(260,radius*0.16):700;
     return dist>=threshold;
   })();
 
-  if(!force&&!movedFarEnough&&Date.now()-Number(state.localVoucherLoadedAt||0)<45000&&state.localVoucherData)return;
+  if(!force&&!movedFarEnough&&Date.now()-Number(state.localVoucherLoadedAt||0)<18000&&state.localVoucherData)return;
 
   try{
     const b=state.map.getBounds?.();
     const u=new URL('/api/local-voucher',location.origin);
     u.searchParams.set('lng',center.lng);u.searchParams.set('lat',center.lat);
-    if(state.localVoucherRegionCode)u.searchParams.set('regionCode',state.localVoucherRegionCode);
+    if(!movedFarEnough&&state.localVoucherRegionCode)u.searchParams.set('regionCode',state.localVoucherRegionCode);
     if(b){
       u.searchParams.set('west',b.getWest());u.searchParams.set('south',b.getSouth());
       u.searchParams.set('east',b.getEast());u.searchParams.set('north',b.getNorth());
@@ -1559,9 +1570,9 @@ async function loadLocalVoucherMap({force=false}={}){
     scheduleVoucherReconnect();
   }
 }
-function scheduleLocalVoucherRefresh(){
+function scheduleLocalVoucherRefresh(force=false){
   clearTimeout(state.localVoucherLoadTimer);
-  state.localVoucherLoadTimer=setTimeout(()=>loadLocalVoucherMap(),450);
+  state.localVoucherLoadTimer=setTimeout(()=>loadLocalVoucherMap({force:Boolean(force)}),force?120:220);
 }
 
 function refreshMapLayout({fitRoute=false}={}){
@@ -4716,14 +4727,14 @@ function radioToggleMarkup(isOn){
       <path d="M19.4 8.5c1.5 1 2.5 2.65 2.5 4.6s-1 3.6-2.5 4.6" opacity=".62"></path>
     </svg>`;
   }
-  // OFF: PNG 대신 동일 위치/크기 기준의 벡터(SVG) 아이콘 사용
-  return `<svg viewBox="0 0 24 24" aria-hidden="true" class="drive-radio-off-svg">
-    <circle cx="12" cy="12" r="10.2" fill="#ffffff" stroke="#8fc3ff" stroke-width="1.4"></circle>
-    <g fill="none" stroke="#1677ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="6.4" y="9.6" width="11.2" height="6.9" rx="1.9"></rect>
-      <path d="M8.5 9.5 12.2 6.5"></path>
-      <circle cx="9.3" cy="13" r="1.35"></circle>
-      <path d="M12.8 12h2.8M12.8 14.1h2.8"></path>
+  // OFF: 별도의 원을 SVG 안에 다시 그리지 않는다. 버튼 원형 자체를 배경으로 사용하고
+  // 라디오 SVG 픽토그램을 원 크기에 가깝게 확대하여 ON과 같은 중심/크기 기준으로 배치한다.
+  return `<svg viewBox="0 0 32 32" aria-hidden="true" class="drive-radio-off-svg">
+    <g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3.2" y="11" width="25.6" height="16" rx="4.2"></rect>
+      <path d="M7.6 10.8 16.5 3.8"></path>
+      <circle cx="10.5" cy="19" r="3.4"></circle>
+      <path d="M18.2 16.6h6.8M18.2 21.3h6.8"></path>
     </g>
   </svg>`;
 }
@@ -5829,3 +5840,4 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.8.5: confirmed Sejong→Daejeon section-camera pairing, wider corridor camera snap, radio OFF blue icon, Sodam/Mannyeon Onnuri refresh
 // build 7.6.8.6: OFF radio button now uses selected image asset, Onnuri visibility/UI upgraded, home map safety markers hidden unless guiding
 // build 7.6.8.7: OFF radio button switched back to SVG and aligned to the same icon size/position as ON
+// build 7.6.8.8: OFF radio icon now replaces the whole circular button art, and home-map voucher/onnuri refresh/visibility are more aggressive while panning

@@ -1992,15 +1992,20 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   box-shadow:0 3px 9px rgba(22,119,255,.3)!important;
 }
 .drive-radio-btn.off{
-  background:#ffffff!important;
-  color:#1677ff!important;
-  border:1px solid rgba(22,119,255,.38)!important;
-  box-shadow:0 6px 16px rgba(20,42,74,.16)!important;
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  color:transparent!important;
+}
+.drive-radio-btn.off .drive-radio-icon{
+  width:50px!important;
+  height:50px!important;
 }
 .drive-radio-btn .drive-radio-icon .drive-radio-off-svg{
-  width:27px!important;
-  height:27px!important;
+  width:50px!important;
+  height:50px!important;
   display:block!important;
+  filter:drop-shadow(0 5px 12px rgba(18,40,74,.16))!important;
 }
 .where-to-item-onnuri{
   border-color:#ffd7ab!important;
@@ -2014,3 +2019,60 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   background:#fff2e2;color:#bf6100;font-style:normal;font-size:9px;font-weight:800;
   border:1px solid rgba(232,130,28,.22);
 }
+
+/* === 7.6.8.8 radio OFF full-size SVG + home voucher visibility === */
+.drive-radio-btn .drive-radio-icon{
+  width:42px!important;
+  height:42px!important;
+  margin:0!important;
+  display:grid!important;
+  place-items:center!important;
+}
+.drive-radio-btn .drive-radio-icon svg{
+  width:42px!important;
+  height:42px!important;
+  display:block!important;
+}
+.drive-radio-btn.off{
+  width:52px!important;
+  height:52px!important;
+  border-radius:50%!important;
+  background:#ffffff!important;
+  color:#1677ff!important;
+  border:2px solid #8fc3ff!important;
+  box-shadow:0 6px 16px rgba(20,42,74,.16)!important;
+}
+.drive-radio-btn.off .drive-radio-icon{
+  width:44px!important;
+  height:44px!important;
+}
+.drive-radio-btn.off .drive-radio-off-svg{
+  width:44px!important;
+  height:44px!important;
+  color:#1677ff!important;
+  filter:none!important;
+}
+
+/* 지도 이동 후에도 지역사랑/온누리 가맹점이 한눈에 보이도록 마커 크기와 대비를 통일 */
+.voucher-shop-marker{
+  width:42px!important;
+  height:42px!important;
+  border-radius:13px!important;
+  border:2px solid rgba(36,79,134,.30)!important;
+  box-shadow:0 5px 14px rgba(18,34,62,.25)!important;
+}
+.voucher-shop-marker svg{width:28px!important;height:28px!important}
+.voucher-cluster-marker.small{width:38px!important;height:38px!important}
+.voucher-cluster-marker.medium{width:46px!important;height:46px!important}
+.voucher-cluster-marker.large{width:56px!important;height:56px!important}
+.onnuri-shop-marker{
+  width:42px!important;
+  height:42px!important;
+  border-radius:13px!important;
+  border:2px solid rgba(239,125,0,.45)!important;
+  box-shadow:0 5px 14px rgba(116,62,0,.27)!important;
+}
+.onnuri-shop-marker svg{width:28px!important;height:28px!important}
+.onnuri-cluster-marker.small{width:38px!important;height:38px!important}
+.onnuri-cluster-marker.medium{width:46px!important;height:46px!important}
+.onnuri-cluster-marker.large{width:56px!important;height:56px!important}
