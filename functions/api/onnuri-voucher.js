@@ -5,21 +5,7 @@ const OFFICIAL_ONNURI_2025_URL='https://api.odcloud.kr/api/3060079/v1/uddi:7ffa4
 
 const ONNURI_CACHE_TABLE='onnuri_geocode_cache_v1';
 
-const FORCED_ONNURI_MERCHANTS=[
-  {
-    id:'forced:sodammasilgil:wonjobuanjip-sodam',
-    city:'세종특별자치시',
-    district:'',
-    town:'소담동',
-    market:'소담마실길 골목형상점가',
-    name:'원조부안집 소담점',
-    address:'세종특별자치시 소담로 93 (소담동) 104 105',
-    category:'음식점',
-    paper:true,
-    digital:true,
-    forced:true
-  }
-];
+const FORCED_ONNURI_MERCHANTS=[{"id":"forced:sodammasilgil:wonjobuanjip-sodam","city":"세종특별자치시","district":"","town":"소담동","market":"소담마실길 골목형상점가","name":"원조부안집 소담점","address":"세종특별자치시 소담로 93 (소담동) 104 105","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:sodam:yesan-guksu","city":"세종특별자치시","district":"","town":"소담동","market":"소담마실길 골목형상점가","name":"예산국수 소담점","address":"세종특별자치시 한누리대로 2018 (소담동) 사이언스타운 103호","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:sodam:isac-toast","city":"세종특별자치시","district":"","town":"소담동","market":"소담마실길 골목형상점가","name":"이삭토스트 세종 소담점","address":"세종특별자치시 한누리대로 2018 (소담동) 사이언스타운 113호","category":"분식","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:sodam:dakjangsu","city":"세종특별자치시","district":"","town":"소담동","market":"소담마실길 골목형상점가","name":"닭장수후라이드 소담점","address":"세종특별자치시 한누리대로 2022 (소담동) 1층 101호","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:sodam:sobok","city":"세종특별자치시","district":"","town":"소담동","market":"소담마실길 골목형상점가","name":"소복반점","address":"세종특별자치시 한누리대로 2003 (소담동) 206호","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:sodam:daehan-gopchang","city":"세종특별자치시","district":"","town":"소담동","market":"소담마실길 골목형상점가","name":"군자대한곱창 세종소담점","address":"세종특별자치시 한누리대로 1966 (소담동) 103~104호","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:sodam:eunhee-haejangguk","city":"세종특별자치시","district":"","town":"소담동","market":"소담마실길 골목형상점가","name":"제주은희네해장국 세종소담점","address":"세종특별자치시 법원2로 12 (소담동) 115~117호","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:mannyeon:sinchon-seolleongtang","city":"대전광역시","district":"서구","town":"만년동","market":"만년동 골목형상점가","name":"신촌설렁탕 만년점","address":"대전광역시 서구 대덕대로 390 (만년동)","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:mannyeon:friends-academy","city":"대전광역시","district":"서구","town":"만년동","market":"만년동 골목형상점가","name":"프렌즈아카데미 대전만년점","address":"대전광역시 서구 만년로 69 (만년동) 2~3층","category":"골프연습장","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:mannyeon:kims-piano","city":"대전광역시","district":"서구","town":"만년동","market":"만년동 골목형상점가","name":"킴스피아노","address":"대전광역시 서구 대덕대로 408 (만년동, 테크노월드) 2층","category":"악기","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:mannyeon:samo","city":"대전광역시","district":"서구","town":"만년동","market":"만년동 골목형상점가","name":"삼오식당","address":"대전광역시 서구 만년로 70 (만년동)","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:mannyeon:uncle-budae","city":"대전광역시","district":"서구","town":"만년동","market":"만년동 골목형상점가","name":"엉클부대찌개 만년점","address":"대전광역시 서구 만년로 79 (만년동) 1층 104호","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:mannyeon:sg-screen","city":"대전광역시","district":"서구","town":"만년동","market":"만년동 골목형상점가","name":"SG스크린골프 만년점","address":"대전광역시 서구 둔산대로117번길 95 (만년동, 리더스타운) B동 101호","category":"골프연습장","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:mannyeon:wash-enjoy","city":"대전광역시","district":"서구","town":"만년동","market":"만년동 골목형상점가","name":"워시엔조이 셀프빨래방 대전만년점","address":"대전광역시 서구 만년남로3번길 49 (만년동)","category":"세탁","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"}];
 
 function shouldInjectForcedMerchant(x,region){
   const city=normalizeText(region?.city);
