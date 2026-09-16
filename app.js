@@ -15,7 +15,7 @@ const characterDefs = {
 };
 const state = {
   map:null,mapReady:false,pendingRouteDraw:null,mapFallbackTried:false,mapWatchdog:0,user:null, destination:null, routeOptions:[], route:null, selectedRoute:0,
-  userMarker:null,destMarker:null,originMarker:null,watchId:null,character:'daim',voiceVolume:.8,sound:true,radioVolume:.65,radioPlaying:false,radioIndex:0,radioDucked:false,radioDuckTimer:0,activeGuideSnapshot:null,
+  userMarker:null,destMarker:null,originMarker:null,watchId:null,character:'daim',voiceVolume:.8,sound:true,radioVolume:.8,radioPlaying:false,radioIndex:0,radioDucked:false,radioDuckTimer:0,activeGuideSnapshot:null,
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
   savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:'B027',fuelData:null,fuelFetchedAt:0,fuelLoading:false,destinationSearchSort:'accuracy',lastDestinationQuery:'',routeMode:'car',carRouteOptions:[],walkingRoute:null,routeModeDurations:{car:null,walk:null},homeFacilityCategory:'주유소',homeFacilityItems:[],
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
@@ -3343,11 +3343,14 @@ function startNavigation(){
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
   if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 바로 요청해야 브라우저가 확실히 허용한다.
   initializeDriveSummary();startWatch();ensureUserMarker();updateCarMarkerImage();drawRoute(state.route,{fit:false});updateDriving(true);
-  // 안내 시작 버튼의 사용자 제스처 컨텍스트에서 즉시 재생을 요청한다.
+  // 길안내 진입 시 라디오는 항상 80%로 초기화하고 즉시 자동재생을 요청한다.
+  // 이전 세션의 저장 볼륨과 관계없이 주행 시작 기준값을 80%로 맞춘다.
   {
+    setRadioVolume(.8,true);
     const rp=radioPlayer();
     if(rp){
       if(!rp.getAttribute('src'))rp.src='/assets/radio/radio_1.mp3';
+      rp.muted=false;
       rp.volume=state.radioDucked?state.radioVolume*.25:state.radioVolume;
       const playPromise=rp.play();
       if(playPromise?.then)playPromise.then(()=>{
@@ -5904,3 +5907,5 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.8.9: official Daejeon camera matching strengthened; Gujeuk-Sejong section endpoints direction-locked; late section-start voice at the end fixed
 
 // build 7.6.9.0: Gapcheon riverside cameras priority match + institution front-gate arrival finish
+
+// build 7.6.9.1: navigation entry resets virtual radio to 80% and immediately requests autoplay
