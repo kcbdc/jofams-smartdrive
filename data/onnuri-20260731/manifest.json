@@ -1,0 +1,108 @@
+{
+  "version": "2026-07-31-csv8",
+  "total": 83843,
+  "regions": {
+    "busan": {
+      "name": "부산광역시",
+      "count": 7290,
+      "bytes": 1166524,
+      "path": "/data/onnuri-20260731/busan.json"
+    },
+    "chungbuk": {
+      "name": "충청북도",
+      "count": 2059,
+      "bytes": 326147,
+      "path": "/data/onnuri-20260731/chungbuk.json"
+    },
+    "chungnam": {
+      "name": "충청남도",
+      "count": 2987,
+      "bytes": 482345,
+      "path": "/data/onnuri-20260731/chungnam.json"
+    },
+    "daegu": {
+      "name": "대구광역시",
+      "count": 6584,
+      "bytes": 1060051,
+      "path": "/data/onnuri-20260731/daegu.json"
+    },
+    "daejeon": {
+      "name": "대전광역시",
+      "count": 3732,
+      "bytes": 618233,
+      "path": "/data/onnuri-20260731/daejeon.json"
+    },
+    "gangwon": {
+      "name": "강원특별자치도",
+      "count": 3567,
+      "bytes": 597149,
+      "path": "/data/onnuri-20260731/gangwon.json"
+    },
+    "gwangju": {
+      "name": "광주광역시",
+      "count": 6261,
+      "bytes": 1051529,
+      "path": "/data/onnuri-20260731/gwangju.json"
+    },
+    "gyeongbuk": {
+      "name": "경상북도",
+      "count": 4711,
+      "bytes": 735021,
+      "path": "/data/onnuri-20260731/gyeongbuk.json"
+    },
+    "gyeonggi": {
+      "name": "경기도",
+      "count": 12654,
+      "bytes": 2189470,
+      "path": "/data/onnuri-20260731/gyeonggi.json"
+    },
+    "gyeongnam": {
+      "name": "경상남도",
+      "count": 3469,
+      "bytes": 561557,
+      "path": "/data/onnuri-20260731/gyeongnam.json"
+    },
+    "incheon": {
+      "name": "인천광역시",
+      "count": 4450,
+      "bytes": 738958,
+      "path": "/data/onnuri-20260731/incheon.json"
+    },
+    "jeju": {
+      "name": "제주특별자치도",
+      "count": 1375,
+      "bytes": 231902,
+      "path": "/data/onnuri-20260731/jeju.json"
+    },
+    "jeonbuk": {
+      "name": "전북특별자치도",
+      "count": 2519,
+      "bytes": 411145,
+      "path": "/data/onnuri-20260731/jeonbuk.json"
+    },
+    "jeonnam": {
+      "name": "전라남도",
+      "count": 2832,
+      "bytes": 442044,
+      "path": "/data/onnuri-20260731/jeonnam.json"
+    },
+    "sejong": {
+      "name": "세종특별자치시",
+      "count": 901,
+      "bytes": 155838,
+      "path": "/data/onnuri-20260731/sejong.json"
+    },
+    "seoul": {
+      "name": "서울특별시",
+      "count": 16149,
+      "bytes": 2696110,
+      "path": "/data/onnuri-20260731/seoul.json"
+    },
+    "ulsan": {
+      "name": "울산광역시",
+      "count": 2303,
+      "bytes": 348326,
+      "path": "/data/onnuri-20260731/ulsan.json"
+    }
+  }
+}
