@@ -4,6 +4,17 @@ const OFFICIAL_ONNURI_2025_URL='https://api.odcloud.kr/api/3060079/v1/uddi:7ffa4
 
 
 const ONNURI_CACHE_TABLE='onnuri_geocode_cache_v1';
+const ONNURI_CSV8_VERSION='2026-07-31-csv8';
+const ONNURI_CSV8_REGION_FILES={
+  '서울특별시':'seoul','서울':'seoul','부산광역시':'busan','부산':'busan','대구광역시':'daegu','대구':'daegu',
+  '인천광역시':'incheon','인천':'incheon','광주광역시':'gwangju','광주':'gwangju','대전광역시':'daejeon','대전':'daejeon',
+  '울산광역시':'ulsan','울산':'ulsan','세종특별자치시':'sejong','세종':'sejong','경기도':'gyeonggi','경기':'gyeonggi',
+  '강원특별자치도':'gangwon','강원도':'gangwon','강원':'gangwon','충청북도':'chungbuk','충북':'chungbuk',
+  '충청남도':'chungnam','충남':'chungnam','전북특별자치도':'jeonbuk','전라북도':'jeonbuk','전북':'jeonbuk',
+  '전라남도':'jeonnam','전남':'jeonnam','경상북도':'gyeongbuk','경북':'gyeongbuk','경상남도':'gyeongnam','경남':'gyeongnam',
+  '제주특별자치도':'jeju','제주':'jeju'
+};
+const ONNURI_CSV8_MEMORY=new Map();
 
 const FORCED_ONNURI_MERCHANTS=[{"id":"forced:sodammasilgil:wonjobuanjip-sodam","city":"세종특별자치시","district":"","town":"소담동","market":"소담마실길 골목형상점가","name":"원조부안집 소담점","address":"세종특별자치시 소담로 93 (소담동) 104 105","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:sodam:yesan-guksu","city":"세종특별자치시","district":"","town":"소담동","market":"소담마실길 골목형상점가","name":"예산국수 소담점","address":"세종특별자치시 한누리대로 2018 (소담동) 사이언스타운 103호","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:sodam:isac-toast","city":"세종특별자치시","district":"","town":"소담동","market":"소담마실길 골목형상점가","name":"이삭토스트 세종 소담점","address":"세종특별자치시 한누리대로 2018 (소담동) 사이언스타운 113호","category":"분식","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:sodam:dakjangsu","city":"세종특별자치시","district":"","town":"소담동","market":"소담마실길 골목형상점가","name":"닭장수후라이드 소담점","address":"세종특별자치시 한누리대로 2022 (소담동) 1층 101호","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:sodam:sobok","city":"세종특별자치시","district":"","town":"소담동","market":"소담마실길 골목형상점가","name":"소복반점","address":"세종특별자치시 한누리대로 2003 (소담동) 206호","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:sodam:daehan-gopchang","city":"세종특별자치시","district":"","town":"소담동","market":"소담마실길 골목형상점가","name":"군자대한곱창 세종소담점","address":"세종특별자치시 한누리대로 1966 (소담동) 103~104호","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:sodam:eunhee-haejangguk","city":"세종특별자치시","district":"","town":"소담동","market":"소담마실길 골목형상점가","name":"제주은희네해장국 세종소담점","address":"세종특별자치시 법원2로 12 (소담동) 115~117호","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:mannyeon:sinchon-seolleongtang","city":"대전광역시","district":"서구","town":"만년동","market":"만년동 골목형상점가","name":"신촌설렁탕 만년점","address":"대전광역시 서구 대덕대로 390 (만년동)","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:mannyeon:friends-academy","city":"대전광역시","district":"서구","town":"만년동","market":"만년동 골목형상점가","name":"프렌즈아카데미 대전만년점","address":"대전광역시 서구 만년로 69 (만년동) 2~3층","category":"골프연습장","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:mannyeon:kims-piano","city":"대전광역시","district":"서구","town":"만년동","market":"만년동 골목형상점가","name":"킴스피아노","address":"대전광역시 서구 대덕대로 408 (만년동, 테크노월드) 2층","category":"악기","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:mannyeon:samo","city":"대전광역시","district":"서구","town":"만년동","market":"만년동 골목형상점가","name":"삼오식당","address":"대전광역시 서구 만년로 70 (만년동)","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:mannyeon:uncle-budae","city":"대전광역시","district":"서구","town":"만년동","market":"만년동 골목형상점가","name":"엉클부대찌개 만년점","address":"대전광역시 서구 만년로 79 (만년동) 1층 104호","category":"음식점","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:mannyeon:sg-screen","city":"대전광역시","district":"서구","town":"만년동","market":"만년동 골목형상점가","name":"SG스크린골프 만년점","address":"대전광역시 서구 둔산대로117번길 95 (만년동, 리더스타운) B동 101호","category":"골프연습장","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"},{"id":"forced:mannyeon:wash-enjoy","city":"대전광역시","district":"서구","town":"만년동","market":"만년동 골목형상점가","name":"워시엔조이 셀프빨래방 대전만년점","address":"대전광역시 서구 만년남로3번길 49 (만년동)","category":"세탁","paper":true,"digital":true,"forced":true,"verifiedAt":"2026-09-16"}];
 
@@ -106,6 +117,49 @@ function loadBundledOnnuri(){
   }));
 }
 
+
+function onnuriCsv8RegionKey(city){
+  const raw=String(city||'').trim();
+  if(!raw)return '';
+  if(ONNURI_CSV8_REGION_FILES[raw])return ONNURI_CSV8_REGION_FILES[raw];
+  const found=Object.keys(ONNURI_CSV8_REGION_FILES).find(k=>raw.includes(k)||k.includes(raw));
+  return found?ONNURI_CSV8_REGION_FILES[found]:'';
+}
+async function loadCsv8Onnuri(request,env,city){
+  const key=onnuriCsv8RegionKey(city);
+  if(!key)return [];
+  const assetUrl=new URL(`/data/onnuri-20260731/${key}.json`,request.url);
+  let response=null;
+  try{
+    let payload=ONNURI_CSV8_MEMORY.get(key)||null;
+    if(!payload){
+      if(env?.ASSETS?.fetch)response=await env.ASSETS.fetch(new Request(assetUrl.toString(),{headers:{accept:'application/json'}}));
+      else response=await fetch(assetUrl.toString(),{headers:{accept:'application/json'}});
+      if(!response?.ok)return [];
+      payload=await response.json();
+      if(payload?.version===ONNURI_CSV8_VERSION&&Array.isArray(payload?.items))ONNURI_CSV8_MEMORY.set(key,payload);
+    }
+    if(payload?.version!==ONNURI_CSV8_VERSION||!Array.isArray(payload?.items))return [];
+    const regionName=String(payload.region||city||'').trim();
+    return payload.items.map(x=>({
+      '가맹점명':String(x?.n||'').trim(),
+      '소속 시장명(또는 상점가)':String(x?.m||'').trim(),
+      '소재지':String(x?.a||'').trim(),
+      '취급품목':String(x?.c||'').trim(),
+      '지류형 가맹 여부':x?.p?'Y':'N',
+      '디지털형 가맹 여부':x?.d?'Y':'N',
+      '가맹 등록년도':String(x?.y||'').trim(),
+      '__addressSource':x?.s==='market'?'official-market':'csv8-merchant-exact',
+      '__region':regionName,
+      '__bundled':true,
+      '__csv8':true
+    }));
+  }catch(e){
+    console.warn('onnuri csv8 asset load failed',key,e?.message||e);
+    return [];
+  }
+}
+
 export async function onRequestGet({request,env}){
   const q=new URL(request.url);
   const west=num(q.searchParams.get('west')),south=num(q.searchParams.get('south'));
@@ -164,8 +218,11 @@ export async function onRequestGet({request,env}){
 
     // 7.6.5.4: 앱에 내장된 대전·세종 주소 데이터 3종을 항상 우선 병합한다.
     // 공공데이터 API 키/조건검색 오류가 있어도 실제주소·대표주소·미확인 목록을 사용할 수 있다.
+    const csv8Rows=await loadCsv8Onnuri(request,env,region?.city);
     const bundledRows=loadBundledOnnuri();
-    if(bundledRows.length)rows=[...bundledRows,...rows];
+    // 8차 보강 CSV의 개별주소/공식 시장대표주소를 가장 먼저 병합한다.
+    // 동일 시장+가맹점이 중복될 경우 아래 dedup 로직에서 CSV8 행이 우선 유지된다.
+    if(csv8Rows.length||bundledRows.length)rows=[...csv8Rows,...bundledRows,...rows];
 
     const normalized=rows.map(row=>({
       raw:row,
@@ -181,7 +238,8 @@ export async function onRequestGet({request,env}){
       lat:num(pick(row,['위도','latitude','lat','y','Y'])),
       addressSource:String(row.__addressSource||''),
       bundled:Boolean(row.__bundled),
-      bundledRegion:String(row.__region||'')
+      bundledRegion:String(row.__region||''),
+      csv8:Boolean(row.__csv8)
     })).filter(x=>x.name||x.address);
 
     let local=normalized;
@@ -204,7 +262,7 @@ export async function onRequestGet({request,env}){
       const score=x=>{
         const t=`${x.address} ${x.market}`;
         if(localTerms.some(w=>w&&t.includes(w)))return 0;
-        if(x.addressSource==='legacy-merchant-exact'||x.addressSource==='user-confirmed')return 1;
+        if(x.addressSource==='legacy-merchant-exact'||x.addressSource==='user-confirmed'||x.addressSource==='csv8-merchant-exact')return 1;
         if(x.addressSource==='official-market'||x.addressSource==='market-reference')return 2;
         return 3;
       };
@@ -403,7 +461,8 @@ export async function onRequestGet({request,env}){
         matchedAddress,
         searchQuery,
         approximate:precision==='market-zone'||precision==='admin-zone',
-        source:x.forced?'manual-forced':'semas-onnuri-2025',
+        source:x.forced?'manual-forced':(x.csv8?'semas-onnuri-2026-csv8':'semas-onnuri-2025'),
+        addressType:x.addressSource==='official-market'||x.addressSource==='market-reference'?'market':'merchant',
         forced:Boolean(x.forced)
       };
     });
@@ -469,8 +528,10 @@ export async function onRequestGet({request,env}){
       configured:true,
       publicDataConfigured:Boolean(serviceKey),
       bundledDataEnabled:true,
-      provider:'소상공인시장진흥공단 전국 온누리상품권 가맹점 현황 2025-07-31 + 앱 내장 주소보완 데이터',
+      provider:'소상공인시장진흥공단 전국 온누리상품권 가맹점 현황 2026-07-31 주소보강 8차 + 공공데이터 API',
       datasetUrl:OFFICIAL_ONNURI_2025_URL,
+      bundledCsv8Version:ONNURI_CSV8_VERSION,
+      bundledCsv8Rows:csv8Rows.length,
       region:{city:region?.city||'',district:region?.district||'',town:region?.town||''},
       fetchedRows:rows.length,
       localRows:local.length,
@@ -480,7 +541,7 @@ export async function onRequestGet({request,env}){
       cacheEnabled:Boolean(geocodeDb),
       minimumVisibleFallback:items.some(x=>x.searchQuery==='MIN_VISIBLE_FALLBACK'),
       locationPrecision:'mixed',
-      notice:'상세주소가 없는 가맹점은 지역+상점가+가맹점명 키워드 검색으로 좌표화하고, 실패 시 시장·상점가 또는 행정구역 대표 위치를 사용합니다.',
+      notice:'주소보강 8차의 개별 가맹점 주소를 우선 사용하며, 개별주소가 없는 경우 공식 시장·상점가 대표주소 또는 지역+상점가+가맹점명 검색을 사용합니다.',
       fetchMeta,
       zones,
       items
