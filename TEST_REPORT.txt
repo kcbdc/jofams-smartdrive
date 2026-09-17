@@ -1,0 +1,24 @@
+조팸스 스마트드라이브 온누리 주소보강 8차 반영 테스트
+
+[PASS] app.js 및 functions/api/*.js Node syntax check
+[PASS] 17개 지역 JSON 파싱 및 manifest 건수 일치
+[PASS] 온누리 API가 서울 지역 주소보강 8차 shard 16,149건을 정적 asset으로 로드
+[PASS] API provider/version이 2026-07-31 CSV8로 노출
+[PASS] 수정 전/후 HTML ID 참조 비교 결과 신규 missing ID 0건
+[PASS] 온누리 개별핀 1.6km 기준 / 64px 클러스터로 지역사랑상품권과 동일 표시 기준 적용
+[PASS] 동일 좌표 온누리 가맹점 복수일 때 목록 모달로 분리 표시
+[PASS] 온누리 상세 팝업에 지류/디지털, 시장명, 위치정확도 표시
+
+참고: 원본 소스 자체에 validator가 지적하는 optional/dead HTML ID 참조 11건이 이미 존재하며, 수정본에서 새로 증가하지 않았습니다.
+원본 ZIP에는 tools/validate.mjs가 확인하는 assets/daim.png, assets/sunsik.png, assets/hunmin.png 폴더 자체가 포함되어 있지 않아 원본 validator의 전체 PASS는 원본 패키지 구조상 불가능합니다.
+
+
+[Radio loudness normalization - build 7.6.9.3]
+- Default radio master level changed to 60%.
+- Existing saved 80%/65% value is migrated once to 60% using jofams.radioLevelVersion.
+- Runtime Web Audio AGC targets approximately -18 dBFS RMS and uses a DynamicsCompressor limiter to reduce MP3-to-MP3 loudness differences.
+- Navigation-start autoplay and manual radio playback both initialize the normalizer.
+- TTS ducking remains active through the existing HTMLMediaElement volume path.
+- node --check app.js: PASS.
+- Existing validate.mjs warning list is unchanged legacy UI IDs; no new radio-related missing ID introduced.
+- Note: browser software cannot guarantee physical 60 dB SPL because actual dB SPL depends on device/OS/speaker/headphone volume. The app therefore uses 60% master playback plus digital loudness normalization.

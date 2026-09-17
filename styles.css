@@ -2076,3 +2076,14 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .onnuri-cluster-marker.small{width:38px!important;height:38px!important}
 .onnuri-cluster-marker.medium{width:46px!important;height:46px!important}
 .onnuri-cluster-marker.large{width:56px!important;height:56px!important}
+
+/* === 7.6.9.2 온누리상품권 가맹점 정보: 지역사랑상품권 수준의 가독성/목록 표현 === */
+.voucher-building-modal.onnuri-mode .voucher-building-sheet>header small{color:#b76200!important}
+.voucher-building-modal.onnuri-mode .voucher-building-sheet>header b{color:#8f4a00!important}
+.voucher-building-modal.onnuri-mode .onnuri-list-shop{
+  background:#fff2e2!important;color:#ef7d00!important;border:1px solid rgba(239,125,0,.18)!important;
+}
+.voucher-building-modal.onnuri-mode .voucher-list-copy em{color:#c86700!important}
+.onnuri-shop-marker .onnuri-shop-badge{min-width:19px!important;padding:0 4px!important}
+.where-to-item-onnuri .where-to-info small{color:#536174!important;font-weight:650!important}
+.where-to-item-onnuri .where-to-info em{color:#b75d00!important;font-weight:800!important}

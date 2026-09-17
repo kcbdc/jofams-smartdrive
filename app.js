@@ -15,7 +15,7 @@ const characterDefs = {
 };
 const state = {
   map:null,mapReady:false,pendingRouteDraw:null,mapFallbackTried:false,mapWatchdog:0,user:null, destination:null, routeOptions:[], route:null, selectedRoute:0,
-  userMarker:null,destMarker:null,originMarker:null,watchId:null,character:'daim',voiceVolume:.8,sound:true,radioVolume:.8,radioPlaying:false,radioIndex:0,radioDucked:false,radioDuckTimer:0,activeGuideSnapshot:null,
+  userMarker:null,destMarker:null,originMarker:null,watchId:null,character:'daim',voiceVolume:.8,sound:true,radioVolume:.6,radioPlaying:false,radioIndex:0,radioDucked:false,radioDuckTimer:0,activeGuideSnapshot:null,
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
   savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:'B027',fuelData:null,fuelFetchedAt:0,fuelLoading:false,destinationSearchSort:'accuracy',lastDestinationQuery:'',routeMode:'car',carRouteOptions:[],walkingRoute:null,routeModeDurations:{car:null,walk:null},homeFacilityCategory:'주유소',homeFacilityItems:[],
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
@@ -837,11 +837,19 @@ function showMapPlacePrompt(place){
   state.mapPlaceCandidate=place;
   if($('mapPlacePromptTitle'))$('mapPlacePromptTitle').textContent=place?.name||'이 위치';
   const voucher=place?.voucher;
+  const onnuri=place?.onnuri;
   if($('mapPlacePromptText')){
     if(voucher){
       const uses=voucherUseFlags(voucher);
       const unavailable=['카드','모바일','지류'].filter(x=>!uses.includes(x));
       $('mapPlacePromptText').textContent=`사용 가능: ${uses.length?uses.join(' · '):'정보 없음'}${unavailable.length?` · 미지원: ${unavailable.join(' · ')}`:''}`;
+    }else if(onnuri){
+      const uses=onnuriUseFlags(onnuri);
+      const approx=onnuri.approximate||onnuri.precision==='market-zone'||onnuri.precision==='admin-zone';
+      const parts=[`온누리상품권 ${uses.length?uses.join(' · '):'사용수단 확인'}`];
+      if(onnuri.market)parts.push(onnuri.market);
+      parts.push(approx?'시장·상점가 대표 위치':'가맹점 위치 확인');
+      $('mapPlacePromptText').textContent=parts.join(' · ');
     }else $('mapPlacePromptText').textContent=`${place?.name||'이 위치'}로 안내해 드릴까요?`;
   }
   $('mapPlacePrompt')?.classList.remove('hidden');
@@ -990,13 +998,20 @@ function clusterMapItemsByPixel(items,cell=64){
   return out;
 }
 function renderOnnuriShopMarkers(items){
+  const grouped=new Map();
   for(const item of items||[]){
     if(!Number.isFinite(Number(item.lng))||!Number.isFinite(Number(item.lat)))continue;
+    const key=voucherBuildingKey(item);
+    if(!grouped.has(key))grouped.set(key,[]);
+    grouped.get(key).push(item);
+  }
+  for(const list of grouped.values()){
+    const item=list[0];
     const el=document.createElement('button');
     el.type='button';el.className='onnuri-shop-marker';
-    el.title=item.name||'온누리상품권 가맹점';
-    el.innerHTML=`${onnuriShopSvg()}<span class="onnuri-shop-badge">온</span>`;
-    el.onclick=e=>{e.stopPropagation();openOnnuriStoreInfo(item)};
+    el.title=list.length>1?`온누리상품권 가맹점 ${list.length}곳`:item.name||'온누리상품권 가맹점';
+    el.innerHTML=`${onnuriShopSvg()}<span class="onnuri-shop-badge">${list.length>1?(list.length>99?'99+':list.length):'온'}</span>`;
+    el.onclick=e=>{e.stopPropagation();list.length>1?openOnnuriBuildingList(list):openOnnuriStoreInfo(item)};
     try{state.onnuriMarkers.push(new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([Number(item.lng),Number(item.lat)]).addTo(state.map))}catch{}
   }
 }
@@ -1054,8 +1069,8 @@ function renderWhereToList(){
       const region=onnuriRegionLabel(x);
       const use=onnuriUseFlags(x).join(' · ');
       const tag=approx
-        ? (Number(x.fallbackCount)>1?`대표 구역 위치 · 원천 ${Number(x.fallbackCount).toLocaleString()}곳`:'대표 구역 위치')
-        : (x.precision==='exact-address-geocode'?'상세주소 위치 확인':'가맹점 위치 확인');
+        ? (Number(x.fallbackCount)>1?`대표 구역 위치 · 원천 ${Number(x.fallbackCount).toLocaleString()}곳`:'시장·상점가 대표 위치')
+        : (x.source==='semas-onnuri-2026-csv8'?'주소보강 8차 · 가맹점 위치':(x.precision==='exact-address-geocode'?'상세주소 위치 확인':'가맹점 위치 확인'));
       return `<button type="button" class="where-to-item where-to-item-onnuri ${approx?'where-to-zone-item':''}" data-where-index="${i}">
         <span class="where-to-rank">${i+1}</span>
         <span class="where-to-info">
@@ -1175,8 +1190,8 @@ function renderOnnuriMarkers(data){
 
   // 정확히 찾은 점포는 기존 개별 가맹점 마커로 표시
   if(precise.length){
-    if(mapVisibleWidthMeters()<2400)renderOnnuriShopMarkers(precise);
-    else renderOnnuriClusterMarkers(clusterMapItemsByPixel(precise,68));
+    if(mapVisibleWidthMeters()<1600)renderOnnuriShopMarkers(precise);
+    else renderOnnuriClusterMarkers(clusterMapItemsByPixel(precise,64));
   }
 
   // 좌표를 못 찾은 점포는 시장/상점가 대표 구역 단위로만 표시
@@ -1192,7 +1207,7 @@ function renderOnnuriMarkers(data){
 }
 function readOnnuriStaleCache(){
   try{
-    const raw=localStorage.getItem('jofams_onnuri_map_cache_v3');
+    const raw=localStorage.getItem('jofams_onnuri_map_cache_v4');
     if(!raw)return null;
     const d=JSON.parse(raw);
     if(!d?.payload||Date.now()-Number(d.savedAt||0)>24*60*60*1000)return null;
@@ -1201,7 +1216,7 @@ function readOnnuriStaleCache(){
 }
 function writeOnnuriStaleCache(payload){
   try{
-    if(payload?.items?.length)localStorage.setItem('jofams_onnuri_map_cache_v3',JSON.stringify({savedAt:Date.now(),payload}));
+    if(payload?.items?.length)localStorage.setItem('jofams_onnuri_map_cache_v4',JSON.stringify({savedAt:Date.now(),payload}));
   }catch{}
 }
 
@@ -1316,6 +1331,8 @@ function openVoucherBuildingList(items){
   const list=(items||[]).filter(Boolean);
   if(!list.length)return;
   if(list.length===1){openVoucherStoreInfo(list[0]);return}
+  $('voucherBuildingModal')?.classList.remove('onnuri-mode');
+  if($('voucherBuildingKicker'))$('voucherBuildingKicker').textContent='같은 건물 지역사랑상품권 가맹점';
   if($('voucherBuildingTitle'))$('voucherBuildingTitle').textContent=`가맹점 ${list.length}곳`;
   const box=$('voucherBuildingList');
   if(box){
@@ -1333,6 +1350,31 @@ function openVoucherBuildingList(items){
   }
   $('voucherBuildingModal')?.classList.remove('hidden');
 }
+function openOnnuriBuildingList(items){
+  const list=(items||[]).filter(Boolean);
+  if(!list.length)return;
+  if(list.length===1){openOnnuriStoreInfo(list[0]);return}
+  $('voucherBuildingModal')?.classList.add('onnuri-mode');
+  if($('voucherBuildingKicker'))$('voucherBuildingKicker').textContent='같은 위치 온누리상품권 가맹점';
+  if($('voucherBuildingTitle'))$('voucherBuildingTitle').textContent=`온누리 가맹점 ${list.length}곳`;
+  const box=$('voucherBuildingList');
+  if(box){
+    box.innerHTML=list.map((item,i)=>{
+      const uses=onnuriUseFlags(item);
+      const address=item.matchedAddress||item.address||item.market||'주소 정보 없음';
+      return `<button type="button" data-onnuri-building-item="${i}">
+        <span class="voucher-list-shop onnuri-list-shop">${onnuriShopSvg()}</span>
+        <span class="voucher-list-copy"><b>${escapeHtml(item.name||'온누리상품권 가맹점')}</b><small>${escapeHtml(address)}</small><em>${escapeHtml([item.market,...uses].filter(Boolean).join(' · ')||'온누리상품권')}</em></span>
+        <span class="voucher-list-arrow">›</span>
+      </button>`;
+    }).join('');
+    box.querySelectorAll('[data-onnuri-building-item]').forEach(btn=>{
+      btn.onclick=e=>{e.stopPropagation();openOnnuriStoreInfo(list[Number(btn.dataset.onnuriBuildingItem)])};
+    });
+  }
+  $('voucherBuildingModal')?.classList.remove('hidden');
+}
+
 function renderVoucherShopMarkers(items){
   for(const item of (items||[])){
     const lng=Number(item.lng),lat=Number(item.lat);
@@ -3343,15 +3385,16 @@ function startNavigation(){
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
   if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 바로 요청해야 브라우저가 확실히 허용한다.
   initializeDriveSummary();startWatch();ensureUserMarker();updateCarMarkerImage();drawRoute(state.route,{fit:false});updateDriving(true);
-  // 길안내 진입 시 라디오는 항상 80%로 초기화하고 즉시 자동재생을 요청한다.
-  // 이전 세션의 저장 볼륨과 관계없이 주행 시작 기준값을 80%로 맞춘다.
+  // 길안내 진입 시 라디오는 60% 기준으로 초기화한다.
+  // MP3 원본별 음량 편차는 Web Audio 자동 음량 평준화(AGC + compressor)로 보정한다.
   {
-    setRadioVolume(.8,true);
+    setRadioVolume(.6,true);
     const rp=radioPlayer();
     if(rp){
       if(!rp.getAttribute('src'))rp.src='/assets/radio/radio_1.mp3';
       rp.muted=false;
       rp.volume=state.radioDucked?state.radioVolume*.25:state.radioVolume;
+      ensureRadioLoudnessNormalizer().catch(e=>console.warn('radio normalizer init failed',e));
       const playPromise=rp.play();
       if(playPromise?.then)playPromise.then(()=>{
         state.radioPlaying=true;updateRadioUI();
@@ -4738,8 +4781,64 @@ function pickDaimVoice(){
 const RADIO_VOLUME_KEY='jofams.radioVolume';
 const NAV_VOLUME_KEY='jofams.navVolume';
 const RADIO_INDEX_KEY='jofams.radioIndex';
+const RADIO_LEVEL_VERSION_KEY='jofams.radioLevelVersion';
+const RADIO_LEVEL_VERSION='60-normalized-v1';
+let radioAudioCtx=null,radioMediaSource=null,radioPreAnalyser=null,radioAutoGain=null,radioLimiter=null,radioAgcTimer=0;
 
 function radioPlayer(){return $('radioPlayer')}
+async function ensureRadioLoudnessNormalizer(){
+  const el=radioPlayer();
+  if(!el)return false;
+  try{
+    const AudioCtx=window.AudioContext||window.webkitAudioContext;
+    if(!AudioCtx)return false;
+    if(!radioAudioCtx){
+      radioAudioCtx=new AudioCtx();
+      radioMediaSource=radioAudioCtx.createMediaElementSource(el);
+      radioPreAnalyser=radioAudioCtx.createAnalyser();
+      radioPreAnalyser.fftSize=2048;
+      radioPreAnalyser.smoothingTimeConstant=.72;
+      radioAutoGain=radioAudioCtx.createGain();
+      radioAutoGain.gain.value=1;
+      radioLimiter=radioAudioCtx.createDynamicsCompressor();
+      // 서로 다른 MP3의 체감 음량 차이를 줄이고 갑작스러운 피크는 제한한다.
+      radioLimiter.threshold.value=-12;
+      radioLimiter.knee.value=18;
+      radioLimiter.ratio.value=12;
+      radioLimiter.attack.value=.003;
+      radioLimiter.release.value=.22;
+      radioMediaSource.connect(radioPreAnalyser);
+      radioPreAnalyser.connect(radioAutoGain);
+      radioAutoGain.connect(radioLimiter);
+      radioLimiter.connect(radioAudioCtx.destination);
+    }
+    if(radioAudioCtx.state==='suspended')await radioAudioCtx.resume();
+    if(!radioAgcTimer){
+      const buf=new Float32Array(radioPreAnalyser.fftSize);
+      radioAgcTimer=setInterval(()=>{
+        if(!radioPreAnalyser||!radioAutoGain||!el||el.paused)return;
+        try{
+          radioPreAnalyser.getFloatTimeDomainData(buf);
+          let sum=0;
+          for(let i=0;i<buf.length;i++)sum+=buf[i]*buf[i];
+          const rms=Math.sqrt(sum/buf.length);
+          if(!Number.isFinite(rms)||rms<.001)return;
+          // 디지털 음원은 물리적 60 dB SPL을 직접 보장할 수 없으므로
+          // 약 -18 dBFS RMS를 목표로 자동 보정하고 마스터 재생레벨은 60%로 둔다.
+          const targetRms=Math.pow(10,-18/20);
+          const desired=Math.max(.35,Math.min(3.5,targetRms/rms));
+          const now=radioAudioCtx.currentTime;
+          radioAutoGain.gain.cancelScheduledValues(now);
+          radioAutoGain.gain.setTargetAtTime(desired,now,.35);
+        }catch{}
+      },250);
+    }
+    return true;
+  }catch(e){
+    console.warn('radio loudness normalizer unavailable',e);
+    return false;
+  }
+}
 function setRadioVolume(v,persist=true){
   state.radioVolume=Math.max(0,Math.min(1,Number(v)));
   if(persist)try{localStorage.setItem(RADIO_VOLUME_KEY,String(state.radioVolume))}catch{}
@@ -4829,6 +4928,7 @@ async function radioLoadIndex(index,autoplay=false){
   updateRadioUI();
   if(autoplay){
     try{
+      await ensureRadioLoudnessNormalizer();
       await el.play();state.radioPlaying=true;updateRadioUI();return true;
     }catch(e){
       console.warn('radio autoplay blocked',e);state.radioPlaying=false;updateRadioUI();return false;
@@ -4843,6 +4943,7 @@ async function toggleRadio(){
     if(el.paused){
       if(!el.getAttribute('src'))el.src='/assets/radio/radio_1.mp3';
       el.volume=state.radioDucked?state.radioVolume*.25:state.radioVolume;
+      await ensureRadioLoudnessNormalizer();
       await el.play();
       state.radioPlaying=true;
     }else{
@@ -4860,7 +4961,9 @@ async function nextRadio(){await radioLoadIndex(state.radioIndex+1,true)}
 async function initVirtualRadio(){
   const player=radioPlayer();
   if(player&&!player.getAttribute('src'))player.src='/assets/radio/radio_1.mp3';
-  const rv=Number(localStorage.getItem(RADIO_VOLUME_KEY));if(Number.isFinite(rv))state.radioVolume=Math.max(0,Math.min(1,rv));
+  const levelVersion=localStorage.getItem(RADIO_LEVEL_VERSION_KEY);
+  if(levelVersion!==RADIO_LEVEL_VERSION){state.radioVolume=.6;try{localStorage.setItem(RADIO_VOLUME_KEY,'0.6');localStorage.setItem(RADIO_LEVEL_VERSION_KEY,RADIO_LEVEL_VERSION)}catch{}}
+  else{const rv=Number(localStorage.getItem(RADIO_VOLUME_KEY));if(Number.isFinite(rv))state.radioVolume=Math.max(0,Math.min(1,rv));}
   const nv=Number(localStorage.getItem(NAV_VOLUME_KEY));if(Number.isFinite(nv))state.voiceVolume=Math.max(0,Math.min(1,nv));
   const ri=Number(localStorage.getItem(RADIO_INDEX_KEY));if(Number.isFinite(ri))state.radioIndex=Math.max(0,ri);
   await loadRadioSchedule();
@@ -5909,3 +6012,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.9.0: Gapcheon riverside cameras priority match + institution front-gate arrival finish
 
 // build 7.6.9.1: navigation entry resets virtual radio to 80% and immediately requests autoplay
+
+// build 7.6.9.2: Onnuri CSV8 regional address dataset integration + local-voucher-style store details/grouped pins
+
+// build 7.6.9.3: radio default 60% + runtime loudness normalization (AGC/limiter) for uneven MP3 source levels
