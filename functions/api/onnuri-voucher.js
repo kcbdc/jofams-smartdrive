@@ -283,7 +283,32 @@ export async function onRequestGet({request,env}){
       if(!dup)local.unshift({...forced});
     }
 
-    local=local.slice(0,260);
+    // 7.6.9: 8차 CSV 보강 이후 특정 지역(구/동) 가맹점 수가 1,000건을 넘는 경우가 많아졌다.
+    // 예전처럼 상위 260건만 남기고 잘라내면, 관리자 배치로 '이미 좌표화까지 끝난' 가맹점도
+    // 정렬 우선순위에서 밀려 화면에 아예 안 보이는 문제가 생긴다. D1 캐시에 이미 좌표가 있는
+    // 가맹점은 잘라내지 않고 전부 남기고, 아직 좌표가 없는 나머지만 개수를 제한해
+    // 실시간 지오코딩 부담을 관리한다.
+    const cacheRegionForList=region?.city||[region?.city,region?.district,region?.town].filter(Boolean).join(' ');
+    const MAX_LIST=700,MAX_UNCACHED=Math.max(60,MAX_LIST-260);
+    if(local.length>MAX_LIST && geocodeDb){
+      const keyed=local.map(x=>({x,key:onnuriCacheKey(cacheRegionForList,(x.market||'').trim(),(x.name||'').trim())}));
+      const cachedKeys=new Set();
+      const CHUNK=400;
+      for(let i=0;i<keyed.length;i+=CHUNK){
+        const chunk=keyed.slice(i,i+CHUNK);
+        try{
+          const rs=await geocodeDb.prepare(
+            `SELECT cache_key FROM ${ONNURI_CACHE_TABLE} WHERE cache_key IN (${chunk.map(()=>'?').join(',')})`
+          ).bind(...chunk.map(c=>c.key)).all();
+          for(const row of rs?.results||[])cachedKeys.add(row.cache_key);
+        }catch(e){console.warn('onnuri cache pre-check failed',e?.message||e)}
+      }
+      const cachedItems=keyed.filter(k=>cachedKeys.has(k.key)).map(k=>k.x);
+      const uncachedItems=keyed.filter(k=>!cachedKeys.has(k.key)).map(k=>k.x);
+      local=[...cachedItems,...uncachedItems.slice(0,MAX_UNCACHED)];
+    }else{
+      local=local.slice(0,MAX_LIST);
+    }
 
     const marketCenterCache=new Map();
     const adminCenterCache=new Map();

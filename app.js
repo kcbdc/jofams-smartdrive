@@ -320,33 +320,41 @@ function fuseGpsFix(raw,now){
 
 
 const CAMERA_DATASET_URLS=['/data/sejong_daejeon_expressway_cameras.json','/data/daejeon_sejong_corridor_cameras.json','/data/unmanned_traffic_cameras_part1.json','/data/unmanned_traffic_cameras_part2.json'];
+// 세종→대전 고속화도로 안내에 반드시 필요한 우선순위 파일. 이 파일이 한 번이라도
+// 로드 실패하면 다음 호출에서도 재시도한다(전국 대용량 파일 실패는 재시도하지 않아도 무방).
+const CAMERA_DATASET_CRITICAL=new Set(['/data/sejong_daejeon_expressway_cameras.json','/data/daejeon_sejong_corridor_cameras.json']);
 
 async function loadOfficialCameraRows(){
-  if(Array.isArray(state.officialCameraRows))return state.officialCameraRows;
-  if(state.officialCameraPromise)return state.officialCameraPromise;
-  state.officialCameraPromise=Promise.all(CAMERA_DATASET_URLS.map(async url=>{
-    try{
-      // 배포 직후 신규 카메라 JSON이 갱신되도록 no-cache 사용.
-      const r=await fetch(url,{cache:'no-cache'});
-      if(!r.ok)throw new Error(`HTTP ${r.status}`);
-      const d=await r.json();
-      const rows=Array.isArray(d)?d:Array.isArray(d?.records)?d.records:Array.isArray(d?.response?.body?.items)?d.response.body.items:[];
-      return /sejong_daejeon_expressway_cameras\.json$/i.test(url)?rows.map(x=>({...x,__priorityExpressway:true})):rows;
-    }catch(e){
-      // 특정 파일 하나가 404/캐시 오류여도 나머지 전국 데이터는 반드시 사용한다.
-      console.warn('camera dataset partial load failed',url,e);
-      return [];
+  // 7.6.9: 예전에는 4개 파일 중 하나라도 일시적 네트워크 오류로 실패하면 빈 배열([])로
+  // state.officialCameraRows에 영구 캐시돼, 앱을 새로고침하기 전까지는 세종↔대전 구간단속
+  // 안내가 계속 빠지는 문제가 있었다("정확했었는데 갑자기 안내가 떨어짐"의 원인).
+  // 이제는 파일 단위로 성공한 것만 캐시하고, 실패한 핵심 파일(우선순위 구간 데이터)은
+  // 다음 경로 계산 때 자동으로 다시 시도한다.
+  state.officialCameraByUrl=state.officialCameraByUrl||{};
+  const need=CAMERA_DATASET_URLS.filter(url=>!Array.isArray(state.officialCameraByUrl[url]));
+  if(need.length){
+    if(!state.officialCameraFetchPromise||state.officialCameraFetchUrls!==need.join('|')){
+      state.officialCameraFetchUrls=need.join('|');
+      state.officialCameraFetchPromise=Promise.all(need.map(async url=>{
+        try{
+          // 배포 직후 신규 카메라 JSON이 갱신되도록 no-cache 사용.
+          const r=await fetch(url,{cache:'no-cache'});
+          if(!r.ok)throw new Error(`HTTP ${r.status}`);
+          const d=await r.json();
+          const rows=Array.isArray(d)?d:Array.isArray(d?.records)?d.records:Array.isArray(d?.response?.body?.items)?d.response.body.items:[];
+          state.officialCameraByUrl[url]=/sejong_daejeon_expressway_cameras\.json$/i.test(url)?rows.map(x=>({...x,__priorityExpressway:true})):rows;
+        }catch(e){
+          // 핵심 파일은 캐시하지 않아 다음 호출에서 재시도되게 하고, 나머지는 빈 배열로 처리해
+          // 하나의 파일 오류가 전체 안내를 막지 않게 한다.
+          console.warn('camera dataset partial load failed',url,e);
+          if(!CAMERA_DATASET_CRITICAL.has(url))state.officialCameraByUrl[url]=[];
+        }
+      }));
     }
-  })).then(parts=>{
-    const rows=parts.flat();
-    state.officialCameraRows=rows;
-    return rows;
-  }).catch(e=>{
-    console.warn('official camera dataset aggregate failed',e);
-    state.officialCameraRows=[];
-    return [];
-  });
-  return state.officialCameraPromise;
+    await state.officialCameraFetchPromise;
+    state.officialCameraFetchPromise=null;
+  }
+  return CAMERA_DATASET_URLS.flatMap(url=>state.officialCameraByUrl[url]||[]);
 }
 function pickField(obj,keys=[]){for(const k of keys){const v=obj?.[k];if(v!=null&&String(v).trim()!=='')return v}return ''}
 function officialCameraType(raw=''){
