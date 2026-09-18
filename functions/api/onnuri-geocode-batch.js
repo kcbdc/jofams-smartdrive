@@ -68,13 +68,13 @@ export async function onRequest({request,env}){
     const cached=await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${TABLE}`).first();
     const precise=await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${TABLE} WHERE precision IN ('exact-address-geocode','merchant-keyword','merchant-keyword-relaxed')`).first();
 
-    // 이전 버전에서 이미 진행한 배치도 가능한 한 이어받는다.
-    // progress 테이블이 비어 있으면 기존 D1 캐시 수를 순차 처리량으로 환산해 1회 bootstrap 한다.
-    await bootstrapProgressIfEmpty(env.DB,{
-      exact:exact.length,
-      market:market.length,
-      unresolved:unresolved.length
-    },Number(cached?.n||0));
+    // 참고: 예전에는 progress 테이블이 비어 있을 때 D1 캐시 건수를 exact→market→unresolved
+    // 순서의 커서로 환산해 이어받는 1회성 마이그레이션(bootstrapProgressIfEmpty)이 있었다.
+    // 그러나 CSV8 지역 배치가 '같은' D1 캐시 테이블을 공유하게 되면서, CSV8만 실행한 상태에서
+    // 이 진단 화면을 처음 열면 CSV8이 채운 캐시 건수가 exact/market/unresolved 진행률로 잘못
+    // 환산되어 "100% 완료"로 표시되고 실제로는 정확주소 데이터가 하나도 처리되지 않는 문제가
+    // 있었다. 더 이상 이 마이그레이션을 자동 실행하지 않는다(必要시 POST { stage, reset:true }로
+    // 특정 단계 진행률을 수동으로 초기화할 수 있다).
 
     const progress=await readProgress(env.DB,{
       exact:exact.length,
@@ -136,9 +136,21 @@ export async function onRequest({request,env}){
   }
 
   if(request.method!=='POST')return json({ok:false,error:'method not allowed'},405);
-  if(!env.KAKAO_REST_API_KEY)return json({ok:false,error:'KAKAO_REST_API_KEY is not configured'},503);
 
   const body=await request.json().catch(()=>({}));
+
+  // 진행률 초기화: 특정 스테이지가 실제로는 처리되지 않았는데 잘못된 커서 값이 저장된 경우
+  // (예: 예전 bootstrap 오류로 인한 허위 100%) 수동으로 0으로 되돌릴 수 있게 한다.
+  // Kakao 키 없이도 초기화는 가능해야 하므로 키 체크보다 먼저 처리한다.
+  if(body.reset){
+    const stage=String(body.stage||'');
+    if(!stage)return json({ok:false,error:'reset하려면 stage가 필요합니다'},400);
+    await env.DB.prepare(`DELETE FROM ${PROGRESS_TABLE} WHERE stage=?`).bind(stage).run();
+    return json({ok:true,reset:stage});
+  }
+
+  if(!env.KAKAO_REST_API_KEY)return json({ok:false,error:'KAKAO_REST_API_KEY is not configured'},503);
+
   const stage=String(body.stage||'exact');
   const requestedCursor=Math.max(0,Number(body.cursor)||0);
   const limit=Math.max(1,Math.min(30,Number(body.limit)||20));
