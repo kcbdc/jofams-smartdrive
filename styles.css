@@ -1688,6 +1688,14 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 #onnuriBatchStatus{display:block;line-height:1.45;opacity:.75}
 
 @media(max-width:560px){.onnuri-batch-stats{grid-template-columns:repeat(2,1fr)}}
+.onnuri-csv8-list{display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto}
+.onnuri-csv8-row{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:rgba(127,127,127,.08)}
+.onnuri-csv8-row b{font-size:14px}
+.onnuri-csv8-row small{display:block;opacity:.72;margin-top:2px}
+.onnuri-csv8-row .onnuri-csv8-pct{font-size:13px;font-weight:700;min-width:44px;text-align:right}
+.onnuri-csv8-row button{min-height:36px;padding:0 12px;white-space:nowrap}
+.onnuri-csv8-row.done{opacity:.6}
+.onnuri-csv8-row.running{outline:2px solid currentColor}
 
 
 /* === 7.6.5.5 MY 화면 끝까지 스크롤 복구 === */

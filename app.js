@@ -5636,6 +5636,9 @@ let onnuriBatchProgressState={
   market:{cursor:0,total:0},
   unresolved:{cursor:0,total:0}
 };
+// 7.6.8: 전국 8차 보강(CSV8) 지역별 좌표화 진행 상태. key는 manifest의 지역코드(daejeon, sejong 등).
+let onnuriCsv8Regions={};
+let onnuriCsv8ActiveKey='';
 
 async function loadOnnuriBatchStatus(){
   const status=$('onnuriBatchStatus');if(status)status.textContent='D1 캐시 상태를 확인하는 중입니다.';
@@ -5664,8 +5667,64 @@ async function loadOnnuriBatchStatus(){
       const pct=onnuriBatchGrandTotal?Math.min(100,Math.round(onnuriBatchGrandDone/onnuriBatchGrandTotal*100)):0;
       status.textContent=`저장된 진행률 ${pct}% · ${onnuriBatchGrandDone.toLocaleString()} / ${onnuriBatchGrandTotal.toLocaleString()} · D1 캐시 ${Number(d.cached||0).toLocaleString()}건`;
     }
+    if(d.csv8?.regions){
+      onnuriCsv8Regions=d.csv8.regions;
+      renderOnnuriCsv8List();
+    }
   }catch(e){
     if(status)status.textContent=`상태 확인 실패: ${e?.message||'서버 설정을 확인해 주세요.'}`;
+    const box=$('onnuriCsv8List');
+    if(box)box.textContent='지역 목록을 불러오지 못했습니다.';
+  }
+}
+function renderOnnuriCsv8List(){
+  const box=$('onnuriCsv8List');if(!box)return;
+  const keys=Object.keys(onnuriCsv8Regions);
+  if(!keys.length){box.textContent='지역 데이터가 없습니다.';return}
+  // 대전·세종을 목록 맨 위로 올려 우선 처리하기 쉽게 한다.
+  keys.sort((a,b)=>{
+    const pa=(a==='daejeon'||a==='sejong')?0:1,pb=(b==='daejeon'||b==='sejong')?0:1;
+    return pa-pb||a.localeCompare(b);
+  });
+  box.innerHTML=keys.map(key=>{
+    const r=onnuriCsv8Regions[key];
+    const total=Number(r.total||0),cursor=Math.min(total,Number(r.cursor||0));
+    const pct=total?Math.min(100,Math.round(cursor/total*100)):0;
+    const done=cursor>=total&&total>0;
+    const running=onnuriBatchRunning&&onnuriCsv8ActiveKey===key;
+    const label=running?'중지':(done?'완료':'실행');
+    return `<div class="onnuri-csv8-row${done?' done':''}${running?' running':''}">
+      <div><b>${escapeHtml(r.name||key)}</b><small>${cursor.toLocaleString()} / ${total.toLocaleString()}건</small></div>
+      <span class="onnuri-csv8-pct">${pct}%</span>
+      <button type="button" data-onnuri-csv8-region="${key}" ${onnuriBatchRunning&&!running?'disabled':''}>${label}</button>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('[data-onnuri-csv8-region]').forEach(b=>b.onclick=()=>toggleOnnuriCsv8Region(b.dataset.onnuriCsv8Region));
+}
+function toggleOnnuriCsv8Region(key){
+  if(onnuriBatchRunning&&onnuriCsv8ActiveKey===key){stopOnnuriBatch();return}
+  if(onnuriBatchRunning)return; // 다른 배치가 이미 실행 중
+  runOnnuriCsv8Region(key);
+}
+async function runOnnuriCsv8Region(key){
+  const r=onnuriCsv8Regions[key];if(!r)return;
+  onnuriBatchRunning=true;
+  onnuriCsv8ActiveKey=key;
+  if($('onnuriBatchStartBtn'))$('onnuriBatchStartBtn').disabled=true;
+  if($('onnuriBatchStopBtn'))$('onnuriBatchStopBtn').disabled=true;
+  renderOnnuriCsv8List();
+  const status=$('onnuriBatchStatus');
+  try{
+    await runOnnuriStage(`csv8:${key}`,`${r.name||key} 좌표화`,Number(r.total||0),Number(r.cursor||0));
+    if(status)status.textContent=onnuriBatchRunning?`${r.name||key} 좌표화가 완료되었습니다.`:'배치를 중지했습니다.';
+  }catch(e){
+    if(status)status.textContent=`배치 중단: ${e?.message||'서버 오류'}`;
+  }finally{
+    onnuriBatchRunning=false;
+    onnuriCsv8ActiveKey='';
+    if($('onnuriBatchStartBtn'))$('onnuriBatchStartBtn').disabled=false;
+    if($('onnuriBatchStopBtn'))$('onnuriBatchStopBtn').disabled=true;
+    loadOnnuriBatchStatus();
   }
 }
 function updateOnnuriBatchProgress(done,total){
