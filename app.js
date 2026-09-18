@@ -5673,7 +5673,9 @@ async function loadOnnuriBatchStatus(){
     if(!onnuriBatchRunning)updateOnnuriBatchProgress(onnuriBatchGrandDone,onnuriBatchGrandTotal);
     if(status){
       const pct=onnuriBatchGrandTotal?Math.min(100,Math.round(onnuriBatchGrandDone/onnuriBatchGrandTotal*100)):0;
-      status.textContent=`저장된 진행률 ${pct}% · ${onnuriBatchGrandDone.toLocaleString()} / ${onnuriBatchGrandTotal.toLocaleString()} · D1 캐시 ${Number(d.cached||0).toLocaleString()}건`;
+      const exactCachedN=Number(d.exactCached||0),exactTotalN=Number(d.exactTotal||0);
+      const kakaoWarn=d.kakaoConfigured===false?' ⚠️ KAKAO_REST_API_KEY가 설정되지 않아, 아직 캐시되지 않은 가맹점은 실시간 좌표 변환도 불가능해 지도에 표시되지 않습니다.':'';
+      status.textContent=`저장된 진행률 ${pct}% · ${onnuriBatchGrandDone.toLocaleString()} / ${onnuriBatchGrandTotal.toLocaleString()} · D1 캐시 ${Number(d.cached||0).toLocaleString()}건 · 정확주소(exact) 캐시완료 ${exactCachedN.toLocaleString()}/${exactTotalN.toLocaleString()}건${kakaoWarn}`;
     }
     if(d.csv8?.regions){
       onnuriCsv8Regions=d.csv8.regions;

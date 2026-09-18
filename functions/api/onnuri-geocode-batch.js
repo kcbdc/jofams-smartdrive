@@ -82,6 +82,22 @@ export async function onRequest({request,env}){
       unresolved:unresolved.length
     });
 
+    // '정확주소(legacy exact)' 데이터셋(onnuri-exact-address-daejeon-sejong-20250731 등)이
+    // 실제로 D1 캐시에 좌표까지 채워졌는지 직접 확인할 수 있도록 별도로 집계한다.
+    // (배치 커서가 끝까지 갔어도 캐시 저장이 일부 실패했을 수 있어 커서만으로는 알 수 없다.)
+    let exactCached=0;
+    {
+      const keys=exact.map(x=>cacheKey(x.region,x.market,x.merchant));
+      const CHUNK=400;
+      for(let i=0;i<keys.length;i+=CHUNK){
+        const chunk=keys.slice(i,i+CHUNK);
+        try{
+          const rs=await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${TABLE} WHERE cache_key IN (${chunk.map(()=>'?').join(',')})`).bind(...chunk).first();
+          exactCached+=Number(rs?.n||0);
+        }catch(e){console.warn('exact cache count failed',e?.message||e)}
+      }
+    }
+
     // 전국 CSV8 지역별 현황(카운트 + 진행률)도 함께 내려준다.
     const manifest=await loadCsv8Manifest(request,env);
     let csv8=null;
@@ -113,7 +129,9 @@ export async function onRequest({request,env}){
       precise:Number(precise?.n||0),
       maxBatch:30,
       progress,
-      csv8
+      csv8,
+      exactCached,
+      kakaoConfigured:Boolean(env.KAKAO_REST_API_KEY)
     });
   }
 
