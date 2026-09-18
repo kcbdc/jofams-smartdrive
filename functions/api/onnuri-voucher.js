@@ -339,9 +339,22 @@ export async function onRequestGet({request,env}){
       const cacheRegion=region?.city||regionFull;
       const cacheKey=onnuriCacheKey(cacheRegion,market,merchant);
 
-      // 강제등록/상세주소 보유 행은 주소 지오코딩을 최우선 적용한다.
-      // Kakao 주소검색으로 성공하면 정확주소 좌표로 분류하고 D1에 저장한다.
-      if(detailedAddress(x.address) && kakaoKey){
+      // 7.6.8: 관리자 '온누리 가맹점 주소 좌표화' 배치가 미리 채워둔 D1 캐시를 최우선으로 사용한다.
+      // 이렇게 하면 매 홈 화면 요청마다 Kakao API를 개별 호출하지 않아도 되고(속도/쿼터 문제로
+      // 좌표화가 실패해 가맹점이 아예 표시되지 않는 상황을 막을 수 있다), 배치가 아직 처리하지
+      // 않은 신규 가맹점만 아래에서 실시간 지오코딩으로 보완한다.
+      const cached=await readOnnuriCache(geocodeDb,cacheKey);
+      if(cached&&validKorea(num(cached.lat),num(cached.lng))){
+        point={lng:num(cached.lng),lat:num(cached.lat)};
+        precision=String(cached.precision||'cached');
+        matchedPlaceName=String(cached.matched_place_name||'');
+        matchedAddress=String(cached.matched_address||'');
+        searchQuery='D1_CACHE';
+      }
+
+      // 캐시에 없는 가맹점만 실시간 좌표화를 시도한다(관리자 배치가 아직 처리 전인 신규 항목).
+      // 강제등록/상세주소 보유 행은 주소 지오코딩을 우선 적용한다.
+      if(!point && detailedAddress(x.address) && kakaoKey){
         const addressQuery=String(x.address).replace(/\([^)]*\)/g,' ').replace(/\s+/g,' ').trim();
         const g=await geocode(addressQuery,kakaoKey);
         if(g&&validKorea(g.lat,g.lng)){
@@ -352,15 +365,6 @@ export async function onRequestGet({request,env}){
           matchedAddress=x.address;
           searchQuery=isMarketFallback?'MARKET_ADDRESS_GEOCODE':'ADDRESS_GEOCODE';
         }
-      }
-
-      const cached=!point?await readOnnuriCache(geocodeDb,cacheKey):null;
-      if(cached&&validKorea(num(cached.lat),num(cached.lng))){
-        point={lng:num(cached.lng),lat:num(cached.lat)};
-        precision=String(cached.precision||'cached');
-        matchedPlaceName=String(cached.matched_place_name||'');
-        matchedAddress=String(cached.matched_address||'');
-        searchQuery='D1_CACHE';
       }
 
       if(!point && kakaoKey && merchant){

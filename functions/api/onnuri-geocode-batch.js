@@ -3,6 +3,56 @@ const ADMIN_EMAIL='churchoffire@gmail.com';
 const TABLE='onnuri_geocode_cache_v1';
 const PROGRESS_TABLE='onnuri_geocode_batch_progress_v1';
 
+// 7.6.8: 8차 보강(전국 CSV8, /data/onnuri-20260731/*.json) 데이터도 같은 D1 캐시(onnuri_geocode_cache_v1)에
+// 좌표를 미리 채워둘 수 있도록 지역별 배치 스테이지(csv8:<regionKey>)를 추가한다.
+// onnuri-voucher.js의 실시간 조회는 이 캐시를 최우선으로 사용하므로, 여기서 미리 채워두면
+// 매 요청마다 Kakao API를 호출하지 않고도 온누리 가맹점 좌표가 즉시 표시된다.
+const CSV8_VERSION='2026-07-31-csv8';
+const CSV8_MANIFEST_PATH='/data/onnuri-20260731/manifest.json';
+const CSV8_MEMORY=new Map(); // regionKey -> items[]
+let CSV8_MANIFEST_CACHE=null;
+
+async function fetchStaticJson(request,env,pathname){
+  const url=new URL(pathname,request.url);
+  try{
+    const res=env?.ASSETS?.fetch
+      ? await env.ASSETS.fetch(new Request(url.toString(),{headers:{accept:'application/json'}}))
+      : await fetch(url.toString(),{headers:{accept:'application/json'}});
+    if(!res?.ok)return null;
+    return await res.json();
+  }catch(e){
+    console.warn('csv8 static asset fetch failed',pathname,e?.message||e);
+    return null;
+  }
+}
+async function loadCsv8Manifest(request,env){
+  if(CSV8_MANIFEST_CACHE)return CSV8_MANIFEST_CACHE;
+  const d=await fetchStaticJson(request,env,CSV8_MANIFEST_PATH);
+  if(d&&d.regions)CSV8_MANIFEST_CACHE=d;
+  return CSV8_MANIFEST_CACHE;
+}
+async function loadCsv8Region(request,env,regionKey){
+  if(CSV8_MEMORY.has(regionKey))return CSV8_MEMORY.get(regionKey);
+  const manifest=await loadCsv8Manifest(request,env);
+  const entry=manifest?.regions?.[regionKey];
+  if(!entry)return [];
+  const payload=await fetchStaticJson(request,env,entry.path||`/data/onnuri-20260731/${regionKey}.json`);
+  if(!payload||payload.version!==CSV8_VERSION||!Array.isArray(payload.items)){
+    CSV8_MEMORY.set(regionKey,[]);
+    return [];
+  }
+  const regionName=String(payload.region||entry.name||'').trim();
+  const rows=payload.items.map(x=>({
+    region:regionName,
+    market:String(x?.m||'').trim(),
+    merchant:String(x?.n||'').trim(),
+    address:String(x?.a||'').trim(),
+    source:x?.s==='market'?'market':'exact'
+  })).filter(r=>r.merchant||r.address);
+  CSV8_MEMORY.set(regionKey,rows);
+  return rows;
+}
+
 export async function onRequest({request,env}){
   if(!env.DB)return json({ok:false,error:'D1 binding DB is not configured'},503);
   const user=await requireFirebaseUser(request,env);
@@ -32,6 +82,27 @@ export async function onRequest({request,env}){
       unresolved:unresolved.length
     });
 
+    // 전국 CSV8 지역별 현황(카운트 + 진행률)도 함께 내려준다.
+    const manifest=await loadCsv8Manifest(request,env);
+    let csv8=null;
+    if(manifest?.regions){
+      const stageKeys=Object.keys(manifest.regions).map(k=>`csv8:${k}`);
+      const rows=stageKeys.length
+        ? await env.DB.prepare(`SELECT stage,cursor,total FROM ${PROGRESS_TABLE} WHERE stage IN (${stageKeys.map(()=>'?').join(',')})`).bind(...stageKeys).all()
+        : {results:[]};
+      const byStage={};
+      for(const r of rows?.results||[])byStage[r.stage]=r;
+      const regions={};
+      let csv8Total=0,csv8Done=0;
+      for(const [key,meta] of Object.entries(manifest.regions)){
+        const count=Number(meta.count)||0;
+        const cursor=Math.min(count,Number(byStage[`csv8:${key}`]?.cursor||0));
+        regions[key]={name:meta.name,total:count,cursor,done:cursor>=count};
+        csv8Total+=count;csv8Done+=cursor;
+      }
+      csv8={version:manifest.version||CSV8_VERSION,total:csv8Total,done:csv8Done,regions};
+    }
+
     return json({
       ok:true,
       exactTotal:exact.length,
@@ -41,7 +112,8 @@ export async function onRequest({request,env}){
       cached:Number(cached?.n||0),
       precise:Number(precise?.n||0),
       maxBatch:30,
-      progress
+      progress,
+      csv8
     });
   }
 
@@ -57,6 +129,12 @@ export async function onRequest({request,env}){
   if(stage==='exact'){list=exact;mode='exact'}
   else if(stage==='market'){list=market;mode='market'}
   else if(stage==='unresolved'){list=unresolved;mode='unresolved'}
+  else if(stage.startsWith('csv8:')){
+    const regionKey=stage.slice(5);
+    list=await loadCsv8Region(request,env,regionKey);
+    mode='csv8';
+    if(!list.length)return json({ok:false,error:`알 수 없거나 비어 있는 지역입니다: ${regionKey}`},400);
+  }
   else return json({ok:false,error:'invalid stage'},400);
 
   const savedProgress=await env.DB.prepare(`SELECT cursor FROM ${PROGRESS_TABLE} WHERE stage=?`).bind(stage).first();
@@ -83,6 +161,12 @@ export async function onRequest({request,env}){
       hit=await resolveExactAddress(row,env.KAKAO_REST_API_KEY);
     }else if(mode==='market'){
       hit=await resolveMarketAddress(row,env.KAKAO_REST_API_KEY);
+    }else if(mode==='csv8'){
+      // CSV8 행은 자체적으로 '개별주소(exact)' 또는 '상점가 대표주소(market)' 구분을 갖고 있다.
+      hit=row.source==='market'
+        ? await resolveMarketAddress(row,env.KAKAO_REST_API_KEY)
+        : await resolveExactAddress(row,env.KAKAO_REST_API_KEY);
+      if(!hit)hit=await resolveMerchant(row,env.KAKAO_REST_API_KEY);
     }else{
       hit=await resolveMerchant(row,env.KAKAO_REST_API_KEY);
     }
