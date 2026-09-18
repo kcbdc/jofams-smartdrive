@@ -506,6 +506,7 @@
             <div class="onnuri-batch-actions">
               <button id="onnuriBatchStartBtn" class="primary-btn" type="button">주소 자동 채우기 시작</button>
               <button id="onnuriBatchStopBtn" type="button" disabled>중지</button>
+              <button id="onnuriBatchResetBtn" type="button" title="진행률이 100%인데 실제 캐시가 비어 있을 때(과거 오류로 잘못 완료 처리된 경우) 눌러서 초기화하세요">진행률 초기화</button>
             </div>
             <small id="onnuriBatchStatus">상태를 확인하는 중입니다.</small>
           </div>
@@ -537,9 +538,9 @@
     <!-- KOMSCO SHORTS PLAYER -->
     <div id="komscoShortModal" class="modal hidden">
       <section class="simple-sheet komsco-short-sheet">
-        <header><b id="komscoShortTitle">KOMSCO 소식</b><button id="komscoShortClose" class="circle-btn"><span data-icon="close"></span></button></header>
+        <header><b id="komscoShortTitle">KOMSCO 소식</b><button id="komscoShortMuteBtn" class="circle-btn" type="button" aria-label="음소거 해제"><span data-icon="volume-x"></span></button><button id="komscoShortClose" class="circle-btn"><span data-icon="close"></span></button></header>
         <div class="komsco-short-player-wrap">
-          <iframe id="komscoShortPlayer" class="komsco-short-player" src="" title="KOMSCO Shorts" frameborder="0" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+          <iframe id="komscoShortPlayer" class="komsco-short-player" src="" title="KOMSCO Shorts" frameborder="0" allow="autoplay; accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
         </div>
         <a id="komscoShortOpenYoutube" class="komsco-short-open-link" href="#" target="_blank" rel="noopener">유튜브에서 보기</a>
       </section>
