@@ -3252,3 +3252,156 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   #safetyAlert:not(.hidden) ~ .traffic-route-rail,
   #sectionSpeedPanel:not(.hidden) ~ .traffic-route-rail{top:calc(var(--safeT) + 354px)!important}
 }
+
+/* === 7.6.9.7 FINAL FORCE: turn guidance panel === */
+#driveView .maneuver-stack{
+  position:absolute!important;
+  z-index:120!important;
+  top:calc(var(--safeT) + 12px)!important;
+  left:16px!important;
+  width:min(560px,calc(100vw - 118px))!important;
+  max-width:none!important;
+  transform:none!important;
+}
+#driveView .maneuver-stack .maneuver-main{
+  position:relative!important;
+  display:grid!important;
+  grid-template-columns:112px minmax(0,1fr)!important;
+  align-items:center!important;
+  gap:14px!important;
+  width:100%!important;
+  min-height:152px!important;
+  height:auto!important;
+  padding:20px 22px!important;
+  margin:0!important;
+  border-radius:30px 30px 30px 14px!important;
+  border:2px solid #2d9cff!important;
+  background:linear-gradient(145deg,#0d2f63 0%,#0b2855 45%,#071a38 100%)!important;
+  color:#fff!important;
+  box-shadow:0 20px 38px rgba(4,18,42,.34),inset 0 0 0 1px rgba(124,194,255,.16)!important;
+  opacity:1!important;
+  overflow:hidden!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+#driveView .maneuver-stack .maneuver-main::before{
+  content:""!important;
+  position:absolute!important;
+  inset:0!important;
+  border-radius:inherit!important;
+  pointer-events:none!important;
+  background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,0) 46%)!important;
+}
+#driveView .maneuver-stack .maneuver-svg{
+  width:100px!important;
+  height:100px!important;
+  min-width:100px!important;
+  min-height:100px!important;
+  color:#fff!important;
+  opacity:1!important;
+}
+#driveView .maneuver-stack .maneuver-svg svg{
+  width:100px!important;
+  height:100px!important;
+  color:#fff!important;
+  stroke:currentColor!important;
+  fill:none!important;
+}
+#driveView .maneuver-stack .maneuver-main>div:last-child{
+  min-width:0!important;
+  align-self:center!important;
+}
+#driveView #maneuverDistance{
+  display:block!important;
+  margin:0!important;
+  color:#fff!important;
+  font-size:72px!important;
+  line-height:.90!important;
+  font-weight:900!important;
+  letter-spacing:-.06em!important;
+  text-shadow:0 2px 8px rgba(0,0,0,.16)!important;
+}
+#driveView #maneuverRoad{
+  display:block!important;
+  margin-top:12px!important;
+  color:#fff!important;
+  font-size:27px!important;
+  line-height:1.12!important;
+  font-weight:900!important;
+  letter-spacing:-.035em!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+#driveView .maneuver-stack .maneuver-next{
+  display:inline-flex!important;
+  align-items:center!important;
+  gap:10px!important;
+  min-height:74px!important;
+  max-width:78%!important;
+  margin:-1px 0 0 0!important;
+  padding:12px 16px!important;
+  border:0!important;
+  border-radius:0 0 22px 14px!important;
+  background:linear-gradient(145deg,#152d57 0%,#0f2243 100%)!important;
+  color:#fff!important;
+  box-shadow:0 14px 24px rgba(4,18,42,.24)!important;
+  opacity:1!important;
+}
+#driveView .maneuver-stack .maneuver-next.hidden{display:none!important}
+#driveView .maneuver-stack .maneuver-next>span{
+  width:36px!important;
+  height:36px!important;
+  min-width:36px!important;
+  color:#fff!important;
+}
+#driveView .maneuver-stack .maneuver-next svg{width:36px!important;height:36px!important;color:#fff!important}
+#driveView #nextManeuverDistance{
+  font-size:25px!important;
+  font-weight:900!important;
+  color:#fff!important;
+  line-height:1!important;
+}
+#driveView #nextManeuverText{
+  font-size:15px!important;
+  font-weight:800!important;
+  color:rgba(255,255,255,.92)!important;
+  line-height:1.1!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+
+@media(max-width:430px){
+  #driveView .maneuver-stack{
+    left:12px!important;
+    width:calc(100vw - 106px)!important;
+  }
+  #driveView .maneuver-stack .maneuver-main{
+    min-height:142px!important;
+    grid-template-columns:96px minmax(0,1fr)!important;
+    gap:10px!important;
+    padding:17px 18px!important;
+    border-radius:28px 28px 28px 12px!important;
+  }
+  #driveView .maneuver-stack .maneuver-svg,
+  #driveView .maneuver-stack .maneuver-svg svg{
+    width:88px!important;
+    height:88px!important;
+    min-width:88px!important;
+    min-height:88px!important;
+  }
+  #driveView #maneuverDistance{font-size:62px!important}
+  #driveView #maneuverRoad{font-size:23px!important;margin-top:10px!important}
+  #driveView .maneuver-stack .maneuver-next{min-height:66px!important;padding:10px 14px!important;max-width:86%!important}
+  #driveView #nextManeuverDistance{font-size:22px!important}
+  #driveView #nextManeuverText{font-size:14px!important}
+}
+
+@media(orientation:landscape){
+  #driveView .maneuver-stack{
+    transform:scale(.90)!important;
+    transform-origin:left top!important;
+    width:min(520px,calc(100vw - 130px))!important;
+  }
+}
