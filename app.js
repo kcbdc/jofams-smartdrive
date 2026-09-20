@@ -1191,7 +1191,15 @@ function renderOnnuriZoneMarkers(zones){
 function renderOnnuriMarkers(data){
   clearOnnuriMarkers();
   if(!state.map||!maplibregl?.Marker||state.tripStartedAt||$('homeView')?.classList.contains('hidden'))return;
-  const items=(data?.items||[]).filter(x=>Number.isFinite(Number(x.lng))&&Number.isFinite(Number(x.lat))).slice(0,1500);
+  let bounds=null;
+  try{bounds=state.map.getBounds?.()||null}catch{}
+  const items=(data?.items||[]).filter(x=>{
+    const lng=Number(x.lng),lat=Number(x.lat);
+    if(!Number.isFinite(lng)||!Number.isFinite(lat))return false;
+    // 이전 지역 캐시가 남아 있어도 현재 홈 지도 화면 밖의 온누리 마커는 절대 표시하지 않는다.
+    if(bounds?.contains){try{return bounds.contains([lng,lat])}catch{return true}}
+    return true;
+  }).slice(0,2200);
   if(!items.length)return;
 
   const precise=items.filter(x=>!x.approximate && x.precision!=='market-zone' && x.precision!=='admin-zone');
@@ -1216,16 +1224,16 @@ function renderOnnuriMarkers(data){
 }
 function readOnnuriStaleCache(){
   try{
-    const raw=localStorage.getItem('jofams_onnuri_map_cache_v4');
+    const raw=localStorage.getItem('jofams_onnuri_map_cache_v5');
     if(!raw)return null;
     const d=JSON.parse(raw);
-    if(!d?.payload||Date.now()-Number(d.savedAt||0)>24*60*60*1000)return null;
+    if(!d?.payload||Date.now()-Number(d.savedAt||0)>2*60*60*1000)return null;
     return d.payload;
   }catch{return null}
 }
 function writeOnnuriStaleCache(payload){
   try{
-    if(payload?.items?.length)localStorage.setItem('jofams_onnuri_map_cache_v4',JSON.stringify({savedAt:Date.now(),payload}));
+    if(payload?.items?.length)localStorage.setItem('jofams_onnuri_map_cache_v5',JSON.stringify({savedAt:Date.now(),payload}));
   }catch{}
 }
 
@@ -1281,6 +1289,9 @@ async function loadOnnuriMap({force=false}={}){
       state.onnuriLoadedCenter={lat:center.lat,lng:center.lng};
       writeOnnuriStaleCache(d);
       renderOnnuriMarkers(d);
+      if(Number(d?.d1ViewportRows)>0){
+        console.info('[JOFAMS onnuri D1]',{viewport:Number(d.d1ViewportRows)||0,rendered:Number(d.d1RenderedRows)||0,region:d.region});
+      }
       state.onnuriZeroRetryAt=0;
       return;
     }
@@ -3643,6 +3654,7 @@ function sectionSpeedEventAtIndex(idx){
 function resetSectionSpeedState(){
   state.sectionSpeedState=null;
   $('sectionSpeedPanel')?.classList.add('hidden');
+  $('driveView')?.classList.remove('has-section-speed');
 }
 function updateSectionAverageSpeed(idx){
   const e=sectionSpeedEventAtIndex(idx),panel=$('sectionSpeedPanel');
@@ -3670,10 +3682,13 @@ function updateSectionAverageSpeed(idx){
   const elapsed=Math.max(1,(now-st.enteredAt)/1000),travelled=Math.max(0,st.lastDistance-st.enteredDistance);
   const avg=Math.max(0,Math.min(250,travelled/elapsed*3.6)),remain=Math.max(0,endDistance-st.lastDistance);
   if(panel)panel.classList.remove('hidden');
+  $('driveView')?.classList.add('has-section-speed');
   if($('sectionAverageSpeed'))$('sectionAverageSpeed').textContent=`${Math.round(avg)} km/h`;
   if($('sectionLimitSpeed'))$('sectionLimitSpeed').textContent=e.maxspeed?`${Math.round(e.maxspeed)} km/h`:'-- km/h';
   if($('sectionRemainDistance'))$('sectionRemainDistance').textContent=`${km(remain)} 남음`;
   panel?.classList.toggle('over',Number(e.maxspeed)>0&&avg>Number(e.maxspeed));
+  panel?.classList.toggle('nearing-end',remain<=1500);
+  if(panel)panel.dataset.sectionState=(Number(e.maxspeed)>0&&avg>Number(e.maxspeed))?'over':(remain<=1500?'ending':'normal');
 
   // 구간 진입 후 30초가 지나면 평균속도를 음성으로도 안내하고 이후 60초마다 갱신한다.
   if(elapsed>=10 && (!st.lastAverageSpokenAt||now-st.lastAverageSpokenAt>=20000)){
@@ -4370,7 +4385,7 @@ function detectCurveAhead(idx){
   const type=turns>=1?'double_curve':(totalTurn>0?'curve_right':'curve_left');
   return{type,routeIndex:firstIdx};
 }
-function hideSafetyAlert(){const el=$('safetyAlert');if(el)el.classList.add('hidden');state.activeSafetyId=null}
+function hideSafetyAlert(){const el=$('safetyAlert');if(el)el.classList.add('hidden');$('driveView')?.classList.remove('has-safety');state.activeSafetyId=null}
 /* 실데이터(state.safetyEvents) + 경로 geometry 기반 합성 커브 이벤트를 합쳐 우선순위 정렬된 후보 목록을 만든다.
    safety-alert 배너와 좌측 표지판 배지가 동일한 후보 목록을 공유한다. */
 const SAFETY_PRIORITY={accident:0,accident_hotspot:1,fog_zone:1,heavy_rain_zone:1,snow_ice_zone:1,school_zone:1,school_nearby:1,silver_zone:1,disabled_zone:1,double_curve:1,
@@ -4413,7 +4428,10 @@ function updateSafetyUI(idx,candidates){
   if(Number(e.routeIndex)<idx-1||Number(e.d)<0){hideSafetyAlert();state.activeSafetyEvent=null;return}
 
   const info=safetyLabel(e),el=$('safetyAlert');
-  el.className=`safety-alert ${info.kind}`;
+  const typeClass=String(e.type||'unknown').replace(/[^a-z0-9_-]/gi,'-');
+  el.className=`safety-alert ${info.kind} type-${typeClass}`;
+  el.dataset.safetyType=String(e.type||'');
+  $('driveView')?.classList.add('has-safety');
   const iconEl=$('safetyAlertIcon');
   if(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','section_speed_end','mobile_camera','bus_lane_camera'].includes(e.type)){
     iconEl.innerHTML=safetyCctvSvg();iconEl.classList.add('sign-icon');
@@ -4423,6 +4441,7 @@ function updateSafetyUI(idx,candidates){
     iconEl.textContent=info.icon;iconEl.classList.remove('sign-icon');
   }
   const guideLimit=safetyGuidanceLimit(idx,e);
+  el.dataset.speedLimit=guideLimit>0?String(Math.round(guideLimit)):'';
   $('safetyAlertTitle').textContent=info.title;
   $('safetyAlertText').textContent=guideLimit>0&&String(e.type).includes('camera')?`${info.text} · 제한속도 ${Math.round(guideLimit)}km/h`:info.text;
   $('safetyAlertDistance').textContent=km(Math.max(10,Number(e.d)||10));
@@ -6128,3 +6147,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.9.2: Onnuri CSV8 regional address dataset integration + local-voucher-style store details/grouped pins
 
 // build 7.6.9.3: radio default 60% + runtime loudness normalization (AGC/limiter) for uneven MP3 source levels
+
+// build 7.6.9.4: drive HUD spacing refinement, dedicated safety states, section-speed declutter and mobile readability tuning
+
+// build 7.6.9.5: D1 Onnuri viewport is authoritative on the home map; stale off-screen markers are filtered and cache TTL reduced.
