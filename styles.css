@@ -2794,3 +2794,461 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   .drive-view .lane-assist-layer{bottom:calc(var(--safeB) + 198px)!important}
   .drive-view .traffic-route-rail{bottom:calc(var(--safeB) + 176px)!important}
 }
+
+/* === 7.6.9.6 visual restyle closer to reference mockups === */
+.drive-view{
+  --tm-navy-1:#0d2346;
+  --tm-navy-2:#102a54;
+  --tm-navy-3:#162f5d;
+  --tm-blue:#1486ff;
+  --tm-yellow:#ffd236;
+  --tm-yellow-deep:#f0bd00;
+  --tm-shadow:0 16px 34px rgba(5,16,36,.28);
+}
+.drive-view::before{
+  background:linear-gradient(180deg,rgba(255,255,255,.26) 0%,rgba(255,255,255,.08) 24%,rgba(255,255,255,0) 46%,rgba(255,255,255,.02) 100%)!important;
+}
+
+/* top guidance cards */
+.maneuver-stack{
+  top:calc(var(--safeT) + 10px)!important;
+  left:18px!important;
+  width:min(540px,calc(100vw - 120px))!important;
+  z-index:82!important;
+}
+.maneuver-main{
+  min-height:148px!important;
+  padding:18px 22px!important;
+  grid-template-columns:108px 1fr!important;
+  gap:12px!important;
+  border-radius:28px 28px 28px 12px!important;
+  background:linear-gradient(145deg,#0d2d60 0%,#0b2754 44%,#071a38 100%)!important;
+  border:2px solid rgba(41,157,255,.95)!important;
+  box-shadow:0 18px 36px rgba(4,18,42,.30), inset 0 0 0 1px rgba(130,196,255,.16)!important;
+}
+.maneuver-main::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:inherit;
+  pointer-events:none;
+  box-shadow:inset 0 0 18px rgba(70,165,255,.12);
+}
+.maneuver-svg{width:94px!important;height:94px!important;color:#fff!important}
+.maneuver-main b{font-size:72px!important;line-height:.9!important;font-weight:900!important;letter-spacing:-.06em!important;text-shadow:0 2px 10px rgba(0,0,0,.14)}
+.maneuver-main span{margin-top:10px!important;font-size:26px!important;font-weight:900!important;line-height:1.15!important;max-width:100%!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.maneuver-main > div:last-child::after{
+  content:"";
+  display:block;
+  margin-top:8px;
+  width:160px;
+  max-width:70%;
+  height:0;
+  border-top:0 solid transparent;
+}
+.maneuver-next{
+  margin-top:-1px!important;
+  min-height:76px!important;
+  padding:12px 16px!important;
+  border-radius:0 0 22px 12px!important;
+  background:linear-gradient(145deg,#142a51 0%,#0f2242 100%)!important;
+  box-shadow:0 14px 24px rgba(4,18,42,.22)!important;
+}
+.maneuver-next b{font-size:22px!important;font-weight:900!important}
+.maneuver-next small{font-size:15px!important;color:#fff!important;font-weight:700!important;opacity:.95!important}
+.maneuver-next>span{width:34px!important;height:34px!important}
+
+/* right side top actions */
+.drive-radio-btn{
+  top:calc(var(--safeT) + 18px)!important;
+  right:18px!important;
+  width:74px!important;
+  height:74px!important;
+  border-radius:50%!important;
+  border:2px solid rgba(185,215,255,.96)!important;
+  background:linear-gradient(180deg,#3d72ff,#1590ff)!important;
+  color:#fff!important;
+  box-shadow:0 18px 30px rgba(18,64,150,.28)!important;
+}
+.drive-radio-btn .drive-radio-icon,
+.drive-radio-btn .drive-radio-icon svg,
+.drive-radio-btn.off .drive-radio-icon,
+.drive-radio-btn.off .drive-radio-off-svg{width:36px!important;height:36px!important}
+.drive-radio-btn.off{background:linear-gradient(180deg,#3d72ff,#1590ff)!important;color:#fff!important;border-color:rgba(185,215,255,.96)!important}
+.drive-radio-btn.on{background:linear-gradient(180deg,#4678ff,#139bff)!important}
+.floating-ar{
+  top:calc(var(--safeT) + 104px)!important;
+  right:20px!important;
+  width:72px!important;
+  height:72px!important;
+  border:2px solid rgba(201,223,255,.95)!important;
+  border-radius:50%!important;
+  background:rgba(255,255,255,.98)!important;
+  color:#1874f7!important;
+  box-shadow:0 14px 26px rgba(17,54,119,.16)!important;
+  font-size:26px!important;
+  font-weight:900!important;
+}
+
+/* safety warning general */
+.safety-alert,
+#sectionSpeedPanel{
+  left:50%!important;
+  transform:translateX(-50%)!important;
+  width:min(calc(100% - 34px),500px)!important;
+  border-radius:28px!important;
+  background:linear-gradient(145deg,#131d35 0%,#0d1830 100%)!important;
+  border:1px solid rgba(255,255,255,.06)!important;
+  box-shadow:0 18px 36px rgba(5,16,36,.28)!important;
+  color:#fff!important;
+}
+.safety-alert{
+  top:calc(env(safe-area-inset-top,0px) + 212px)!important;
+  min-height:108px!important;
+  grid-template-columns:68px 1fr auto!important;
+  gap:14px!important;
+  padding:16px 18px!important;
+  z-index:83!important;
+}
+.safety-alert-icon{
+  width:62px!important;
+  height:62px!important;
+  border-radius:50%!important;
+  background:linear-gradient(180deg,#ffd83e,#f0bc00)!important;
+  color:#111!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 8px 18px rgba(0,0,0,.14)!important;
+}
+.safety-alert-icon svg{width:36px!important;height:36px!important}
+.safety-alert-copy b{font-size:20px!important;font-weight:900!important;line-height:1.12!important}
+.safety-alert-copy span{font-size:14px!important;line-height:1.35!important;color:rgba(255,255,255,.90)!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
+.safety-alert>strong{font-size:22px!important;font-weight:900!important;color:var(--tm-yellow)!important;min-width:76px!important;text-align:right!important}
+
+/* signal/speed camera card */
+.safety-alert.type-signal_speed_camera,
+.safety-alert.type-signal_camera,
+.safety-alert.type-speed_camera,
+.safety-alert.type-traffic_camera,
+.safety-alert.type-mobile_camera,
+.safety-alert.type-bus_lane_camera{
+  grid-template-columns:88px 1fr auto!important;
+  min-height:112px!important;
+  background:linear-gradient(145deg,#141b31 0%,#0f1830 100%)!important;
+  border:1px solid rgba(255,255,255,.06)!important;
+}
+.safety-alert.type-signal_speed_camera .safety-alert-icon,
+.safety-alert.type-signal_camera .safety-alert-icon,
+.safety-alert.type-speed_camera .safety-alert-icon,
+.safety-alert.type-traffic_camera .safety-alert-icon{
+  width:74px!important;
+  height:74px!important;
+  background:#fff!important;
+  border:8px solid #ff3d34!important;
+  color:#111!important;
+}
+.safety-alert.type-signal_speed_camera .safety-alert-copy b,
+.safety-alert.type-signal_camera .safety-alert-copy b,
+.safety-alert.type-speed_camera .safety-alert-copy b,
+.safety-alert.type-traffic_camera .safety-alert-copy b{font-size:19px!important}
+.safety-alert.type-signal_speed_camera>strong,
+.safety-alert.type-signal_camera>strong,
+.safety-alert.type-speed_camera>strong,
+.safety-alert.type-traffic_camera>strong{font-size:28px!important}
+
+/* section speed card */
+#sectionSpeedPanel{
+  top:calc(env(safe-area-inset-top,0px) + 212px)!important;
+  padding:18px 20px!important;
+  display:grid!important;
+  grid-template-columns:82px 1fr!important;
+  gap:10px 16px!important;
+  align-items:start!important;
+  z-index:82!important;
+}
+#sectionSpeedPanel::before{
+  content:"";
+  grid-row:1 / span 3;
+  width:74px;
+  height:74px;
+  align-self:start;
+  justify-self:start;
+  border-radius:50%;
+  background:#fff;
+  border:8px solid #ff3d34;
+  box-shadow:0 8px 18px rgba(0,0,0,.16);
+}
+#sectionSpeedPanel::after{
+  content:"📷";
+  position:absolute;
+  left:39px;
+  top:37px;
+  transform:translate(-50%,-50%);
+  font-size:28px;
+  z-index:1;
+}
+#sectionSpeedPanel>span{
+  grid-column:2!important;
+  margin:0!important;
+  font-size:22px!important;
+  font-weight:900!important;
+}
+#sectionSpeedPanel>span::before{display:none!important}
+#sectionSpeedPanel>div{
+  display:flex!important;
+  flex-direction:column!important;
+  min-width:0!important;
+  padding:0!important;
+  margin:0!important;
+  border-right:1px solid rgba(255,255,255,.14)!important;
+}
+#sectionSpeedPanel>div:nth-of-type(1),#sectionSpeedPanel>div:nth-of-type(2){padding-top:6px!important}
+#sectionSpeedPanel>div:last-of-type{border-right:0!important}
+#sectionSpeedPanel>div:nth-of-type(1){grid-column:2!important}
+#sectionSpeedPanel>div:nth-of-type(2){grid-column:2!important;display:none!important}
+#sectionSpeedPanel small{font-size:13px!important;color:rgba(255,255,255,.80)!important;margin-bottom:6px!important}
+#sectionSpeedPanel b,#sectionSpeedPanel strong{font-size:24px!important;font-weight:900!important}
+#sectionSpeedPanel em{
+  grid-column:2!important;
+  display:block!important;
+  margin-top:0!important;
+  padding-top:10px!important;
+  border-top:1px solid rgba(255,255,255,.14)!important;
+  font-size:18px!important;
+  color:#fff!important;
+}
+#sectionSpeedPanel.over strong,#sectionSpeedPanel.over b{color:#ffb1ab!important}
+#sectionSpeedPanel.nearing-end{box-shadow:0 18px 36px rgba(123,90,6,.26)!important;border-color:rgba(255,210,54,.35)!important}
+
+/* right side traffic rail */
+.traffic-route-rail{
+  top:calc(var(--safeT) + 244px)!important;
+  right:16px!important;
+  bottom:calc(var(--safeB) + 244px)!important;
+  width:48px!important;
+  z-index:77!important;
+}
+.traffic-route-rail small{
+  font-size:17px!important;
+  font-weight:800!important;
+  padding:6px 7px!important;
+  background:rgba(255,255,255,.95)!important;
+  color:#535e71!important;
+}
+#trafficRouteSegments{
+  width:18px!important;
+  padding:4px 0!important;
+  border-radius:999px!important;
+  background:rgba(255,255,255,.96)!important;
+  box-shadow:0 10px 16px rgba(8,20,42,.10)!important;
+}
+#trafficRouteSegments i{width:10px!important}
+.traffic-route-current{
+  width:30px!important;
+  height:30px!important;
+  border:6px solid #2d82f6!important;
+  box-shadow:0 0 0 4px #fff!important;
+}
+
+/* left traffic state & speed */
+.traffic-status{
+  left:18px!important;
+  bottom:calc(var(--safeB) + 182px)!important;
+  max-width:126px!important;
+  min-height:126px!important;
+  padding:16px 14px 16px 18px!important;
+  border-radius:22px!important;
+  background:linear-gradient(145deg,#141d35 0%,#0d1830 100%)!important;
+  box-shadow:var(--tm-shadow)!important;
+}
+.traffic-status::before{
+  width:10px!important;
+  background:linear-gradient(180deg,#ffd83e,#f0bc00)!important;
+}
+.traffic-status b{font-size:18px!important;padding-left:8px!important}
+.traffic-status small{font-size:13px!important;padding-left:8px!important;line-height:1.28!important}
+.speed-panel{
+  left:18px!important;
+  bottom:calc(var(--safeB) + 56px)!important;
+  width:126px!important;
+  padding:12px 12px 16px!important;
+  border-radius:26px!important;
+  background:linear-gradient(145deg,#141d35 0%,#0d1830 100%)!important;
+  box-shadow:var(--tm-shadow)!important;
+  overflow:hidden!important;
+}
+.speed-panel::before{
+  content:"";
+  position:absolute;
+  inset:0 auto 0 0;
+  width:10px;
+  background:linear-gradient(180deg,#ffd83e,#f0bc00);
+}
+.speed-limit{display:none!important}
+#speedTrafficLight{margin:0 0 8px auto!important}
+#roadSignBadge{display:none!important}
+.speed-panel>strong{font-size:64px!important;line-height:.9!important;font-weight:900!important;color:#fff!important;margin-top:4px!important}
+.speed-panel>span{display:block!important;font-size:18px!important;color:#fff!important;font-weight:700!important}
+.speed-panel::after{
+  content:"현속도";
+  position:absolute;
+  left:22px;
+  top:16px;
+  color:#ffd83e;
+  font-size:18px;
+  font-weight:900;
+}
+
+/* fuel chip */
+.drive-fuel-chip{
+  right:66px!important;
+  bottom:calc(var(--safeB) + 202px)!important;
+  min-width:304px!important;
+  min-height:88px!important;
+  padding:14px 18px 14px 14px!important;
+  border-radius:26px!important;
+  background:linear-gradient(145deg,#141d35 0%,#0d1830 100%)!important;
+  box-shadow:var(--tm-shadow)!important;
+  border:1px solid rgba(255,255,255,.05)!important;
+}
+.drive-fuel-icon{width:58px!important;height:58px!important;border-radius:18px!important;font-size:28px!important;background:linear-gradient(180deg,#ffd83e,#f0bc00)!important}
+.drive-fuel-chip small{font-size:14px!important}.drive-fuel-chip b{font-size:24px!important}.drive-fuel-chip em{font-size:13px!important;max-width:140px!important}
+
+/* map controls & side buttons */
+.drive-side-actions{
+  right:16px!important;
+  bottom:calc(var(--safeB) + 116px)!important;
+  gap:12px!important;
+}
+.drive-side-actions button{
+  width:66px!important;
+  height:66px!important;
+  background:#fff!important;
+  border-radius:50%!important;
+  box-shadow:0 12px 24px rgba(17,54,119,.16)!important;
+}
+.drive-map-controls{
+  bottom:calc(var(--safeB) + 98px)!important;
+  padding:10px 12px!important;
+  border-radius:30px!important;
+  background:linear-gradient(145deg,#1e355a 0%,#142746 100%)!important;
+  box-shadow:0 18px 36px rgba(5,16,36,.24)!important;
+  gap:10px!important;
+}
+.drive-map-controls button{
+  width:70px!important;
+  height:66px!important;
+  border-radius:22px!important;
+  background:rgba(255,255,255,.05)!important;
+  color:#fff!important;
+  font-size:16px!important;
+  font-weight:800!important;
+}
+.drive-map-controls button.active{background:rgba(255,255,255,.10)!important}
+.map-compass-btn .map-compass-needle{font-size:30px!important;color:#ff3f31!important}
+.map-compass-btn small{font-size:16px!important;font-weight:800!important;color:#fff!important}
+
+/* bottom summary */
+.drive-bottom-card{
+  left:18px!important;
+  right:18px!important;
+  bottom:calc(var(--safeB) + 12px)!important;
+  height:138px!important;
+  padding:16px 18px!important;
+  border-radius:30px!important;
+  background:linear-gradient(145deg,#14294f 0%,#0e1f3d 100%)!important;
+  box-shadow:0 20px 40px rgba(5,16,36,.28)!important;
+  grid-template-columns:92px 1fr 92px!important;
+  gap:0!important;
+}
+.drive-bottom-card::before,.drive-bottom-card::after{top:22px!important;bottom:22px!important;background:rgba(255,255,255,.14)!important}
+.drive-bottom-card::before{left:96px!important}.drive-bottom-card::after{right:96px!important}
+.drive-bottom-icon{
+  width:82px!important;
+  height:100%!important;
+  color:#fff!important;
+  border-radius:20px!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:8px!important;
+}
+.drive-bottom-icon svg{width:34px!important;height:34px!important}
+#driveRefreshBtn::after{content:"다른 경로";font-size:16px;font-weight:800;color:#fff}
+#driveMenuBtn::after{content:"메뉴";font-size:16px;font-weight:800;color:#fff}
+.drive-bottom-summary{display:flex!important;align-items:center!important;justify-content:center!important}
+#driveBottomNormal{
+  width:100%!important;
+  display:grid!important;
+  grid-template-columns:repeat(3,1fr)!important;
+  align-items:center!important;
+  gap:0!important;
+}
+#currentRoadLabel{display:none!important}
+#driveBottomNormal>div{
+  display:contents!important;
+}
+#driveBottomNormal>div b,
+#arrivalTime{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:8px!important;
+  margin:0!important;
+  color:#fff!important;
+  font-size:24px!important;
+  font-weight:900!important;
+  line-height:1.08!important;
+  position:relative!important;
+}
+#driveBottomNormal>div b::before,
+#arrivalTime::before{
+  font-size:15px!important;
+  font-weight:700!important;
+  color:rgba(255,255,255,.72)!important;
+  letter-spacing:-.02em;
+}
+#driveBottomNormal>div b:first-child::before{content:"남은 시간"}
+#driveBottomNormal>div b:last-child::before{content:"남은 거리"}
+#arrivalTime::before{content:"도착 예정"}
+#arrivalTime{white-space:pre-line!important}
+
+/* overlap corrections */
+#safetyAlert:not(.hidden) ~ #sectionSpeedPanel{top:calc(env(safe-area-inset-top,0px) + 334px)!important}
+#safetyAlert:not(.hidden) ~ #vmsBanner,
+#sectionSpeedPanel:not(.hidden) ~ #vmsBanner{top:calc(env(safe-area-inset-top,0px) + 470px)!important}
+#safetyAlert:not(.hidden) ~ .traffic-route-rail{top:calc(var(--safeT) + 370px)!important}
+#sectionSpeedPanel:not(.hidden) ~ .traffic-route-rail{top:calc(var(--safeT) + 370px)!important}
+#safetyAlert:not(.hidden) ~ .drive-fuel-chip{opacity:.96!important;transform:translateY(24px)!important}
+#safetyAlert:not(.hidden) ~ .traffic-status{opacity:.98!important}
+
+@media (max-width:430px){
+  .maneuver-stack{left:14px!important;width:calc(100vw - 108px)!important}
+  .maneuver-main{min-height:138px!important;padding:16px 18px!important;grid-template-columns:94px 1fr!important}
+  .maneuver-main b{font-size:64px!important}
+  .maneuver-main span{font-size:22px!important}
+  .drive-radio-btn{right:14px!important;width:70px!important;height:70px!important}
+  .floating-ar{right:14px!important;top:calc(var(--safeT) + 100px)!important;width:68px!important;height:68px!important}
+  .safety-alert,#sectionSpeedPanel{width:calc(100% - 22px)!important}
+  .safety-alert{top:calc(env(safe-area-inset-top,0px) + 202px)!important}
+  #sectionSpeedPanel{top:calc(env(safe-area-inset-top,0px) + 202px)!important}
+  .traffic-route-rail{right:10px!important;width:44px!important;bottom:calc(var(--safeB) + 232px)!important}
+  .traffic-status{left:12px!important;bottom:calc(var(--safeB) + 176px)!important;max-width:120px!important}
+  .speed-panel{left:12px!important;bottom:calc(var(--safeB) + 56px)!important;width:118px!important}
+  .speed-panel>strong{font-size:56px!important}
+  .drive-fuel-chip{right:58px!important;bottom:calc(var(--safeB) + 194px)!important;min-width:270px!important}
+  .drive-side-actions{right:10px!important}
+  .drive-side-actions button{width:62px!important;height:62px!important}
+  .drive-map-controls{bottom:calc(var(--safeB) + 96px)!important;padding:9px 10px!important}
+  .drive-map-controls button{width:58px!important;height:58px!important;border-radius:18px!important}
+  .drive-bottom-card{left:12px!important;right:12px!important;height:130px!important;grid-template-columns:84px 1fr 84px!important}
+  .drive-bottom-card::before{left:86px!important}.drive-bottom-card::after{right:86px!important}
+  .drive-bottom-icon{width:74px!important}
+  #driveBottomNormal>div b,#arrivalTime{font-size:21px!important}
+  #driveBottomNormal>div b::before,#arrivalTime::before{font-size:13px!important}
+  #safetyAlert:not(.hidden) ~ #sectionSpeedPanel{top:calc(env(safe-area-inset-top,0px) + 324px)!important}
+  #safetyAlert:not(.hidden) ~ #vmsBanner,
+  #sectionSpeedPanel:not(.hidden) ~ #vmsBanner{top:calc(env(safe-area-inset-top,0px) + 456px)!important}
+  #safetyAlert:not(.hidden) ~ .traffic-route-rail,
+  #sectionSpeedPanel:not(.hidden) ~ .traffic-route-rail{top:calc(var(--safeT) + 354px)!important}
+}
