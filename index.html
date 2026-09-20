@@ -56,7 +56,22 @@
 
 <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.9.7" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.9.8" />
+  <style id="drive-turn-panel-force-v7698">
+    /* 7.6.9.8: external stylesheet cache/path issues cannot block the turn-panel restyle */
+    #driveView .maneuver-stack{position:absolute!important;z-index:140!important;top:calc(var(--safeT) + 12px)!important;left:14px!important;width:calc(100vw - 112px)!important;max-width:560px!important;transform:none!important}
+    #driveView .maneuver-main{position:relative!important;display:grid!important;grid-template-columns:100px minmax(0,1fr)!important;align-items:center!important;gap:12px!important;min-height:148px!important;padding:18px 20px!important;margin:0!important;border-radius:28px 28px 28px 12px!important;border:2px solid #2d9cff!important;background:linear-gradient(145deg,#0d2f63 0%,#0b2855 45%,#071a38 100%)!important;color:#fff!important;box-shadow:0 20px 38px rgba(4,18,42,.34),inset 0 0 0 1px rgba(124,194,255,.16)!important;opacity:1!important;overflow:hidden!important}
+    #driveView .maneuver-main::before{content:""!important;position:absolute!important;inset:0!important;border-radius:inherit!important;pointer-events:none!important;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,0) 46%)!important}
+    #driveView .maneuver-svg,#driveView .maneuver-svg svg{width:92px!important;height:92px!important;min-width:92px!important;min-height:92px!important;color:#fff!important;stroke:currentColor!important}
+    #driveView #maneuverDistance{display:block!important;margin:0!important;color:#fff!important;font-size:66px!important;line-height:.9!important;font-weight:900!important;letter-spacing:-.055em!important;text-shadow:0 2px 8px rgba(0,0,0,.18)!important}
+    #driveView #maneuverRoad{display:block!important;margin-top:10px!important;color:#fff!important;font-size:24px!important;line-height:1.12!important;font-weight:900!important;letter-spacing:-.03em!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+    #driveView .maneuver-next{display:inline-flex!important;align-items:center!important;gap:10px!important;min-height:70px!important;max-width:88%!important;margin:-1px 0 0 0!important;padding:11px 15px!important;border:0!important;border-radius:0 0 22px 12px!important;background:linear-gradient(145deg,#152d57 0%,#0f2243 100%)!important;color:#fff!important;box-shadow:0 14px 24px rgba(4,18,42,.24)!important}
+    #driveView .maneuver-next.hidden{display:none!important}
+    #driveView .maneuver-next>span,#driveView .maneuver-next svg{width:34px!important;height:34px!important;color:#fff!important}
+    #driveView #nextManeuverDistance{font-size:23px!important;font-weight:900!important;color:#fff!important}
+    #driveView #nextManeuverText{font-size:14px!important;font-weight:800!important;color:rgba(255,255,255,.94)!important}
+    @media(max-width:430px){#driveView .maneuver-stack{left:12px!important;width:calc(100vw - 104px)!important}#driveView .maneuver-main{min-height:142px!important;grid-template-columns:92px minmax(0,1fr)!important;padding:17px 17px!important;gap:9px!important}#driveView .maneuver-svg,#driveView .maneuver-svg svg{width:84px!important;height:84px!important;min-width:84px!important;min-height:84px!important}#driveView #maneuverDistance{font-size:60px!important}#driveView #maneuverRoad{font-size:22px!important}}
+  </style>
 </head>
 <body>
   <main id="app">
@@ -790,8 +805,32 @@
     <div id="toast" class="toast hidden"></div>
   </main>
 
-  <script>window.__JOFAMS_BUILD__="7.6.9.7";</script>
+  <script>window.__JOFAMS_BUILD__="7.6.9.8";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.9.7"></script>
+  <script type="module" src="/app.js?v=7.6.9.8"></script>
+  <script id="drive-turn-panel-runtime-v7698">
+  (()=>{
+    const apply=()=>{
+      const main=document.querySelector('#driveView .maneuver-main');
+      const stack=document.querySelector('#driveView .maneuver-stack');
+      const next=document.querySelector('#driveView .maneuver-next');
+      if(stack){stack.style.setProperty('z-index','140','important');stack.style.setProperty('left','12px','important');stack.style.setProperty('top','calc(var(--safeT) + 12px)','important');stack.style.setProperty('width','calc(100vw - 104px)','important');stack.style.setProperty('transform','none','important')}
+      if(main){
+        main.style.setProperty('background','linear-gradient(145deg,#0d2f63 0%,#0b2855 45%,#071a38 100%)','important');
+        main.style.setProperty('border','2px solid #2d9cff','important');
+        main.style.setProperty('border-radius','28px 28px 28px 12px','important');
+        main.style.setProperty('min-height','142px','important');
+        main.style.setProperty('padding','17px 17px','important');
+        main.style.setProperty('box-shadow','0 20px 38px rgba(4,18,42,.34), inset 0 0 0 1px rgba(124,194,255,.16)','important');
+      }
+      if(next&&!next.classList.contains('hidden')){next.style.setProperty('background','linear-gradient(145deg,#152d57 0%,#0f2243 100%)','important');next.style.setProperty('color','#fff','important')}
+    };
+    document.addEventListener('DOMContentLoaded',apply,{once:true});
+    window.addEventListener('load',apply,{once:true});
+    setTimeout(apply,300);setTimeout(apply,1200);
+    const mo=new MutationObserver(apply);
+    document.addEventListener('DOMContentLoaded',()=>{const v=document.getElementById('driveView');if(v)mo.observe(v,{attributes:true,subtree:true,attributeFilter:['class','style']})},{once:true});
+  })();
+  </script>
 </body>
 </html>
