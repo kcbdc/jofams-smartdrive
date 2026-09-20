@@ -3253,155 +3253,267 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
   #sectionSpeedPanel:not(.hidden) ~ .traffic-route-rail{top:calc(var(--safeT) + 354px)!important}
 }
 
-/* === 7.6.9.7 FINAL FORCE: turn guidance panel === */
+
+/* === 7.6.9.9 fine-match sizing reduction for T-map-like drive UI === */
+.drive-view .maneuver-stack,
 #driveView .maneuver-stack{
-  position:absolute!important;
-  z-index:120!important;
+  z-index:80!important;
+  top:calc(var(--safeT) + 10px)!important;
+  left:12px!important;
+  width:min(474px,calc(100vw - 126px))!important;
+}
+.drive-view .maneuver-main,
+#driveView .maneuver-main{
+  min-height:122px!important;
+  padding:15px 19px!important;
+  grid-template-columns:92px 1fr!important;
+  gap:12px!important;
+  border-radius:28px 28px 28px 10px!important;
+  box-shadow:0 14px 30px rgba(6,20,45,.24)!important;
+}
+.drive-view .maneuver-svg,
+#driveView .maneuver-svg{width:82px!important;height:82px!important}
+.drive-view .maneuver-main b,
+#driveView .maneuver-main b{font-size:61px!important;line-height:.93!important}
+.drive-view .maneuver-main span,
+#driveView .maneuver-main span{margin-top:6px!important;font-size:18px!important;line-height:1.18!important}
+.drive-view .maneuver-next,
+#driveView .maneuver-next{
+  margin-top:6px!important;
+  min-height:50px!important;
+  padding:8px 14px!important;
+  gap:8px!important;
+  border-radius:0 0 18px 10px!important;
+  box-shadow:0 10px 20px rgba(8,18,41,.18)!important;
+}
+.drive-view .maneuver-next>span,
+#driveView .maneuver-next>span{width:28px!important;height:28px!important}
+.drive-view .maneuver-next b,
+#driveView .maneuver-next b{font-size:20px!important}
+.drive-view .maneuver-next small,
+#driveView .maneuver-next small{font-size:13px!important}
+
+.drive-view .drive-radio-btn,
+#driveView .drive-radio-btn{
   top:calc(var(--safeT) + 12px)!important;
-  left:16px!important;
-  width:min(560px,calc(100vw - 118px))!important;
-  max-width:none!important;
-  transform:none!important;
+  right:14px!important;
+  width:58px!important;
+  height:58px!important;
+  box-shadow:0 12px 22px rgba(19,44,92,.18)!important;
 }
-#driveView .maneuver-stack .maneuver-main{
-  position:relative!important;
-  display:grid!important;
-  grid-template-columns:112px minmax(0,1fr)!important;
-  align-items:center!important;
-  gap:14px!important;
-  width:100%!important;
-  min-height:152px!important;
-  height:auto!important;
-  padding:20px 22px!important;
-  margin:0!important;
-  border-radius:30px 30px 30px 14px!important;
-  border:2px solid #2d9cff!important;
-  background:linear-gradient(145deg,#0d2f63 0%,#0b2855 45%,#071a38 100%)!important;
-  color:#fff!important;
-  box-shadow:0 20px 38px rgba(4,18,42,.34),inset 0 0 0 1px rgba(124,194,255,.16)!important;
-  opacity:1!important;
-  overflow:hidden!important;
-  backdrop-filter:none!important;
-  -webkit-backdrop-filter:none!important;
+.drive-view .drive-radio-btn .drive-radio-icon,
+.drive-view .drive-radio-btn .drive-radio-icon svg,
+#driveView .drive-radio-btn .drive-radio-icon,
+#driveView .drive-radio-btn .drive-radio-icon svg{width:29px!important;height:29px!important}
+.drive-view .drive-radio-btn.off .drive-radio-icon,
+.drive-view .drive-radio-btn.off .drive-radio-off-svg,
+#driveView .drive-radio-btn.off .drive-radio-icon,
+#driveView .drive-radio-btn.off .drive-radio-off-svg{width:31px!important;height:31px!important}
+
+.drive-view .floating-ar,
+#driveView .floating-ar{
+  top:calc(var(--safeT) + 86px)!important;
+  right:16px!important;
+  width:56px!important;
+  height:56px!important;
+  font-size:19px!important;
+  box-shadow:0 10px 20px rgba(19,44,92,.13)!important;
 }
-#driveView .maneuver-stack .maneuver-main::before{
-  content:""!important;
-  position:absolute!important;
-  inset:0!important;
-  border-radius:inherit!important;
-  pointer-events:none!important;
-  background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,0) 46%)!important;
+
+.drive-view .safety-alert,
+#driveView .safety-alert{
+  top:calc(env(safe-area-inset-top,0px) + 172px)!important;
+  width:min(calc(100% - 44px),450px)!important;
+  min-height:82px!important;
+  grid-template-columns:52px 1fr auto!important;
+  gap:12px!important;
+  padding:13px 15px!important;
+  border-radius:24px!important;
+  box-shadow:0 14px 26px rgba(4,14,31,.22)!important;
 }
-#driveView .maneuver-stack .maneuver-svg{
-  width:100px!important;
-  height:100px!important;
-  min-width:100px!important;
-  min-height:100px!important;
-  color:#fff!important;
-  opacity:1!important;
+.drive-view .safety-alert-icon,
+#driveView .safety-alert-icon{width:48px!important;height:48px!important;border-radius:16px!important}
+.drive-view .safety-alert.camera .safety-alert-icon,
+.drive-view .safety-alert.mobile .safety-alert-icon,
+.drive-view .safety-alert.reg .safety-alert-icon,
+#driveView .safety-alert.camera .safety-alert-icon,
+#driveView .safety-alert.mobile .safety-alert-icon,
+#driveView .safety-alert.reg .safety-alert-icon{border-width:6px!important}
+.drive-view .safety-alert-icon svg,
+#driveView .safety-alert-icon svg{width:26px!important;height:26px!important}
+.drive-view .safety-alert-copy b,
+#driveView .safety-alert-copy b{font-size:16px!important}
+.drive-view .safety-alert-copy span,
+#driveView .safety-alert-copy span{font-size:12px!important;line-height:1.28!important}
+.drive-view .safety-alert>strong,
+#driveView .safety-alert>strong{font-size:21px!important}
+
+.drive-view #sectionSpeedPanel,
+#driveView #sectionSpeedPanel{
+  top:calc(env(safe-area-inset-top,0px) + 172px)!important;
+  width:min(calc(100% - 44px),450px)!important;
+  padding:13px 15px!important;
+  border-radius:24px!important;
+  box-shadow:0 14px 26px rgba(4,14,31,.22)!important;
 }
-#driveView .maneuver-stack .maneuver-svg svg{
-  width:100px!important;
-  height:100px!important;
-  color:#fff!important;
-  stroke:currentColor!important;
-  fill:none!important;
-}
-#driveView .maneuver-stack .maneuver-main>div:last-child{
-  min-width:0!important;
-  align-self:center!important;
-}
-#driveView #maneuverDistance{
-  display:block!important;
-  margin:0!important;
-  color:#fff!important;
-  font-size:72px!important;
-  line-height:.90!important;
-  font-weight:900!important;
-  letter-spacing:-.06em!important;
-  text-shadow:0 2px 8px rgba(0,0,0,.16)!important;
-}
-#driveView #maneuverRoad{
-  display:block!important;
-  margin-top:12px!important;
-  color:#fff!important;
-  font-size:27px!important;
-  line-height:1.12!important;
-  font-weight:900!important;
-  letter-spacing:-.035em!important;
-  white-space:nowrap!important;
-  overflow:hidden!important;
-  text-overflow:ellipsis!important;
-}
-#driveView .maneuver-stack .maneuver-next{
-  display:inline-flex!important;
-  align-items:center!important;
-  gap:10px!important;
-  min-height:74px!important;
-  max-width:78%!important;
-  margin:-1px 0 0 0!important;
-  padding:12px 16px!important;
-  border:0!important;
-  border-radius:0 0 22px 14px!important;
-  background:linear-gradient(145deg,#152d57 0%,#0f2243 100%)!important;
-  color:#fff!important;
-  box-shadow:0 14px 24px rgba(4,18,42,.24)!important;
-  opacity:1!important;
-}
-#driveView .maneuver-stack .maneuver-next.hidden{display:none!important}
-#driveView .maneuver-stack .maneuver-next>span{
+.drive-view #sectionSpeedPanel>span,
+#driveView #sectionSpeedPanel>span{font-size:17px!important;margin-bottom:8px!important}
+.drive-view #sectionSpeedPanel>div,
+#driveView #sectionSpeedPanel>div{min-width:104px!important;padding-right:14px!important;margin-right:10px!important}
+.drive-view #sectionSpeedPanel small,
+#driveView #sectionSpeedPanel small{font-size:11px!important}
+.drive-view #sectionSpeedPanel b,
+.drive-view #sectionSpeedPanel strong,
+#driveView #sectionSpeedPanel b,
+#driveView #sectionSpeedPanel strong{font-size:21px!important}
+.drive-view #sectionSpeedPanel em,
+#driveView #sectionSpeedPanel em{font-size:15px!important}
+
+.drive-view .traffic-route-rail,
+#driveView .traffic-route-rail{
+  right:16px!important;
+  top:calc(var(--safeT) + 162px)!important;
+  bottom:calc(var(--safeB) + 248px)!important;
   width:36px!important;
-  height:36px!important;
-  min-width:36px!important;
-  color:#fff!important;
 }
-#driveView .maneuver-stack .maneuver-next svg{width:36px!important;height:36px!important;color:#fff!important}
-#driveView #nextManeuverDistance{
-  font-size:25px!important;
-  font-weight:900!important;
-  color:#fff!important;
-  line-height:1!important;
-}
-#driveView #nextManeuverText{
-  font-size:15px!important;
-  font-weight:800!important;
-  color:rgba(255,255,255,.92)!important;
-  line-height:1.1!important;
-  white-space:nowrap!important;
-  overflow:hidden!important;
-  text-overflow:ellipsis!important;
-}
+.drive-view .traffic-route-rail small,
+#driveView .traffic-route-rail small{font-size:12px!important;padding:5px 7px!important}
+.drive-view #trafficRouteSegments,
+#driveView #trafficRouteSegments{width:14px!important}
+.drive-view #trafficRouteSegments i,
+#driveView #trafficRouteSegments i{width:8px!important}
+.drive-view .traffic-route-current,
+#driveView .traffic-route-current{width:24px!important;height:24px!important;border-width:5px!important}
 
-@media(max-width:430px){
-  #driveView .maneuver-stack{
-    left:12px!important;
-    width:calc(100vw - 106px)!important;
-  }
-  #driveView .maneuver-stack .maneuver-main{
-    min-height:142px!important;
-    grid-template-columns:96px minmax(0,1fr)!important;
-    gap:10px!important;
-    padding:17px 18px!important;
-    border-radius:28px 28px 28px 12px!important;
-  }
-  #driveView .maneuver-stack .maneuver-svg,
-  #driveView .maneuver-stack .maneuver-svg svg{
-    width:88px!important;
-    height:88px!important;
-    min-width:88px!important;
-    min-height:88px!important;
-  }
-  #driveView #maneuverDistance{font-size:62px!important}
-  #driveView #maneuverRoad{font-size:23px!important;margin-top:10px!important}
-  #driveView .maneuver-stack .maneuver-next{min-height:66px!important;padding:10px 14px!important;max-width:86%!important}
-  #driveView #nextManeuverDistance{font-size:22px!important}
-  #driveView #nextManeuverText{font-size:14px!important}
+.drive-view .traffic-status,
+#driveView .traffic-status{
+  left:14px!important;
+  bottom:calc(var(--safeB) + 164px)!important;
+  max-width:114px!important;
+  min-height:96px!important;
+  padding:11px 10px 12px 12px!important;
+  border-radius:22px!important;
+  box-shadow:0 12px 24px rgba(6,16,34,.2)!important;
 }
+.drive-view .traffic-status::before,
+#driveView .traffic-status::before{width:7px!important;border-radius:22px 0 0 22px!important}
+.drive-view .traffic-status b,
+#driveView .traffic-status b{font-size:15px!important;padding-left:8px!important}
+.drive-view .traffic-status small,
+#driveView .traffic-status small{font-size:11px!important;line-height:1.25!important;padding-left:8px!important}
 
-@media(orientation:landscape){
-  #driveView .maneuver-stack{
-    transform:scale(.90)!important;
-    transform-origin:left top!important;
-    width:min(520px,calc(100vw - 130px))!important;
-  }
+.drive-view .speed-panel,
+#driveView .speed-panel{
+  left:14px!important;
+  bottom:calc(var(--safeB) + 58px)!important;
+  width:94px!important;
+  padding:10px 10px 12px!important;
+  border-radius:24px!important;
+  box-shadow:0 12px 24px rgba(6,16,34,.2)!important;
+}
+.drive-view .speed-limit,
+#driveView .speed-limit{width:62px!important;height:62px!important;margin:0 auto 7px!important;border-width:6px!important}
+.drive-view .speed-limit small,
+#driveView .speed-limit small{font-size:8px!important}
+.drive-view .speed-limit b,
+#driveView .speed-limit b{font-size:28px!important}
+.drive-view .speed-panel>strong,
+#driveView .speed-panel>strong{font-size:36px!important}
+.drive-view .speed-panel>span,
+#driveView .speed-panel>span{font-size:12px!important}
+
+.drive-view .drive-fuel-chip,
+#driveView .drive-fuel-chip{
+  right:74px!important;
+  bottom:calc(var(--safeB) + 198px)!important;
+  min-height:68px!important;
+  min-width:208px!important;
+  padding:12px 15px 12px 14px!important;
+  border-radius:22px!important;
+  box-shadow:0 12px 24px rgba(6,16,34,.2)!important;
+}
+.drive-view .drive-fuel-icon,
+#driveView .drive-fuel-icon{width:42px!important;height:42px!important;border-radius:14px!important;font-size:22px!important}
+.drive-view .drive-fuel-chip small,
+#driveView .drive-fuel-chip small{font-size:12px!important}
+.drive-view .drive-fuel-chip b,
+#driveView .drive-fuel-chip b{font-size:18px!important}
+.drive-view .drive-fuel-chip em,
+#driveView .drive-fuel-chip em{font-size:12px!important;max-width:104px!important}
+
+.drive-view .drive-side-actions,
+#driveView .drive-side-actions{right:14px!important;bottom:calc(var(--safeB) + 92px)!important;gap:8px!important}
+.drive-view .drive-side-actions button,
+#driveView .drive-side-actions button{width:58px!important;height:58px!important}
+
+.drive-view .drive-map-controls,
+#driveView .drive-map-controls{
+  bottom:calc(var(--safeB) + 88px)!important;
+  gap:8px!important;
+  padding:8px 10px!important;
+  border-radius:22px!important;
+  box-shadow:0 14px 26px rgba(6,16,34,.2)!important;
+}
+.drive-view .drive-map-controls button,
+#driveView .drive-map-controls button{width:50px!important;height:50px!important;border-radius:16px!important}
+.map-compass-btn .map-compass-needle{font-size:24px!important}
+
+.drive-view .lane-assist-layer,
+#driveView .lane-assist-layer{
+  bottom:calc(var(--safeB) + 310px)!important;
+  min-width:min(92vw,338px)!important;
+  padding:12px 15px!important;
+  border-radius:20px!important;
+}
+.drive-view .lane-assist-icon,
+#driveView .lane-assist-icon{width:40px!important;height:40px!important;border-radius:12px!important;font-size:22px!important}
+.drive-view .lane-assist-copy b,
+#driveView .lane-assist-copy b{font-size:17px!important}
+.drive-view .lane-assist-copy small,
+#driveView .lane-assist-copy small{font-size:12px!important}
+.drive-view .lane-assist-road,
+#driveView .lane-assist-road{font-size:13px!important}
+
+.drive-view .drive-bottom-card,
+#driveView .drive-bottom-card{
+  left:14px!important;
+  right:14px!important;
+  bottom:calc(var(--safeB) + 10px)!important;
+  height:108px!important;
+  padding:13px 15px!important;
+  border-radius:28px!important;
+  grid-template-columns:58px 1fr 58px!important;
+  gap:10px!important;
+  box-shadow:0 18px 34px rgba(6,16,34,.22)!important;
+}
+.drive-view .drive-bottom-card::before,
+#driveView .drive-bottom-card::before{left:74px!important;top:19px!important;bottom:19px!important}
+.drive-view .drive-bottom-card::after,
+#driveView .drive-bottom-card::after{right:74px!important;top:19px!important;bottom:19px!important}
+.drive-view .drive-bottom-icon,
+#driveView .drive-bottom-icon{width:48px!important;height:48px!important;border-radius:15px!important}
+.drive-view .drive-bottom-icon svg,
+#driveView .drive-bottom-icon svg{width:28px!important;height:28px!important}
+.drive-view #currentRoadLabel,
+#driveView #currentRoadLabel{font-size:13px!important;margin-bottom:7px!important}
+.drive-view #driveBottomNormal>div,
+#driveView #driveBottomNormal>div{gap:18px!important}
+.drive-view #driveBottomNormal>div b,
+#driveView #driveBottomNormal>div b{font-size:37px!important}
+.drive-view #arrivalTime,
+.drive-view #driveDestinationEta,
+#driveView #arrivalTime,
+#driveView #driveDestinationEta{font-size:14px!important;margin-top:7px!important}
+.drive-view #driveDestinationName,
+#driveView #driveDestinationName{font-size:20px!important}
+
+@media (max-width:420px){
+  .drive-view .maneuver-stack,
+  #driveView .maneuver-stack{width:calc(100vw - 102px)!important}
+  .drive-view .safety-alert,
+  .drive-view #sectionSpeedPanel,
+  #driveView .safety-alert,
+  #driveView #sectionSpeedPanel{width:calc(100% - 28px)!important}
+  .drive-view .traffic-route-rail,
+  #driveView .traffic-route-rail{bottom:calc(var(--safeB) + 240px)!important}
 }
