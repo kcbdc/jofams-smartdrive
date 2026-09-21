@@ -83,6 +83,9 @@ function toast(msg,ms=2200){const el=$('toast');el.textContent=msg;el.classList.
 function km(m){if(!Number.isFinite(m))return '--';return m<1000?`${Math.round(m)}m`:`${(m/1000).toFixed(m<10000?1:0)}km`}
 function mins(sec){const n=Number(sec);if(!Number.isFinite(n)||n<=0)return '계산 중';return `${Math.max(1,Math.round(n/60))}분`}
 function eta(sec){const d=new Date(Date.now()+(sec||0)*1000);return d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false})}
+/* 7.6.11.0 하단 카드 '도착 예정' 표기: 오전 11:04 */
+function etaKo(sec){const d=new Date(Date.now()+(sec||0)*1000),h=d.getHours(),m=String(d.getMinutes()).padStart(2,'0');return{ap:h<12?'오전':'오후',hm:`${h%12||12}:${m}`}}
+function setArrivalTime(sec,valid=true){const el=$('arrivalTime');if(!el)return;if(!valid){el.innerHTML='<b>--:--</b>';return}const t=etaKo(sec);el.innerHTML=`<i>${t.ap}</i> <b>${t.hm}</b>`}
 function hav(lat1,lon1,lat2,lon2){const R=6371000,p=Math.PI/180,a=Math.sin((lat2-lat1)*p/2)**2+Math.cos(lat1*p)*Math.cos(lat2*p)*Math.sin((lon2-lon1)*p/2)**2;return 2*R*Math.asin(Math.sqrt(a))}
 function bearing(a,b,c,d){const p=Math.PI/180,y=Math.sin((d-b)*p)*Math.cos(c*p),x=Math.cos(a*p)*Math.sin(c*p)-Math.sin(a*p)*Math.cos(c*p)*Math.cos((d-b)*p);return (Math.atan2(y,x)/p+360)%360}
 function pointValid(p){return p&&Number.isFinite(Number(p.lng))&&Number.isFinite(Number(p.lat))}
@@ -2346,7 +2349,7 @@ function renderFuelData(data){
   const chip=$('driveFuelChip');
   if(chip&&state.tripStartedAt&&items.length){
     $('driveFuelPrice').textContent=fuelWon(items[0].price);
-    $('driveFuelName').textContent=items[0].name||'주유소';
+    $('driveFuelName').textContent=String(items[0].name||'주유소').replace(/\(주\)/g,'㈜');
     chip.classList.remove('hidden');
   }
 }
@@ -3384,7 +3387,7 @@ function initializeDriveSummary(){
   const duration=Number(state.route.duration)||0;
   if($('remainingDistance'))$('remainingDistance').textContent=total>0?km(total):'--km';
   if($('remainingTime'))$('remainingTime').textContent=duration>0?mins(duration):'--분';
-  if($('arrivalTime'))$('arrivalTime').textContent=duration>0?`도착 ${eta(duration)}`:'도착 --:--';
+  setArrivalTime(duration,duration>0);
   if($('speedPanel'))$('speedPanel').classList.remove('hidden');
   if($('currentSpeed'))$('currentSpeed').textContent='0';
   const seg=(state.route.roadSegments||[])[0];
@@ -3683,9 +3686,9 @@ function updateSectionAverageSpeed(idx){
   const avg=Math.max(0,Math.min(250,travelled/elapsed*3.6)),remain=Math.max(0,endDistance-st.lastDistance);
   if(panel)panel.classList.remove('hidden');
   $('driveView')?.classList.add('has-section-speed');
-  if($('sectionAverageSpeed'))$('sectionAverageSpeed').textContent=`${Math.round(avg)} km/h`;
+  if($('sectionAverageSpeed'))$('sectionAverageSpeed').innerHTML=`${Math.round(avg)} <i>km/h</i>`;
   if($('sectionLimitSpeed'))$('sectionLimitSpeed').textContent=e.maxspeed?`${Math.round(e.maxspeed)} km/h`:'-- km/h';
-  if($('sectionRemainDistance'))$('sectionRemainDistance').textContent=`${km(remain)} 남음`;
+  if($('sectionRemainDistance'))$('sectionRemainDistance').innerHTML=km(remain).replace(/(\d)(km|m)$/,'$1 <i>$2</i>');
   panel?.classList.toggle('over',Number(e.maxspeed)>0&&avg>Number(e.maxspeed));
   panel?.classList.toggle('nearing-end',remain<=1500);
   if(panel)panel.dataset.sectionState=(Number(e.maxspeed)>0&&avg>Number(e.maxspeed))?'over':(remain<=1500?'ending':'normal');
@@ -3773,7 +3776,7 @@ function updateProgressUI(idx){
 
   $('remainingDistance').textContent=km(remain);
   $('remainingTime').textContent=mins(remainSec);
-  $('arrivalTime').textContent=`도착 ${eta(remainSec)}`;
+  setArrivalTime(remainSec,true);
   if($('driveDestinationName'))$('driveDestinationName').textContent=state.destination?.name||'목적지';
   if($('driveDestinationEta'))$('driveDestinationEta').textContent=`예상 도착 ${eta(remainSec)}`;
 
@@ -3799,12 +3802,14 @@ function updateProgressUI(idx){
     $('maneuverIcon').innerHTML=turnSvg(first.type);
     $('maneuverDistance').textContent=distanceText;
     $('maneuverRoad').textContent=guideText;
+    if($('maneuverSub'))$('maneuverSub').textContent=guideSubText(first,guideText);
     maybeSpeakGuide(first,d);
   }else{
     state.activeGuideSnapshot=null;
     $('maneuverIcon').innerHTML=turnSvg(0);
     $('maneuverDistance').textContent=remain<10?'곧 도착':km(remain);
     $('maneuverRoad').textContent='목적지까지 직진';
+    if($('maneuverSub'))$('maneuverSub').textContent='';
   }
 
   if(second){
@@ -3906,6 +3911,16 @@ function guidePanelText(g){
   if(cat==='fork')return '갈림길 방향 확인';
   return '경로 안내';
 }
+/* 7.6.11.0 상단 턴 카드 3번째 줄: 경유 도로명 + 회전 방향 (실제 경로 데이터만 사용) */
+function guideSubText(g,main=''){
+  const cat=guideVoiceCategory(g);
+  const word={left:'좌회전',right:'우회전',toll:'톨게이트 진입',ic:'IC 진입',fork:'갈림길 방향 확인'}[cat]||'';
+  const via=[g?.name,g?.roadName].map(v=>String(v||'').trim()).filter((v,i,a)=>v&&v!==main&&a.indexOf(v)===i);
+  const route=via.length?`${via.join(' · ')} 방면`:'';
+  if(!word)return route;
+  if(String(main).includes(word))return route;
+  return route?`${route}으로 ${word}`:word;
+}
 function guideSpokenDistance(display=''){
   const s=String(display||'');
   if(/km$/i.test(s))return s.replace(/km$/i,'킬로미터');
@@ -3930,6 +3945,7 @@ function updateTrafficStatus(seg){
   const el=$('trafficStatus');if(!el)return;
   const info=trafficClassFromValues(seg?.trafficSpeed,seg?.trafficState),sp=Math.round(Number(seg?.trafficSpeed)||0);
   el.className=`traffic-status traffic-${info.key}`;$('trafficStatusLabel').textContent=info.label;
+  const spd=$('speedPanel');if(spd)spd.dataset.traffic=info.key;
   const detail=info.key==='smooth'?'차량 흐름이 원활합니다.':info.key==='slow'?'교통량 증가로 평소보다 속도가 낮습니다.':info.key==='delayed'?'가다 서기를 반복할 수 있는 혼잡 구간입니다.':info.key==='severe'?'차량 흐름이 매우 느린 정체 구간입니다.':'현재 도로 소통정보를 불러오고 있습니다.';
   $('trafficStatusDetail').textContent=sp>0?`${detail} · 평균 ${sp}km/h`:detail;
   if(info.key!=='unknown'&&info.key!==state.lastTrafficStatus){state.lastTrafficStatus=info.key;}
@@ -4349,7 +4365,7 @@ function safetyLabel(e){
   if(e.type==='fog_zone')return{kind:'weather',icon:'안개',title:'전방 안개 구간',text:e.visibility?`가시거리 약 ${Math.max(100,Math.round(e.visibility/100)*100)}m · 감속하고 차간거리를 늘리세요`:'시야 확보가 어려운 구간입니다. 감속하세요'};
   if(e.type==='heavy_rain_zone')return{kind:'weather',icon:'강우',title:'강한 비 주의',text:e.precipitation?`시간 강수량 약 ${Number(e.precipitation).toFixed(1)}mm · 미끄럼에 주의하세요`:'노면이 미끄러울 수 있습니다. 감속하세요'};
   if(e.type==='snow_ice_zone')return{kind:'weather',icon:'결빙',title:'눈·결빙 주의',text:'노면 결빙 가능성이 있습니다. 급가속·급제동을 피하세요'};
-  if(e.type==='chronic_congestion')return{kind:'stat',icon:'정체',title:'상습정체 구간',text:e.sampleCount?`${e.name||'전방 도로'} · 누적 교통표본 ${e.sampleCount}회 기준 혼잡 빈도가 높은 구간입니다`:(e.name||'혼잡 빈도가 높은 구간입니다')};
+  if(e.type==='chronic_congestion')return{kind:'stat',icon:'정체',title:'상습정체 구간',text:(()=>{const nm=String(e.name||'전방 도로').replace(/\s*구간$/,'');return e.sampleCount?`${nm} 구간은 평소보다 혼잡합니다.\n누적 교통표본 ${e.sampleCount}회 기준`:`${nm} 구간은 평소보다 혼잡합니다.`})()};
   if(e.type==='accident_hotspot')return{kind:'stat',icon:'사고',title:'사고다발지역',text:e.accidentCount?`${e.name||'전방 구간'} · 통계 사고 ${e.accidentCount}건`:(e.name||'교통사고가 반복 발생한 통계 구간입니다')};
   // 7) 단속·인프라 안내
   if(e.type==='section_speed_camera')return{kind:'camera',icon:'시',title:'구간단속 시작',text:e.maxspeed?`제한속도 ${e.maxspeed}km/h · 구간 평균속도를 확인하세요`:'구간 평균속도를 확인하세요'};
@@ -4359,7 +4375,7 @@ function safetyLabel(e){
   if(e.type==='accident')return{kind:'incident',icon:'사고',title:'전방 사고 정보',text:e.name||'사고 구간입니다. 차간거리를 확보하고 주의하세요'};
   if(e.type==='construction')return{kind:'construction',icon:'공사',title:'전방 공사 구간',text:e.name||'차로 변경 및 작업 차량에 주의하세요'};
   if(e.type==='mobile_camera')return{kind:'mobile',icon:'이동',title:'이동식 단속 카메라',text:e.maxspeed?`제한속도 ${e.maxspeed}km/h · 속도를 확인하세요`:'제한속도를 확인하세요'};
-  if(e.type==='signal_speed_camera')return{kind:'camera',icon:'신호',title:'신호·과속 단속 카메라',text:e.maxspeed?`제한속도 ${e.maxspeed}km/h · 신호와 속도를 확인하세요`:'신호와 속도를 확인하세요'};
+  if(e.type==='signal_speed_camera')return{kind:'camera',icon:'신호',title:'신호·과속 단속카메라',text:e.maxspeed?`제한속도 ${e.maxspeed}km/h · 신호와 속도를 확인하세요`:'신호와 속도를 확인하세요'};
   if(e.type==='signal_camera')return{kind:'camera',icon:'신호',title:'신호위반 단속 카메라',text:e.maxspeed?`제한속도 ${e.maxspeed}km/h · 신호를 준수하세요`:'신호를 준수하세요'};
   if(e.type==='traffic_camera')return{kind:'camera',icon:'단속',title:'무인교통단속 카메라',text:e.maxspeed?`제한속도 ${e.maxspeed}km/h`:'교통법규를 준수하세요'};
   if(e.type==='speed_limit')return{kind:'camera',icon:'속도',title:'제한속도 안내',text:e.maxspeed?`현재 구간 제한속도 ${e.maxspeed}km/h`:'제한속도를 확인하세요'};
@@ -4443,7 +4459,8 @@ function updateSafetyUI(idx,candidates){
   const guideLimit=safetyGuidanceLimit(idx,e);
   el.dataset.speedLimit=guideLimit>0?String(Math.round(guideLimit)):'';
   $('safetyAlertTitle').textContent=info.title;
-  $('safetyAlertText').textContent=guideLimit>0&&String(e.type).includes('camera')?`${info.text} · 제한속도 ${Math.round(guideLimit)}km/h`:info.text;
+  const speedCamTypes=['speed_camera','signal_speed_camera','signal_camera','traffic_camera','mobile_camera','section_speed_camera'];
+  $('safetyAlertText').textContent=guideLimit>0&&speedCamTypes.includes(e.type)?`제한속도 ${Math.round(guideLimit)}km/h`:(guideLimit>0&&String(e.type).includes('camera')?`${info.text} · 제한속도 ${Math.round(guideLimit)}km/h`:info.text);
   $('safetyAlertDistance').textContent=km(Math.max(10,Number(e.d)||10));
   state.activeSafetyId=e.id;state.activeSafetyEvent={...e,guideLimit};
 

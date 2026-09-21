@@ -56,7 +56,8 @@
 
 <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.10.0" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.11.0" />
 </head>
 <body>
   <main id="app">
@@ -226,7 +227,7 @@
       <div class="maneuver-stack">
         <div class="maneuver-main">
           <div id="maneuverIcon" class="maneuver-svg"></div>
-          <div><b id="maneuverDistance">--m</b><span id="maneuverRoad">경로 안내</span></div>
+          <div class="maneuver-text"><b id="maneuverDistance">--m</b><span id="maneuverRoad">경로 안내</span><em id="maneuverSub" class="maneuver-sub"></em></div>
         </div>
         <div id="nextManeuver" class="maneuver-next hidden"><span id="nextManeuverIcon"></span><b id="nextManeuverDistance">--m</b><small id="nextManeuverText">다음 안내</small></div>
       </div>
@@ -259,10 +260,13 @@
       </div>
 
       <div id="sectionSpeedPanel" class="section-speed-panel hidden" role="status" aria-live="polite">
-        <span>구간단속</span>
-        <div><small>내 평균속도</small><b id="sectionAverageSpeed">-- km/h</b></div>
-        <div><small>제한속도</small><strong id="sectionLimitSpeed">-- km/h</strong></div>
-        <em id="sectionRemainDistance">--km 남음</em>
+        <i class="ss-badge" aria-hidden="true"></i>
+        <div class="ss-head"><span class="ss-title">구간단속 구간</span><p class="ss-desc">이 구간의 평균속도로 단속됩니다.</p></div>
+        <div class="ss-stats">
+          <div class="ss-col"><small>평균속도</small><b id="sectionAverageSpeed">-- km/h</b></div>
+          <div class="ss-col"><small>남은거리</small><em id="sectionRemainDistance">--</em></div>
+          <div class="ss-col ss-limit"><small>제한속도</small><strong id="sectionLimitSpeed">-- km/h</strong></div>
+        </div>
       </div>
 
       <aside id="trafficRouteRail" class="traffic-route-rail" aria-label="전방 도로 교통정보">
@@ -308,8 +312,11 @@
         <div class="drive-bottom-summary">
           <div id="driveBottomNormal" class="drive-bottom-normal">
             <small id="currentRoadLabel">일반도로</small>
-            <div><b id="remainingTime">--분</b><b id="remainingDistance">--km</b></div>
-            <span id="arrivalTime">도착 --:--</span>
+            <div class="dbn-row">
+              <div class="dbn-cell"><small>남은 시간</small><b id="remainingTime">--분</b></div>
+              <div class="dbn-cell"><small>남은 거리</small><b id="remainingDistance">--km</b></div>
+              <div class="dbn-cell"><small>도착 예정</small><span id="arrivalTime"><b>--:--</b></span></div>
+            </div>
           </div>
           <div id="driveBottomDestination" class="drive-bottom-destination hidden" aria-live="polite">
             <small>목적지</small>
@@ -790,8 +797,8 @@
     <div id="toast" class="toast hidden"></div>
   </main>
 
-  <script>window.__JOFAMS_BUILD__="7.6.9.6";</script>
+  <script>window.__JOFAMS_BUILD__="7.6.11.0";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.9.6"></script>
+  <script type="module" src="/app.js?v=7.6.11.0"></script>
 </body>
 </html>
