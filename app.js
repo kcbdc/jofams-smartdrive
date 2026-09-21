@@ -448,11 +448,15 @@ function officialBusLaneCamera(row){
 
 /* 7.6.11.6 카메라 진행방향 판정: 데이터에 각도/방향 문구가 있으면 현재 경로 진행방향과 교차검증한다. */
 function cameraDirectionHint(row){
-  const raw=String(pickField(row,['단속방향','설치방향','촬영방향','카메라방향','방향','direction','cameraDirection','도로노선방향'])||'').trim();
+  // '도로노선방향'의 1/2/3은 상·하행/양방향 코드이지 각도(deg)가 아니다.
+  // 이전에는 이를 1°/2°/3°로 오인해 실제 진행방향 카메라를 반대방향으로 판정하는 문제가 있었다.
+  const explicitRaw=String(pickField(row,['단속방향','설치방향','촬영방향','카메라방향','방향','direction','cameraDirection'])||'').trim();
+  const roadDirCode=String(pickField(row,['도로노선방향'])||'').trim();
+  const raw=explicitRaw||roadDirCode;
   const place=String(pickField(row,['설치장소','itlpc','소재지도로명주소','소재지지번주소'])||'').trim();
-  const all=`${raw} ${place}`.trim();
-  const num=Number(String(raw).replace(/[^0-9.\-]/g,''));
-  let heading=Number.isFinite(num)&&num>=0&&num<=360?num:null;
+  const all=`${explicitRaw} ${place}`.trim();
+  const num=Number(String(explicitRaw).replace(/[^0-9.\-]/g,''));
+  let heading=explicitRaw&&Number.isFinite(num)&&num>=0&&num<=360?num:null;
   if(heading==null){
     const dirs=[['북동',45],['동북',45],['남동',135],['동남',135],['남서',225],['서남',225],['북서',315],['서북',315],['북',0],['동',90],['남',180],['서',270]];
     for(const [k,h] of dirs){if(new RegExp(`(?:^|\s|\()${k}(?:향|쪽|방향|\s|$)`).test(all)){heading=h;break}}
@@ -3544,7 +3548,9 @@ function startNavigation(){
   $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearOnnuriMarkers();clearHomeCameraMarkers();
   // 경로선택/현재위치 화면에서 쓰던 보조 위치 마커는 주행 화면에 남기지 않는다.
   try{if(state.originMarker){state.originMarker.remove();state.originMarker=null}}catch{state.originMarker=null}
-  document.querySelectorAll('.maplibregl-user-location-dot,.maplibregl-user-location-accuracy-circle,.maplibregl-user-location-dot-stale').forEach(el=>{try{el.style.display='none'}catch{}});
+  // 경로선택에서 쓰던 빨간 목적지 핀이 주행 HUD 좌상단에 걸쳐 보이는 현상 제거.
+  try{if(state.destMarker){state.destMarker.remove();state.destMarker=null}}catch{state.destMarker=null}
+  document.querySelectorAll('.maplibregl-user-location-dot,.maplibregl-user-location-accuracy-circle,.maplibregl-user-location-dot-stale,.destination-pin,.origin-pin').forEach(el=>{try{el.style.display='none'}catch{}});
   if((state.waypoints||[]).filter(pointValid).length)saveCurrentWaypointCourse();if(!state.route||!state.destination)return;cancelAutoStart();state.preTripAnchor=null;state.tripStartedAt=Date.now();
   state.navigationStartAt=state.tripStartedAt;
   state.navigationStartAnchor=pointValid(state.user)?{lat:Number(state.user.lat),lng:Number(state.user.lng),routeDistance:Number(state.user.routeDistance)}:null;
@@ -3939,15 +3945,20 @@ function checkArrival(routeRemain){
   if(!reached){state.arrivalCandidateSince=0;return false}
 
   // 정문/초입(institutionGateReached)에 들어서면 즉시 종료한다(대기·저속 조건 없음, 100km/h 초과만 오판 방지로 제외).
-  if(institutionGateReached){if(speed>28)return false}
+  if(institutionGateReached){if(!state.simulationActive&&speed>28)return false}
   else{
     if(!state.arrivalCandidateSince)state.arrivalCandidateSince=Date.now();
-    // 1초 이상 연속 도착권 + 저/중속으로 통과하면 도착 확정. 고속도로 평행도로 오판 방지.
-    if(Date.now()-state.arrivalCandidateSince<1000||speed>12)return false;
+    // 실주행은 1초 연속 + 저/중속 확인. 모의주행은 경로상 도착권 진입 자체가 확정적이므로 즉시 종료한다.
+    if(!state.simulationActive&&(Date.now()-state.arrivalCandidateSince<1000||speed>12))return false;
   }
   state.arrivalCandidateSince=0;
   speakNavOnce(`arrival:${state.destination.id||state.destination.name}`,'목적지에 도착했습니다.',0);
-  setTimeout(stopNavigation,900);
+  if(state.simulationActive){
+    if(state.simulationRaf)cancelAnimationFrame(state.simulationRaf);
+    state.simulationRaf=0;state.simulationActive=false;updateSimulationControls();
+    toast('모의주행이 목적지 정문 부근에 도착했습니다.',1400);
+    setTimeout(stopNavigation,350);
+  }else setTimeout(stopNavigation,900);
   return true;
 }
 
@@ -4315,6 +4326,10 @@ async function loadSafetyEvents(route){
     supplemental=[...regionalOthers,...buildSectionSpeedEvents(regionalSectionNodes,route)];
   }catch(e){if(seq!==state.safetyRequestSeq)return;console.warn('supplemental safety fetch failed',e)}
   let merged=mergeSafetyEvents([...primary,...official,...supplemental],route.geometry);
+  merged=suppressPostSectionDuplicateCameras(merged);
+  merged=addUserConfirmedHoedeokCamera(merged,route);
+  merged=mergeSafetyEvents(merged,route.geometry);
+  merged=suppressPostSectionDuplicateCameras(merged);
   const mergedCameraCount=merged.filter(e=>String(e.type||'').includes('camera')||e.type==='section_speed_end').length;
   if(mergedCameraCount===0&&official.length){
     console.warn('[JOFAMS camera] merged camera count is zero; restoring official route cameras directly');
@@ -4351,7 +4366,7 @@ function clusterPhysicalCameras(events,rank=()=>0){
       ?hav(Number(e.lat),Number(e.lng),Number(ref.lat),Number(ref.lng)):Infinity;
     // 같은 물리 단속지점이 여러 기관/방향/출처로 중복된 경우 하나로 병합한다.
     // 회덕IC처럼 10~수십m 간격으로 3개 핀이 연속 표시되는 현상을 차단한다.
-    if(routeGap<=70||physicalGap<=55)g.push(e);else groups.push([e]);
+    if(routeGap<=120||physicalGap<=80)g.push(e);else groups.push([e]);
   }
   const out=[...rest];
   for(const g of groups){
@@ -4365,6 +4380,45 @@ function clusterPhysicalCameras(events,rank=()=>0){
     out.push(best);
   }
   return out;
+}
+function suppressPostSectionDuplicateCameras(events=[]){
+  const sorted=[...(events||[])].sort((a,b)=>(Number(a.routeDistance)||0)-(Number(b.routeDistance)||0));
+  const sectionEnds=sorted.filter(e=>e.type==='section_speed_end'&&Number.isFinite(Number(e.routeDistance)));
+  if(!sectionEnds.length)return sorted;
+  return sorted.filter(e=>{
+    if(!PHYSICAL_SPEED_FAMILY.has(e.type)||!Number.isFinite(Number(e.routeDistance)))return true;
+    const rd=Number(e.routeDistance);
+    for(const end of sectionEnds){
+      const gap=rd-Number(end.routeDistance);
+      // 구간단속 종점 직후 220m 안에서 같은 제한속도(주로 80km/h)로 연달아 잡히는 일반카메라는
+      // 종점 장비의 중복/차로별 레코드로 취급해 한 번만 보이게 한다.
+      if(gap>=-20&&gap<=220){
+        const sameLimit=!Number(end.maxspeed)||!Number(e.maxspeed)||Number(end.maxspeed)===Number(e.maxspeed);
+        const sameRoad=!end.roadName||!e.roadName||normalizeRoadName(end.roadName)===normalizeRoadName(e.roadName);
+        if(sameLimit&&(sameRoad||gap<=120))return false;
+      }
+    }
+    return true;
+  });
+}
+function addUserConfirmedHoedeokCamera(events=[],route){
+  // 사용자 실주행 확인: 회덕IC S-OIL(갑천도시고속도로 1084) 통과 후 대전방향 80km/h 과속카메라.
+  // 최신 공공 원천/보조 API가 누락해도 선택 경로 위에 1회만 표시하도록 보정한다.
+  const g=route?.geometry||[];if(g.length<2)return events;
+  const seed={lat:36.39145,lng:127.41314}; // 회덕IC주유소 바로 남측 도로축 기준점
+  const m=nearestPointOnRoute(seed.lng,seed.lat,g);if(!m||Number(m.distance)>120)return events;
+  const rh=Number(m.heading??routeHeadingAtIndex(g,m.index));
+  // 세종→대전(대체로 남행)일 때만 추가한다. 반대편 대전→세종에는 표시하지 않는다.
+  if(Number.isFinite(rh)&&!(rh>=105&&rh<=255))return events;
+  const rd=Number(m.routeDistance);
+  if(!Number.isFinite(rd))return events;
+  const nearby=(events||[]).some(e=>PHYSICAL_SPEED_FAMILY.has(e.type)&&Number.isFinite(Number(e.routeDistance))&&Math.abs(Number(e.routeDistance)-rd)<=180);
+  if(nearby)return events;
+  return [...events,{
+    id:'user-confirmed:hoedeok-ic-southbound-80',type:'speed_camera',lat:Number(m.lat),lng:Number(m.lng),routeIndex:Number(m.index),routeDistance:rd,
+    snapLng:Number(m.lng),snapLat:Number(m.lat),routeMatchDistance:Number(m.distance)||0,routeHeading:rh,maxspeed:80,
+    roadName:'갑천도시고속도로',name:'회덕IC주유소 지난 후 과속단속카메라',source:'사용자 실주행 확인 위치 보정',userConfirmed:true
+  }];
 }
 function mergeSafetyEvents(events,geometry){
   const priority=e=>{
@@ -4493,7 +4547,7 @@ function routeSnappedCameraItems(items){
     const prev=out[out.length-1];
     const routeGap=prev?Math.abs(e.__routeM-prev.__routeM):Infinity;
     const physicalGap=prev?hav(Number(e.lat),Number(e.lng),Number(prev.lat),Number(prev.lng)):Infinity;
-    if(prev&&(routeGap<=70||physicalGap<=55)){
+    if(prev&&(routeGap<=120||physicalGap<=80)){
       if(cameraDisplayPriority(e)<cameraDisplayPriority(prev)){
         out[out.length-1]={...e,maxspeed:Number(e.maxspeed)||Number(prev.maxspeed)||null};
       }else if(!Number(prev.maxspeed)&&Number(e.maxspeed))prev.maxspeed=e.maxspeed;
@@ -6483,3 +6537,5 @@ function arbitrateDrivePopups(){
 })();
 
 // build 7.6.11.6: hide stale current-position markers during drive; strict route-direction camera filtering; dedupe nearby physical camera rows; route-line camera projection.
+
+// build 7.6.11.7: hide drive destination pin, suppress post-section duplicate cameras, fix direction-code parsing, Hoedeok 80 fallback, simulation front-gate arrival.

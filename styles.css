@@ -3908,3 +3908,10 @@ body:has(#driveView:not(.hidden)) .maplibregl-user-location-accuracy-circle-cont
   visibility:hidden!important;
   opacity:0!important;
 }
+
+/* === 7.6.11.7 drive marker cleanup === */
+/* 길안내 중에는 경로선택용 목적지/출발지 핀을 절대 노출하지 않는다. 좌상단 빨간 잔상 방지. */
+body:has(#driveView:not(.hidden)) .maplibregl-marker:has(.destination-pin),
+body:has(#driveView:not(.hidden)) .maplibregl-marker:has(.origin-pin),
+body:has(#driveView:not(.hidden)) .destination-pin,
+body:has(#driveView:not(.hidden)) .origin-pin{display:none!important;visibility:hidden!important;opacity:0!important}
