@@ -3890,3 +3890,8 @@ html body #app #driveView[data-pop]:not([data-pop="lane"]) #laneAssistLayer{disp
 html body #app #driveView[data-gps="tunnel"] .speed-panel::after{content:"터널 중"!important}
 html body #app #driveView[data-gps="est"] .speed-panel::after{content:"위치추정"!important}
 html body #app .safety-map-marker.sign-badge,html body .safety-map-marker.sign-badge{display:none!important}
+
+/* ---------- 15. 7.6.11.5 주행 화면 지도 마커 정리 ---------- */
+/* 주행 화면에서는 차량 캐릭터 · 목적지/출발지 핀 · 안내 대상 카메라 핀 외의 지도 마커(빨간 점 포함)를 모두 숨긴다. */
+body:has(#driveView:not(.hidden)) .maplibregl-marker:not(.character-car-marker):not(.destination-pin):not(.origin-pin):not(.camera-pin){display:none!important}
+.maplibregl-marker.safety-map-marker.passed{display:none!important}

@@ -3570,13 +3570,13 @@ function driveCameraPadding(){
   if(landscape){
     /* 7.6.11.4 가로 화면: 캐릭터(지도 위 현재 위치)가 하단 메뉴에 가려지지 않도록,
        캐릭터 아래 끝이 하단 메뉴 카드의 위쪽 경계선 바로 위에 오게 지도 중심을 맞춘다.
-       마커는 중심 기준(anchor:center)이며 높이 76px 이므로 중심 = 카드 상단 - 38px - 3px. */
+       마커는 중심 기준(anchor:center)이며 높이 76px 이므로 중심 = 카드 상단 - 38px - 17px(여유). */
     try{
       const card=document.querySelector('#driveView .drive-bottom-card'),canvas=state.map?.getCanvas?.();
       if(card&&canvas){
         const r=card.getBoundingClientRect(),cr=canvas.getBoundingClientRect(),H=cr.height||h;
         if(r.height>0&&H>0){
-          const targetY=Math.max(H*.30,Math.min(H*.92,r.top-cr.top-41));
+          const targetY=Math.max(H*.30,Math.min(H*.92,r.top-cr.top-55));
           // 패딩 박스의 중심이 targetY 가 되도록: center = top + (H-top-bottom)/2
           if(targetY>=H/2)return{top:Math.round(2*targetY-H),bottom:0,left:0,right:0};
           return{top:0,bottom:Math.round(H-2*targetY),left:0,right:0};
@@ -3601,6 +3601,7 @@ function updateDriving(force=false){
   state.currentRouteIndex=idx;
   updateTunnelRouteLock(idx);
   announceTunnelAhead(idx);
+  updateSafetyMarkerVisibility();
   ensureUserMarker();
 
   const nextPoint=g[Math.min(g.length-1,idx+3)];
@@ -3834,17 +3835,32 @@ function updateSectionAverageSpeed(idx){
 function isGenericInstitutionDestination(dest){
   const t=`${dest?.name||''} ${dest?.address||''} ${dest?.category||''}`;
   const specific=/(후문|동문|서문|북문|남문|주차장|별관|본관|관사|연구동|사업소|센터동|사무동|제\d+.*건물|정문)/;
-  const institution=/(공사|공단|청|시청|도청|군청|구청|대학교|대학|병원|연구원|박물관|기관|학교|법원|검찰청|경찰서|소방서)/;
+  const institution=/(공사|공단|청|시청|도청|군청|구청|대학교|대학|병원|연구원|박물관|기관|학교|법원|검찰청|경찰서|소방서|아파트|단지|공원|캠퍼스|공장|리조트|터미널)/;
   return institution.test(t)&&!specific.test(t);
 }
-function arrivalRadiusMeters(dest){return isGenericInstitutionDestination(dest)?90:50}
+function arrivalRadiusMeters(dest){return isGenericInstitutionDestination(dest)?120:50}
+/* 7.6.11.5 경로 끝의 '도로명 없는 구내 진입 구간' 길이(m). 이 구간의 시작점이 정문/초입이다. */
+function internalTailMeters(){
+  const segs=state.route?.roadSegments||[],cum=state.routeCumulative||[],total=Number(cum.at(-1))||0;
+  if(!segs.length||!total)return 0;
+  let start=null;
+  for(let i=segs.length-1;i>=0;i--){
+    const sg=segs[i],nm=String(sg?.name||'').trim();
+    if(nm&&!/구내|단지내|내부|주차장|진입로|캠퍼스/.test(nm))break;
+    start=Number(sg.startIndex);
+  }
+  if(!Number.isFinite(start))return 0;
+  const len=total-(Number(cum[start])||0);
+  return len>=30&&len<=700?len:0;
+}
 function institutionArrivalLeadMeters(dest){
   if(!isGenericInstitutionDestination(dest))return 0;
   const t=`${dest?.name||''} ${dest?.address||''}`;
-  // 대형 사업장·청사 POI는 지도상의 중심점이 부지 안쪽에 잡히는 경우가 많다.
-  // 한국조폐공사 본사는 내부 건물까지 진입시키지 않고 정문 접근도로에서 안내를 종료한다.
-  if(/한국조폐공사|조폐공사/.test(t))return 180;
-  return 110;
+  // 대형 사업장·청사·단지 POI는 지도상의 중심점이 부지 안쪽에 잡히는 경우가 많다.
+  // 내부 건물까지 안내하지 않고 정문·진입로 초입에서 안내를 종료한다.
+  const base=/한국조폐공사|조폐공사/.test(t)?380:260;
+  const tail=internalTailMeters();
+  return tail>0?Math.max(tail+25,120):base;
 }
 
 function checkArrival(routeRemain){
@@ -3872,9 +3888,13 @@ function checkArrival(routeRemain){
   const reached=institutionGateReached||(rawToRouteEnd<=radius)||(remain<=30&&rawToRouteEnd<=radius+25)||(rawToPoi<=radius);
   if(!reached){state.arrivalCandidateSince=0;return false}
 
-  if(!state.arrivalCandidateSince)state.arrivalCandidateSince=Date.now();
-  // 1초 이상 연속 도착권 + 저/중속으로 통과하면 도착 확정. 고속도로 평행도로 오판 방지.
-  if(Date.now()-state.arrivalCandidateSince<1000||speed>12)return false;
+  // 정문/초입(institutionGateReached)에 들어서면 즉시 종료한다(대기·저속 조건 없음, 100km/h 초과만 오판 방지로 제외).
+  if(institutionGateReached){if(speed>28)return false}
+  else{
+    if(!state.arrivalCandidateSince)state.arrivalCandidateSince=Date.now();
+    // 1초 이상 연속 도착권 + 저/중속으로 통과하면 도착 확정. 고속도로 평행도로 오판 방지.
+    if(Date.now()-state.arrivalCandidateSince<1000||speed>12)return false;
+  }
   state.arrivalCandidateSince=0;
   speakNavOnce(`arrival:${state.destination.id||state.destination.name}`,'목적지에 도착했습니다.',0);
   setTimeout(stopNavigation,900);
@@ -4334,6 +4354,14 @@ function mergeSafetyEvents(events,geometry){
   }
   return clusterPhysicalCameras(out,priority).sort((a,b)=>(Number.isFinite(a.routeDistance)&&Number.isFinite(b.routeDistance))?a.routeDistance-b.routeDistance:a.routeIndex-b.routeIndex)
 }
+/* 7.6.11.5 이미 지나친 카메라 핀은 숨긴다. */
+function updateSafetyMarkerVisibility(){
+  const cur=Number(state.user?.routeDistance);if(!Number.isFinite(cur))return;
+  for(const m of state.safetyMarkers||[]){
+    const rd=Number(m.__rd);if(!Number.isFinite(rd))continue;
+    const el=m.getElement?.();if(el)el.classList.toggle('passed',rd<cur-25);
+  }
+}
 function clearSafetyMarkers(){for(const m of state.safetyMarkers||[])try{m.remove()}catch{}state.safetyMarkers=[]}
 
 function cameraClusterItemsByPixel(items){
@@ -4417,7 +4445,8 @@ function renderSafetyMarkers(){
   clearSafetyMarkers();
   if(!state.tripStartedAt||$('driveView')?.classList.contains('hidden'))return;
   const skip=['speed_limit','tunnel','curve_left','curve_right','double_curve','chronic_congestion'];
-  const cameraTypes=new Set(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','section_speed_end','bus_lane_camera','mobile_camera']);
+  /* 7.6.11.5 지도에는 안내 팝업이 뜨는 신호·속도·구간단속 카메라만 표시한다(이동식/버스전용차로 및 카메라 외 안전 마커 제거). */
+  const cameraTypes=new Set(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','section_speed_end']);
   const cameraItems=[];
   const otherItems=[];
 
@@ -4427,7 +4456,7 @@ function renderSafetyMarkers(){
       // safetyEvents는 이미 경로 매칭을 통과한 결과다.
       // 여기서 다시 거리검사를 하면 왕복 분리도로/하천도로 카메라가 중복 제거되므로 그대로 표시한다.
       cameraItems.push(e);
-    }else otherItems.push(e);
+    }/* 카메라 외 안전 마커(사고·공사·스쿨존 등)는 지도에 그리지 않는다. 안내 팝업/음성으로만 알린다. */
   }
 
   // 카메라는 실제 원본 좌표가 도로 가장자리여도 경로 선 정중앙으로 스냅하고,
@@ -4459,6 +4488,7 @@ function renderSafetyMarkers(){
           markerEl.style.opacity='1';
           markerEl.style.pointerEvents='none';
         }
+        marker.__rd=Number(e.__routeM);
         state.safetyMarkers.push(marker);
       }catch{}
     }
