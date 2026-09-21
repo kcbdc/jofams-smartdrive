@@ -4690,6 +4690,16 @@ function suppressPostSectionDuplicateCameras(events=[]){
         const sameRoad=!end.roadName||!e.roadName||normalizeRoadName(end.roadName)===normalizeRoadName(e.roadName);
         if(sameLimit&&(sameRoad||gap<=120))return false;
       }
+      /* 7.6.13.1: 구간단속 종점 직전 250m 이내에도, 같은 지점을 가리키는 구버전/타기관(비경찰청) 중복
+         레코드가 별도 관리번호의 개별 카메라로 남아있는 사례가 있었다(예: 세종→대전 종점 '시알들네거리
+         합류지점'이 경찰청 최신 데이터의 종점과 대전광역시 2022년 구버전 데이터에 각각 등록되어 종점
+         통과 직전 카메라 2개가 겹쳐 보임). currentOfficial(2025년 이후 경찰청 데이터)인 개별 카메라는
+         실제로 별도 지점일 수 있으므로 건드리지 않고, 구버전/타기관 레코드에 한해서만 접는다. */
+      if(!e.currentOfficial&&gap<-20&&gap>=-250){
+        const sameLimit=!Number(end.maxspeed)||!Number(e.maxspeed)||Number(end.maxspeed)===Number(e.maxspeed);
+        const sameRoad=!end.roadName||!e.roadName||normalizeRoadName(end.roadName)===normalizeRoadName(e.roadName);
+        if(sameLimit&&sameRoad)return false;
+      }
     }
     return true;
   });
