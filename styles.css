@@ -3862,15 +3862,23 @@ html body #app #driveView .vms-banner{top:calc(var(--t0) + calc(var(--u)*220))!i
 html body #app #driveView .lane-assist-layer{left:calc(var(--u)*990)!important;bottom:calc(var(--safeB) + calc(var(--u)*374))!important}
 }
 
-/* ---------- 13. 7.6.11.1 차로 안내(기본 도로 운행사항)를 상단 안내 자리로 이동 ---------- */
+/* ---------- 13. 주행 팝업 배치 + 우선순위(하나만 표시) ---------- */
+/* 차로 안내 · 과속주의 카드는 다른 안전 안내와 같은 상단 자리를 쓴다 (동시에 뜨지 않음) */
 @media (orientation:portrait){
 html body #app #driveView .lane-assist-layer{left:calc(var(--u)*216)!important;top:calc(var(--t0) + calc(var(--u)*412))!important;bottom:auto!important;right:auto!important;transform:none!important;width:calc(var(--u)*592)!important;z-index:84!important}
-html body #app #driveView:has(.lane-assist-layer:not(.hidden)) .safety-alert{top:calc(var(--t0) + calc(var(--u)*524))!important}
-html body #app #driveView:has(.lane-assist-layer:not(.hidden)) #sectionSpeedPanel{top:calc(var(--t0) + calc(var(--u)*510))!important}
-html body #app #driveView:has(.lane-assist-layer:not(.hidden)) .vms-banner{top:calc(var(--t0) + calc(var(--u)*752))!important}
+html body #app #driveView .overspeed-flash>div{left:calc(var(--u)*216)!important;top:calc(var(--t0) + calc(var(--u)*412))!important;max-width:none!important}
+html body #app #driveView[data-pop="section"] .vms-banner{top:calc(var(--t0) + calc(var(--u)*690))!important}
 }
 @media (orientation:landscape){
 html body #app #driveView .lane-assist-layer{left:calc(var(--u)*690)!important;top:calc(var(--t0) + calc(var(--u)*8))!important;bottom:auto!important;right:auto!important;transform:none!important;width:calc(var(--u)*592)!important;z-index:84!important}
-html body #app #driveView:has(.lane-assist-layer:not(.hidden)) .safety-alert,html body #app #driveView:has(.lane-assist-layer:not(.hidden)) #sectionSpeedPanel,html body #app #driveView:has(.lane-assist-layer:not(.hidden)) .drive-fuel-chip{top:calc(var(--t0) + calc(var(--u)*120))!important}
-html body #app #driveView:has(.lane-assist-layer:not(.hidden)) .vms-banner{top:calc(var(--t0) + calc(var(--u)*332))!important}
+html body #app #driveView .overspeed-flash>div{left:calc(var(--u)*690)!important;top:calc(var(--t0) + calc(var(--u)*8))!important;max-width:none!important}
+html body #app #driveView[data-pop]:not([data-pop="none"]) .drive-fuel-chip{display:none!important}
+html body #app #driveView[data-pop="section"] .vms-banner{top:calc(var(--t0) + calc(var(--u)*280))!important}
 }
+html body #app #driveView .overspeed-flash>div{position:absolute!important;transform:none!important;box-sizing:border-box!important;width:calc(var(--u)*592)!important;min-width:0!important;padding:calc(var(--u)*20) calc(var(--u)*34)!important;border-radius:calc(var(--u)*36)!important;background:linear-gradient(180deg,#c3182c 0%,#8d0f1f 100%)!important;border:calc(var(--u)*2) solid rgba(255,255,255,.22)!important;box-shadow:0 calc(var(--u)*12) calc(var(--u)*26) rgba(90,0,10,.38)!important;text-align:left!important;color:#fff!important;z-index:85!important}
+html body #app #driveView .overspeed-flash b{font-size:calc(var(--u)*44)!important;line-height:calc(var(--u)*54)!important;font-weight:800!important;letter-spacing:-.03em!important}
+html body #app #driveView .overspeed-flash span{margin-top:calc(var(--u)*4)!important;font-size:calc(var(--u)*28)!important;line-height:calc(var(--u)*36)!important;font-weight:500!important;white-space:nowrap!important;color:rgba(255,255,255,.92)!important}
+/* 1순위 구간단속 > 2순위 과속주의 > 3순위 신호·과속단속카메라 등 > 4순위 차로 안내 */
+html body #app #driveView[data-pop]:not([data-pop="overspeed"]) #overspeedFlash{display:none!important}
+html body #app #driveView[data-pop]:not([data-pop="safety"]) #safetyAlert{display:none!important}
+html body #app #driveView[data-pop]:not([data-pop="lane"]) #laneAssistLayer{display:none!important}

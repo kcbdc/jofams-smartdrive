@@ -4260,7 +4260,7 @@ function renderSafetyMarkers(){
   if(!state.map||!maplibregl?.Marker)return;
   clearSafetyMarkers();
   if(!state.tripStartedAt||$('driveView')?.classList.contains('hidden'))return;
-  const skip=['speed_limit','tunnel','curve_left','curve_right','double_curve'];
+  const skip=['speed_limit','tunnel','curve_left','curve_right','double_curve','chronic_congestion'];
   const cameraTypes=new Set(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','section_speed_end','bus_lane_camera','mobile_camera']);
   const cameraItems=[];
   const otherItems=[];
@@ -4412,7 +4412,7 @@ function computeSafetyCandidates(idx){
   if(!state.routeCumulative.length)return[];
   const speedNow=Math.max(0,Math.round((state.user?.speed||0)*3.6));
   /* 7.6.11.1 굽은 도로 / 이중 굽은 도로 안내는 표시하지 않는다 (경로 geometry 기반 합성 커브 이벤트 제거 + 실데이터 커브 제외) */
-  const NO_CARD_TYPES=['speed_limit','tunnel','curve_left','curve_right','double_curve'];
+  const NO_CARD_TYPES=['speed_limit','tunnel','curve_left','curve_right','double_curve','chronic_congestion'];
   const pool=[...(state.safetyEvents||[])];
   return pool.filter(e=>!NO_CARD_TYPES.includes(e.type)&&cameraAlertAllowed(e.type)).map(e=>({...e,d:distanceAlong(idx,e.routeIndex)})).filter(e=>{
     if(!(e.routeIndex>=idx-2&&e.d>=0&&e.d<=800))return false;
@@ -6167,3 +6167,30 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // build 7.6.9.4: drive HUD spacing refinement, dedicated safety states, section-speed declutter and mobile readability tuning
 
 // build 7.6.9.5: D1 Onnuri viewport is authoritative on the home map; stale off-screen markers are filtered and cache TTL reduced.
+
+/* 7.6.11.2 주행 팝업 우선순위: 동시에 여러 개가 뜨지 않고 하나만 표시한다.
+   1순위 구간단속(구간단속 패널 / 구간단속 시작·종료 안내) → 2순위 과속주의 → 3순위 신호·과속단속카메라 등 안전 안내 → 4순위 기본 도로 운행사항(차로 안내)
+   결과는 #driveView[data-pop] 로 표시하고, 숨김 처리는 styles.css 가 담당한다. */
+function arbitrateDrivePopups(){
+  const dv=document.getElementById('driveView');if(!dv)return;
+  const $$=(id)=>document.getElementById(id);
+  const shown=(id)=>{const e=$$(id);return !!e&&!e.classList.contains('hidden')};
+  const panel=shown('sectionSpeedPanel');
+  const sa=$$('safetyAlert'),saShown=shown('safetyAlert');
+  const saSection=saShown&&/^section_speed/.test(String(sa?.dataset?.safetyType||''));
+  const over=!!$$('overspeedFlash')?.classList.contains('active');
+  const lane=shown('laneAssistLayer');
+  let pop='none';
+  if(panel)pop='section';
+  else if(saSection)pop='safety';
+  else if(over)pop='overspeed';
+  else if(saShown)pop='safety';
+  else if(lane)pop='lane';
+  if(dv.dataset.pop!==pop)dv.dataset.pop=pop;
+}
+(function initDrivePopupArbiter(){
+  const ids=['sectionSpeedPanel','safetyAlert','laneAssistLayer','overspeedFlash'];
+  const mo=new MutationObserver(arbitrateDrivePopups);
+  ids.forEach(id=>{const e=document.getElementById(id);if(e)mo.observe(e,{attributes:true,attributeFilter:['class','data-safety-type']})});
+  arbitrateDrivePopups();
+})();
