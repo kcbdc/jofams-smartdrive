@@ -462,7 +462,7 @@ function cameraDirectionHint(row){
     for(const [k,h] of dirs){if(new RegExp(`(?:^|\s|\()${k}(?:향|쪽|방향|\s|$)`).test(all)){heading=h;break}}
   }
   const target=(all.match(/(?:→|->|방향\s*[:：]?\s*)([가-힣]{2,8})/)||[])[1]||'';
-  return {raw:all,heading,target};
+  return {raw:all,heading,target,reliable:Boolean(explicitRaw&&(Number.isFinite(heading)||target))};
 }
 function routeHeadingAtIndex(geometry,idx){
   if(!geometry?.length)return NaN;
@@ -473,8 +473,10 @@ function routeHeadingAtIndex(geometry,idx){
 function cameraDirectionCompatible(row,route,match){
   if(!route?.geometry?.length||!match)return true;
   const hint=cameraDirectionHint(row),rh=Number(match.heading??routeHeadingAtIndex(route.geometry,match.index));
-  if(Number.isFinite(hint.heading)&&Number.isFinite(rh)&&angleDiff(hint.heading,rh)>72)return false;
-  if(hint.target){
+  // 명시적인 카메라 촬영/단속방향이 있는 경우에만 방향 필터를 강하게 적용한다.
+  // 도로노선방향 코드나 출처가 불명확한 heading 값으로 실제 카메라 전체가 사라지는 문제를 방지한다.
+  if(hint.reliable&&Number.isFinite(hint.heading)&&Number.isFinite(rh)&&angleDiff(hint.heading,rh)>88)return false;
+  if(hint.reliable&&hint.target){
     const dest=[state.destination?.name,state.destination?.address].filter(Boolean).join(' ');
     // 명시된 "대전 방향/세종 방향"과 목적지 지역이 명확히 충돌하면 반대편 장비로 판단한다.
     if(dest&&/(대전|세종)/.test(hint.target)&&/(대전|세종)/.test(dest)&&!dest.includes(hint.target))return false;
@@ -483,10 +485,13 @@ function cameraDirectionCompatible(row,route,match){
 }
 function cameraEventDirectionCompatible(e,geometry){
   if(!geometry?.length)return true;
+  // 7.6.11.8: 원천에서 "명시적 촬영방향"이 확인된 카메라에만 2차 방향 필터를 적용한다.
+  // API heading/route heading을 카메라 방향으로 오인하면 모든 카메라가 제거될 수 있다.
+  if(e?.cameraDirectionReliable!==true)return true;
   const idx=Number(e?.routeIndex);if(!Number.isFinite(idx))return true;
   const rh=routeHeadingAtIndex(geometry,idx);
-  const eh=Number(e?.heading ?? e?.cameraHeading ?? e?.bearing);
-  if(Number.isFinite(eh)&&Number.isFinite(rh)&&angleDiff(eh,rh)>72)return false;
+  const eh=Number(e?.cameraHeading);
+  if(Number.isFinite(eh)&&Number.isFinite(rh)&&angleDiff(eh,rh)>88)return false;
   return true;
 }
 function statedSectionLengthMeters(row){
@@ -653,7 +658,7 @@ async function loadStaticCameraEvents(route){
     /* 7.6.11.4 카메라 좌표는 경로 선에서 50m(고속화도로 우선보정 120m) 안일 때만 채택한다. 기존 180~450m 허용은 옆길·반대편·평행도로 카메라까지 경로 위로 끌어와 한꺼번에 여러 대가 보이게 했다. */
     // 반대편 차선/램프 장비를 끌어오지 않도록 허용 반경을 축소한다.
     // 우선 고속화도로 데이터도 좌표 오차를 감안하되 55m를 넘기지 않는다.
-    const cameraTolerance=row.__priorityExpressway?55:34;
+    const cameraTolerance=row.__priorityExpressway?105:70;
     if(!Number.isFinite(d)||d>cameraTolerance)continue;
     const maxspeed=Number(pickField(row,['제한속도','lmttVe','speedLimit']))||0;
     const protectedArea=String(pickField(row,['보호구역구분','protectedArea'])).trim();
@@ -675,7 +680,7 @@ async function loadStaticCameraEvents(route){
     const base={
       id:`local-camera:${manageNo}`,type,lat,lng,routeIndex:idx,name,maxspeed,
       routeDistance:routeDistanceFromMatch(routeMatch,geometry),snapLng:routeMatch.lng,snapLat:routeMatch.lat,routeMatchDistance:d,
-      routeHeading:Number(routeMatch.heading??routeHeadingAtIndex(geometry,idx)),cameraDirection:dirHint.raw||'',cameraHeading:Number.isFinite(dirHint.heading)?dirHint.heading:null,
+      routeHeading:Number(routeMatch.heading??routeHeadingAtIndex(geometry,idx)),cameraDirection:dirHint.raw||'',cameraHeading:Number.isFinite(dirHint.heading)?dirHint.heading:null,cameraDirectionReliable:Boolean(dirHint.reliable),
       authority:String(pickField(row,['관리기관명','institutionNm'])).trim(),dataDate,currentOfficial:currentPolice,
       protectedArea,roadName,priorityExpressway:Boolean(row.__priorityExpressway),source:row.__priorityExpressway?'전국무인교통단속카메라표준데이터(세종→대전 고속화도로 우선보정)':'전국무인교통단속카메라표준데이터(로컬 파일)'
     };
@@ -1914,32 +1919,14 @@ function ensureUserMarker(){
   updateUserMarkerMotion();
 }
 function ensureDestinationMarker(){
-  if(!state.destination||!state.map)return;
-  let needsCreate=!state.destMarker;
-  if(state.destMarker){
-    const el=state.destMarker.getElement?.();
-    if(!el||!el.isConnected){
-      try{state.destMarker.remove()}catch{}
-      state.destMarker=null;needsCreate=true;
-    }
-  }
-  if(needsCreate){
-    state.destMarker=makeDestMarker().setLngLat([state.destination.lng,state.destination.lat]).addTo(state.map);
-  }else{
-    state.destMarker.setLngLat([state.destination.lng,state.destination.lat]);
-  }
-  const el=state.destMarker?.getElement?.();
-  if(el){
-    el.style.setProperty('z-index','70');
-    el.style.setProperty('display','block');
-    el.style.setProperty('visibility','visible');
-    el.style.setProperty('opacity','1');
-    el.style.pointerEvents='none';
-  }
+  // 7.6.11.8: 빨간 목적지 핀은 길안내 전/중 모두 사용하지 않는다.
+  // 경로선과 목적지 정보만으로 충분하며, 화면 좌상단에 잔상처럼 남는 빨간 마커를 원천 차단한다.
+  if(state.destMarker){try{state.destMarker.remove()}catch{}state.destMarker=null}
+  document.querySelectorAll('.destination-pin').forEach(el=>{try{el.remove()}catch{}});
 }
 function setDestinationMarker(){
   if(state.destMarker){try{state.destMarker.remove()}catch{}state.destMarker=null}
-  ensureDestinationMarker();
+  document.querySelectorAll('.destination-pin').forEach(el=>{try{el.remove()}catch{}});
 }
 function updateOriginMarker(){if(state.originMarker){state.originMarker.remove();state.originMarker=null}if(state.originMode!=='custom'||!state.origin||!state.map)return;const el=document.createElement('div');el.className='origin-pin';state.originMarker=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([state.origin.lng,state.origin.lat]).addTo(state.map)}
 function trafficClassFromValues(speed,stateCode){
@@ -4529,12 +4516,22 @@ function routeSnappedCameraItems(items){
   const projected=[];
   for(const e of items||[]){
     let idx=Number(e.routeIndex),srcDist=Number(e.routeMatchDistance)||0,exact=null;
-    // 표시 좌표는 항상 현재 선택 경로 선에 다시 투영하여 실제 주행 차선 위에 한 번만 보이게 한다.
-    const rematch=routePosOfPoint(Number(e.lng),Number(e.lat),g,Number.isFinite(Number(e.cameraHeading))?Number(e.cameraHeading):null,80);
-    if(rematch&&Number(rematch.distance)<=60){
-      idx=Number(rematch.index);srcDist=Number(rematch.distance)||0;exact={lng:rematch.lng,lat:rematch.lat,m:Number(rematch.routeDistance)};
-    }else if(Number.isFinite(Number(e.snapLng))&&Number.isFinite(Number(e.snapLat))&&Number.isFinite(Number(e.routeDistance))){
+    // 1순위: 이미 공식 카메라 로딩 단계에서 확정한 경로 투영값을 그대로 사용한다.
+    // 다시 60m 필터를 걸면 실제 카메라가 전부 사라질 수 있다.
+    if(Number.isFinite(Number(e.snapLng))&&Number.isFinite(Number(e.snapLat))&&Number.isFinite(Number(e.routeDistance))){
       exact={lng:Number(e.snapLng),lat:Number(e.snapLat),m:Number(e.routeDistance)};
+    }else if(Number.isFinite(Number(e.routeDistance))&&Number.isFinite(idx)){
+      const p=pointAtRouteDistance(Number(e.routeDistance));
+      if(p)exact={lng:Number(p.lng),lat:Number(p.lat),m:Number(e.routeDistance)};
+    }else{
+      // 원천 좌표만 있는 보조 이벤트는 넉넉한 범위에서 현재 경로에 1회 투영한다.
+      const rematch=routePosOfPoint(Number(e.lng),Number(e.lat),g,e?.cameraDirectionReliable===true&&Number.isFinite(Number(e.cameraHeading))?Number(e.cameraHeading):null,150);
+      if(rematch&&Number(rematch.distance)<=120){
+        idx=Number(rematch.index);srcDist=Number(rematch.distance)||0;exact={lng:rematch.lng,lat:rematch.lat,m:Number(rematch.routeDistance)};
+      }
+    }
+    if(!Number.isFinite(idx)&&exact&&Number.isFinite(exact.m)){
+      const p=pointAtRouteDistance(exact.m);if(p)idx=Number(p.index);
     }
     if(!Number.isFinite(idx))continue;
     idx=Math.max(0,Math.min(g.length-1,Math.round(idx)));
@@ -4547,10 +4544,10 @@ function routeSnappedCameraItems(items){
     const prev=out[out.length-1];
     const routeGap=prev?Math.abs(e.__routeM-prev.__routeM):Infinity;
     const physicalGap=prev?hav(Number(e.lat),Number(e.lng),Number(prev.lat),Number(prev.lng)):Infinity;
-    if(prev&&(routeGap<=120||physicalGap<=80)){
-      if(cameraDisplayPriority(e)<cameraDisplayPriority(prev)){
-        out[out.length-1]={...e,maxspeed:Number(e.maxspeed)||Number(prev.maxspeed)||null};
-      }else if(!Number(prev.maxspeed)&&Number(e.maxspeed))prev.maxspeed=e.maxspeed;
+    // 같은 물리 지점의 차로별/기관별 중복만 합치고, 별개의 카메라는 유지한다.
+    if(prev&&(routeGap<=55||physicalGap<=45)){
+      if(cameraDisplayPriority(e)<cameraDisplayPriority(prev))out[out.length-1]={...e,maxspeed:Number(e.maxspeed)||Number(prev.maxspeed)||null};
+      else if(!Number(prev.maxspeed)&&Number(e.maxspeed))prev.maxspeed=e.maxspeed;
       continue;
     }
     out.push(e);
@@ -4572,10 +4569,8 @@ function renderSafetyMarkers(){
   for(const e of state.safetyEvents||[]){
     if(skip.includes(e.type))continue;
     if(cameraTypes.has(e.type)){
-      if(!cameraEventDirectionCompatible(e,state.route?.geometry||[]))continue;
-      const rd=Number(e.routeDistance);
-      // 이미 지난 카메라와 현재 경로 진행방향에 맞지 않는 장비는 지도에 만들지 않는다.
-      if(Number.isFinite(curRouteM)&&Number.isFinite(rd)&&rd<curRouteM-12)continue;
+      // 방향/경로 매칭은 로딩 단계에서 이미 수행했다. 표시 단계에서 다시 필터링하지 않는다.
+      // 중복 2차 필터 때문에 모든 단속카메라가 사라지는 회귀를 방지한다.
       cameraItems.push(e);
     }/* 카메라 외 안전 마커(사고·공사·스쿨존 등)는 지도에 그리지 않는다. 안내 팝업/음성으로만 알린다. */
   }
@@ -6539,3 +6534,4 @@ function arbitrateDrivePopups(){
 // build 7.6.11.6: hide stale current-position markers during drive; strict route-direction camera filtering; dedupe nearby physical camera rows; route-line camera projection.
 
 // build 7.6.11.7: hide drive destination pin, suppress post-section duplicate cameras, fix direction-code parsing, Hoedeok 80 fallback, simulation front-gate arrival.
+// build 7.6.11.8: remove destination red pin globally; restore route cameras after over-filter regression; soften direction matching; thinner landscape HUD.

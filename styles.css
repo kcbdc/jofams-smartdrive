@@ -3915,3 +3915,101 @@ body:has(#driveView:not(.hidden)) .maplibregl-marker:has(.destination-pin),
 body:has(#driveView:not(.hidden)) .maplibregl-marker:has(.origin-pin),
 body:has(#driveView:not(.hidden)) .destination-pin,
 body:has(#driveView:not(.hidden)) .origin-pin{display:none!important;visibility:hidden!important;opacity:0!important}
+
+/* === 7.6.11.8 global red destination pin removal + landscape balance === */
+/* 빨간 목적지 핀은 길안내 전/중 모두 표시하지 않는다. */
+.destination-pin,
+.maplibregl-marker.destination-pin,
+.maplibregl-marker:has(.destination-pin){display:none!important;visibility:hidden!important;opacity:0!important}
+
+/* 가로모드: 티맵처럼 하단 정보바와 좌측 속도카드를 얇고 낮게 정리 */
+@media (orientation:landscape){
+  html body #app #driveView .drive-bottom-card{
+    left:clamp(130px,20vw,250px)!important;
+    right:clamp(90px,14vw,170px)!important;
+    bottom:calc(var(--safeB) + 6px)!important;
+    height:clamp(58px,16vh,74px)!important;
+    min-height:0!important;
+    padding:0 8px!important;
+    border-radius:20px!important;
+  }
+  html body #app #driveView .drive-bottom-icon{
+    width:clamp(58px,9vw,82px)!important;
+    height:100%!important;
+    gap:3px!important;
+    padding:0!important;
+  }
+  html body #app #driveView .drive-bottom-icon>span{
+    width:clamp(22px,3.6vw,30px)!important;
+    height:clamp(22px,3.6vw,30px)!important;
+  }
+  html body #app #driveView .drive-bottom-icon::after{
+    font-size:clamp(9px,1.4vw,12px)!important;
+    line-height:1!important;
+  }
+  html body #app #driveView .drive-bottom-summary{
+    padding:0 4px!important;
+  }
+  html body #app #driveView #driveBottomNormal>.dbn-row{
+    height:100%!important;
+  }
+  html body #app #driveView #driveBottomNormal .dbn-cell{
+    gap:2px!important;
+  }
+  html body #app #driveView .dbn-cell>small{
+    font-size:clamp(8px,1.25vw,11px)!important;
+    line-height:1.1!important;
+  }
+  html body #app #driveView #driveBottomNormal .dbn-cell>b{
+    font-size:clamp(20px,3.3vw,28px)!important;
+    line-height:1!important;
+  }
+  html body #app #driveView #driveBottomNormal #arrivalTime{
+    top:0!important;
+    font-size:clamp(12px,1.9vw,16px)!important;
+    line-height:1!important;
+  }
+  html body #app #driveView #driveBottomNormal #arrivalTime i{
+    font-size:clamp(9px,1.35vw,12px)!important;
+  }
+  html body #app #driveView #driveBottomNormal #arrivalTime b{
+    font-size:clamp(17px,2.6vw,22px)!important;
+  }
+
+  html body #app #driveView .speed-panel{
+    left:10px!important;
+    bottom:calc(var(--safeB) + 8px)!important;
+    width:clamp(72px,10vw,88px)!important;
+    height:clamp(78px,22vh,94px)!important;
+    min-height:0!important;
+    padding:0 5px 0 0!important;
+    grid-template-rows:28px 1fr 18px!important;
+    border-left-width:7px!important;
+    border-radius:16px!important;
+  }
+  html body #app #driveView .speed-panel::before{
+    width:22px!important;
+    height:18px!important;
+    margin-top:7px!important;
+  }
+  html body #app #driveView .speed-panel::after{
+    margin-top:6px!important;
+    font-size:clamp(10px,1.5vw,13px)!important;
+    line-height:1!important;
+  }
+  html body #app #driveView .speed-panel>strong{
+    font-size:clamp(28px,4.6vw,38px)!important;
+    line-height:1!important;
+  }
+  html body #app #driveView .speed-panel>span{
+    font-size:clamp(9px,1.4vw,12px)!important;
+    line-height:1!important;
+  }
+
+  html body #app #driveView .drive-map-controls{
+    bottom:calc(var(--safeB) + clamp(68px,18vh,88px))!important;
+  }
+  html body #app #driveView .drive-side-actions{
+    bottom:calc(var(--safeB) + clamp(64px,17vh,84px))!important;
+  }
+}
