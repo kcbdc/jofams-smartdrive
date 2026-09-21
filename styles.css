@@ -3882,3 +3882,8 @@ html body #app #driveView .overspeed-flash span{margin-top:calc(var(--u)*4)!impo
 html body #app #driveView[data-pop]:not([data-pop="overspeed"]) #overspeedFlash{display:none!important}
 html body #app #driveView[data-pop]:not([data-pop="safety"]) #safetyAlert{display:none!important}
 html body #app #driveView[data-pop]:not([data-pop="lane"]) #laneAssistLayer{display:none!important}
+
+/* ---------- 14. 7.6.11.3 GPS 추정(터널) 표시 / 상습정체 마커 완전 제거 ---------- */
+html body #app #driveView[data-gps="tunnel"] .speed-panel::after{content:"터널 중"!important}
+html body #app #driveView[data-gps="est"] .speed-panel::after{content:"위치추정"!important}
+html body #app .safety-map-marker.sign-badge,html body .safety-map-marker.sign-badge{display:none!important}
