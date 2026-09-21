@@ -3853,7 +3853,10 @@ html body #app #driveView .floating-ar{top:calc(var(--t0) + calc(var(--u)*7.5))!
 html body #app #driveView .traffic-route-rail{top:calc(var(--t0) + calc(var(--u)*151))!important;bottom:calc(var(--safeB) + calc(var(--u)*289))!important}
 html body #app #driveView .drive-side-actions{bottom:calc(var(--safeB) + calc(var(--u)*24))!important}
 html body #app #driveView .drive-bottom-card{left:calc(var(--u)*262)!important;right:calc(var(--u)*180)!important}
-html body #app #driveView .drive-map-controls{left:calc(var(--u)*262 + (100vw - var(--u)*442) / 2)!important;bottom:calc(var(--safeB) + calc(var(--u)*244))!important}
+/* 7.6.11.4 가로: 캐릭터가 하단 메뉴 바로 위(화면 중앙)에 서므로, 지도 컨트롤은 하단 메뉴 오른쪽 위로 옮겨 캐릭터를 가리지 않게 한다. */
+html body #app #driveView .drive-map-controls{left:auto!important;right:calc(var(--u)*180)!important;transform:none!important;transform-origin:right bottom!important;bottom:calc(var(--safeB) + calc(var(--u)*244))!important}
+@media (max-aspect-ratio:195/100){html body #app #driveView .drive-map-controls{transform:scale(.76)!important}}
+@media (max-aspect-ratio:180/100){html body #app #driveView .drive-map-controls{transform:scale(.66)!important}}
 html body #app #driveView .speed-panel{bottom:calc(var(--safeB) + calc(var(--u)*24))!important}
 html body #app #driveView .safety-alert,html body #app #driveView .safety-alert:is(.type-speed_camera,.type-signal_speed_camera,.type-signal_camera,.type-traffic_camera,.type-mobile_camera,.type-bus_lane_camera,.type-section_speed_camera,.type-section_speed_end){top:calc(var(--t0) + calc(var(--u)*8))!important;left:calc(var(--u)*690)!important}
 html body #app #driveView #sectionSpeedPanel{top:calc(var(--t0) + calc(var(--u)*8))!important;left:calc(var(--u)*690)!important}
