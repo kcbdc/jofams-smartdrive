@@ -447,7 +447,7 @@ function officialBusLaneCamera(row){
 }
 
 /* 7.6.11.6 카메라 진행방향 판정: 데이터에 각도/방향 문구가 있으면 현재 경로 진행방향과 교차검증한다. */
-function cameraDirectionHint(row){
+function cameraDirectionHintRaw(row){
   // '도로노선방향'의 1/2/3은 상·하행/양방향 코드이지 각도(deg)가 아니다.
   // 이전에는 이를 1°/2°/3°로 오인해 실제 진행방향 카메라를 반대방향으로 판정하는 문제가 있었다.
   const explicitRaw=String(pickField(row,['단속방향','설치방향','촬영방향','카메라방향','방향','direction','cameraDirection'])||'').trim();
@@ -459,10 +459,16 @@ function cameraDirectionHint(row){
   let heading=explicitRaw&&Number.isFinite(num)&&num>=0&&num<=360?num:null;
   if(heading==null){
     const dirs=[['북동',45],['동북',45],['남동',135],['동남',135],['남서',225],['서남',225],['북서',315],['서북',315],['북',0],['동',90],['남',180],['서',270]];
-    for(const [k,h] of dirs){if(new RegExp(`(?:^|\s|\()${k}(?:향|쪽|방향|\s|$)`).test(all)){heading=h;break}}
+    /* 7.6.11.9 수정: 템플릿 리터럴 안의 \s / \( 는 이스케이프가 사라져 'Invalid regular expression' 예외가 발생했고,
+       그 결과 loadStaticCameraEvents 전체가 실패해 모든 공식 단속카메라가 사라졌다. 문자열 연결 + 이중 백슬래시로 교체. */
+    for(const [k,h] of dirs){if(new RegExp('(?:^|\\s|\\()'+k+'(?:향|쪽|방향|\\s|$)').test(all)){heading=h;break}}
   }
   const target=(all.match(/(?:→|->|방향\s*[:：]?\s*)([가-힣]{2,8})/)||[])[1]||'';
   return {raw:all,heading,target,reliable:Boolean(explicitRaw&&(Number.isFinite(heading)||target))};
+}
+/* 7.6.11.9 방향 판정 도우미는 어떤 입력에서도 예외를 던지지 않는다(예외 → 공식 카메라 전체 소실 방지). */
+function cameraDirectionHint(row){
+  try{return cameraDirectionHintRaw(row)}catch(e){console.warn('[JOFAMS camera] direction hint failed',e);return{raw:'',heading:null,target:'',reliable:false}}
 }
 function routeHeadingAtIndex(geometry,idx){
   if(!geometry?.length)return NaN;
@@ -471,6 +477,9 @@ function routeHeadingAtIndex(geometry,idx){
   return bearing(a[1],a[0],b[1],b[0]);
 }
 function cameraDirectionCompatible(row,route,match){
+  try{return cameraDirectionCompatibleRaw(row,route,match)}catch(e){console.warn('[JOFAMS camera] direction check failed',e);return true}
+}
+function cameraDirectionCompatibleRaw(row,route,match){
   if(!route?.geometry?.length||!match)return true;
   const hint=cameraDirectionHint(row),rh=Number(match.heading??routeHeadingAtIndex(route.geometry,match.index));
   // 명시적인 카메라 촬영/단속방향이 있는 경우에만 방향 필터를 강하게 적용한다.
@@ -484,6 +493,9 @@ function cameraDirectionCompatible(row,route,match){
   return true;
 }
 function cameraEventDirectionCompatible(e,geometry){
+  try{return cameraEventDirectionCompatibleRaw(e,geometry)}catch(err){return true}
+}
+function cameraEventDirectionCompatibleRaw(e,geometry){
   if(!geometry?.length)return true;
   // 7.6.11.8: 원천에서 "명시적 촬영방향"이 확인된 카메라에만 2차 방향 필터를 적용한다.
   // API heading/route heading을 카메라 방향으로 오인하면 모든 카메라가 제거될 수 있다.
@@ -641,10 +653,11 @@ async function loadStaticCameraEvents(route){
   const geometry=route?.geometry||[]; if(!rows.length||!geometry.length)return [];
   const bounds=expandBounds(geometryBounds(geometry),1400),out=[],sectionNodes=[];
   for(const row of rows){
+    try{
     const lat=Number(pickField(row,['위도','latitude','lat'])),lng=Number(pickField(row,['경도','longitude','lng','lon']));
     if(!Number.isFinite(lat)||!Number.isFinite(lng)||!inBounds(lat,lng,bounds))continue;
     const dirHint=cameraDirectionHint(row);
-    const routeMatch=Number.isFinite(dirHint.heading)
+    const routeMatch=(dirHint.reliable&&Number.isFinite(dirHint.heading))
       ?cameraRouteMatch(lng,lat,route,dirHint.heading)
       :nearestPointOnRoute(lng,lat,geometry);
     if(!routeMatch||!Number.isFinite(Number(routeMatch.index)))continue;
@@ -688,6 +701,7 @@ async function loadStaticCameraEvents(route){
     if(/어린이|스쿨|school/i.test(protectedArea)){
       out.push({...base,id:`${base.id}:school`,type:'school_zone',name:`${name} 어린이보호구역`,maxspeed:maxspeed||30});
     }
+    }catch(rowErr){console.warn('[JOFAMS camera] row skipped',rowErr)} // 한 행의 오류가 전체 카메라를 없애지 않도록 격리
   }
   const known=buildKnownGujikSectionEvents(sectionNodes,route);
   out.push(...known.events,...buildSectionSpeedEvents(known.remaining,route));
@@ -4313,10 +4327,13 @@ async function loadSafetyEvents(route){
     supplemental=[...regionalOthers,...buildSectionSpeedEvents(regionalSectionNodes,route)];
   }catch(e){if(seq!==state.safetyRequestSeq)return;console.warn('supplemental safety fetch failed',e)}
   let merged=mergeSafetyEvents([...primary,...official,...supplemental],route.geometry);
-  merged=suppressPostSectionDuplicateCameras(merged);
-  merged=addUserConfirmedHoedeokCamera(merged,route);
-  merged=mergeSafetyEvents(merged,route.geometry);
-  merged=suppressPostSectionDuplicateCameras(merged);
+  // 후처리 단계에서 예외가 나도 병합된 카메라는 그대로 유지한다.
+  for(const step of [
+    m=>suppressPostSectionDuplicateCameras(m),
+    m=>addUserConfirmedHoedeokCamera(m,route),
+    m=>mergeSafetyEvents(m,route.geometry),
+    m=>suppressPostSectionDuplicateCameras(m)
+  ]){try{const r=step(merged);if(Array.isArray(r))merged=r}catch(e){console.warn('[JOFAMS camera] post-merge step failed',e)}}
   const mergedCameraCount=merged.filter(e=>String(e.type||'').includes('camera')||e.type==='section_speed_end').length;
   if(mergedCameraCount===0&&official.length){
     console.warn('[JOFAMS camera] merged camera count is zero; restoring official route cameras directly');
@@ -4393,7 +4410,8 @@ function addUserConfirmedHoedeokCamera(events=[],route){
   // 최신 공공 원천/보조 API가 누락해도 선택 경로 위에 1회만 표시하도록 보정한다.
   const g=route?.geometry||[];if(g.length<2)return events;
   const seed={lat:36.39145,lng:127.41314}; // 회덕IC주유소 바로 남측 도로축 기준점
-  const m=nearestPointOnRoute(seed.lng,seed.lat,g);if(!m||Number(m.distance)>120)return events;
+  // 7.6.11.9: nearestPointOnRoute 는 routeDistance 를 반환하지 않아 이 보정이 항상 조용히 무시되었다 → routePosOfPoint 사용
+  const m=routePosOfPoint(seed.lng,seed.lat,g,null,150);if(!m||Number(m.distance)>120)return events;
   const rh=Number(m.heading??routeHeadingAtIndex(g,m.index));
   // 세종→대전(대체로 남행)일 때만 추가한다. 반대편 대전→세종에는 표시하지 않는다.
   if(Number.isFinite(rh)&&!(rh>=105&&rh<=255))return events;
@@ -4730,8 +4748,10 @@ function computeSafetyCandidates(idx){
       // 카메라 존재 안내는 현재 속도와 무관하게 제공. 과속 경고는 updateOverspeed가 별도로 담당한다.
       if(e.d>win)return false;
       if(e.type!=='mobile_camera'&&e.type!=='bus_lane_camera'){
-        const matchMeters=e.priorityExpressway?55:34;
-        return cameraMatchesRouteRoad(e,geometry,idx,matchMeters);
+        // 로딩 단계에서 경로 매칭(허용 반경 내 투영)을 통과한 카메라는 그대로 안내한다. 지도 핀과 안내 카드 기준이 달라
+        // '핀은 보이는데 안내가 없는' 카메라가 생기지 않게 한다.
+        if(Number.isFinite(Number(e.routeDistance))&&Number.isFinite(Number(e.routeMatchDistance)))return true;
+        return cameraMatchesRouteRoad(e,geometry,idx,e.priorityExpressway?105:70);
       }
     }
     return true;
@@ -6535,3 +6555,4 @@ function arbitrateDrivePopups(){
 
 // build 7.6.11.7: hide drive destination pin, suppress post-section duplicate cameras, fix direction-code parsing, Hoedeok 80 fallback, simulation front-gate arrival.
 // build 7.6.11.8: remove destination red pin globally; restore route cameras after over-filter regression; soften direction matching; thinner landscape HUD.
+// build 7.6.11.9: fix invalid RegExp (template-literal escapes) in cameraDirectionHint that threw inside loadStaticCameraEvents and removed every official route camera; isolate per-row / post-merge errors; alert criteria aligned with map pins; Hoedeok fallback camera now actually added.
