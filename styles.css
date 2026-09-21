@@ -3861,3 +3861,16 @@ html body #app #driveView .drive-fuel-chip{top:calc(var(--t0) + calc(var(--u)*8)
 html body #app #driveView .vms-banner{top:calc(var(--t0) + calc(var(--u)*220))!important;left:calc(var(--u)*690)!important}
 html body #app #driveView .lane-assist-layer{left:calc(var(--u)*990)!important;bottom:calc(var(--safeB) + calc(var(--u)*374))!important}
 }
+
+/* ---------- 13. 7.6.11.1 차로 안내(기본 도로 운행사항)를 상단 안내 자리로 이동 ---------- */
+@media (orientation:portrait){
+html body #app #driveView .lane-assist-layer{left:calc(var(--u)*216)!important;top:calc(var(--t0) + calc(var(--u)*412))!important;bottom:auto!important;right:auto!important;transform:none!important;width:calc(var(--u)*592)!important;z-index:84!important}
+html body #app #driveView:has(.lane-assist-layer:not(.hidden)) .safety-alert{top:calc(var(--t0) + calc(var(--u)*524))!important}
+html body #app #driveView:has(.lane-assist-layer:not(.hidden)) #sectionSpeedPanel{top:calc(var(--t0) + calc(var(--u)*510))!important}
+html body #app #driveView:has(.lane-assist-layer:not(.hidden)) .vms-banner{top:calc(var(--t0) + calc(var(--u)*752))!important}
+}
+@media (orientation:landscape){
+html body #app #driveView .lane-assist-layer{left:calc(var(--u)*690)!important;top:calc(var(--t0) + calc(var(--u)*8))!important;bottom:auto!important;right:auto!important;transform:none!important;width:calc(var(--u)*592)!important;z-index:84!important}
+html body #app #driveView:has(.lane-assist-layer:not(.hidden)) .safety-alert,html body #app #driveView:has(.lane-assist-layer:not(.hidden)) #sectionSpeedPanel,html body #app #driveView:has(.lane-assist-layer:not(.hidden)) .drive-fuel-chip{top:calc(var(--t0) + calc(var(--u)*120))!important}
+html body #app #driveView:has(.lane-assist-layer:not(.hidden)) .vms-banner{top:calc(var(--t0) + calc(var(--u)*332))!important}
+}

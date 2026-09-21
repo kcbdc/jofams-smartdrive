@@ -4411,11 +4411,10 @@ const SAFETY_PRIORITY={accident:0,accident_hotspot:1,fog_zone:1,heavy_rain_zone:
 function computeSafetyCandidates(idx){
   if(!state.routeCumulative.length)return[];
   const speedNow=Math.max(0,Math.round((state.user?.speed||0)*3.6));
-  const synthetic=[];
-  const curve=detectCurveAhead(idx);
-  if(curve)synthetic.push({id:`curve:${curve.type}:${curve.routeIndex}`,type:curve.type,routeIndex:curve.routeIndex});
-  const pool=[...(state.safetyEvents||[]),...synthetic];
-  return pool.filter(e=>!['speed_limit','tunnel'].includes(e.type)&&cameraAlertAllowed(e.type)).map(e=>({...e,d:distanceAlong(idx,e.routeIndex)})).filter(e=>{
+  /* 7.6.11.1 굽은 도로 / 이중 굽은 도로 안내는 표시하지 않는다 (경로 geometry 기반 합성 커브 이벤트 제거 + 실데이터 커브 제외) */
+  const NO_CARD_TYPES=['speed_limit','tunnel','curve_left','curve_right','double_curve'];
+  const pool=[...(state.safetyEvents||[])];
+  return pool.filter(e=>!NO_CARD_TYPES.includes(e.type)&&cameraAlertAllowed(e.type)).map(e=>({...e,d:distanceAlong(idx,e.routeIndex)})).filter(e=>{
     if(!(e.routeIndex>=idx-2&&e.d>=0&&e.d<=800))return false;
     if(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','section_speed_end'].includes(e.type)){
       // 카메라 존재 안내는 현재 속도와 무관하게 제공. 과속 경고는 updateOverspeed가 별도로 담당한다.
