@@ -3895,3 +3895,16 @@ html body #app .safety-map-marker.sign-badge,html body .safety-map-marker.sign-b
 /* 주행 화면에서는 차량 캐릭터 · 목적지/출발지 핀 · 안내 대상 카메라 핀 외의 지도 마커(빨간 점 포함)를 모두 숨긴다. */
 body:has(#driveView:not(.hidden)) .maplibregl-marker:not(.character-car-marker):not(.destination-pin):not(.origin-pin):not(.camera-pin){display:none!important}
 .maplibregl-marker.safety-map-marker.passed{display:none!important}
+
+/* === 7.6.11.6 drive marker cleanup + current-road camera only === */
+/* 길안내 진입 전의 현재위치/출발지 보조 점은 주행 HUD에서 완전히 숨긴다. */
+body:has(#driveView:not(.hidden)) .maplibregl-marker:has(.origin-pin),
+body:has(#driveView:not(.hidden)) .origin-pin,
+body:has(#driveView:not(.hidden)) .maplibregl-user-location-dot,
+body:has(#driveView:not(.hidden)) .maplibregl-user-location-dot-stale,
+body:has(#driveView:not(.hidden)) .maplibregl-user-location-accuracy-circle,
+body:has(#driveView:not(.hidden)) .maplibregl-user-location-accuracy-circle-container{
+  display:none!important;
+  visibility:hidden!important;
+  opacity:0!important;
+}
