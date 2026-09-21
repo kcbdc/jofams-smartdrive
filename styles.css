@@ -4023,4 +4023,12 @@ body:has(#driveView:not(.hidden)) .origin-pin{display:none!important;visibility:
 .onnuri-focus{animation:onnuriFocusPulse 1.2s ease-out 3}
 .onnuri-shop-marker.onnuri-focus{border-color:#ef7d00!important;box-shadow:0 0 0 4px rgba(239,125,0,.3),0 6px 16px rgba(116,62,0,.3)!important}
 .onnuri-zone-marker.onnuri-focus .onnuri-zone-label{border-color:#ef7d00!important;box-shadow:0 0 0 3px rgba(239,125,0,.3)!important}
+
+/* === 7.6.13.0 지역사랑상품권 마커 겹침 해소(온누리와 동일한 방식) === */
+.voucher-shop-marker>span:not(:empty){display:flex!important;align-items:center;justify-content:center}
+.voucher-leader{width:0;height:0;pointer-events:none}
+.voucher-leader-line{position:absolute;left:0;top:-1px;height:2px;border-radius:1px;background:rgba(36,90,168,.65);transform-origin:0 50%;pointer-events:none}
+.voucher-leader-dot{position:absolute;left:-5px;top:-5px;width:10px;height:10px;border-radius:50%;background:#245aa8;border:2px solid #fff;box-sizing:border-box;box-shadow:0 1px 4px rgba(0,0,0,.35);pointer-events:none}
+.voucher-focus{animation:onnuriFocusPulse 1.2s ease-out 3}
+.voucher-shop-marker.voucher-focus{border-color:#ef7d00!important;box-shadow:0 0 0 4px rgba(239,125,0,.3),0 6px 16px rgba(116,62,0,.3)!important}
 .where-to-meta-pills .where-to-mapbtn{background:#eaf1ff!important;color:#1c56d9!important;border:1px solid #c9dbff!important;font-weight:800!important;font-style:normal;cursor:pointer}

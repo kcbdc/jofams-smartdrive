@@ -19,7 +19,7 @@ const state = {
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
   savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:'B027',fuelData:null,fuelFetchedAt:0,fuelLoading:false,destinationSearchSort:'accuracy',lastDestinationQuery:'',routeMode:'car',carRouteOptions:[],walkingRoute:null,routeModeDurations:{car:null,walk:null},homeFacilityCategory:'주유소',homeFacilityItems:[],
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
-  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapSatellite:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,homeSheetDrag:null,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherData:null,localVoucherRetryCount:0,localVoucherLastErrorAt:0,localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,localVoucherLoadedCenter:null,onnuriMarkers:[],onnuriData:null,onnuriLoadedAt:0,onnuriLoadedCenter:null,onnuriLoadTimer:0,homeCameraMarkers:[],homeCameraLoadTimer:0,
+  tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapSatellite:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,homeSheetDrag:null,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherData:null,localVoucherRetryCount:0,localVoucherLastErrorAt:0,localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,localVoucherLoadedCenter:null,localVoucherFocus:null,onnuriMarkers:[],onnuriData:null,onnuriLoadedAt:0,onnuriLoadedCenter:null,onnuriLoadTimer:0,homeCameraMarkers:[],homeCameraLoadTimer:0,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,adminVerified:false,adminVerifiedEmail:'',loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,simulationActive:false,simulationSpeed:1,simulationDistance:null,simulationLastAt:0,simulationRaf:0,
   compassHeading:null,compassAt:0,compassReady:false,activeLaneGuideKey:'',nativeLocationAt:0,nativeLocationActive:false,imu:{at:0,yawRateDegS:0,accelMagnitude:0,headingDeg:null},mapMatch:{index:0,routeDistance:0,score:Infinity,confidence:0,at:0},offRouteHeadingHits:0,gpsFix:{lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false},
   whereToTab:'local',wakeLock:null,savedPlaceGroups:[],savedPlaceGroupMap:{},activeSavedGroup:'all',
@@ -1351,14 +1351,19 @@ function renderWhereToList(){
     const use=voucherUseFlags(x).join(' · ');
     return `<button type="button" class="where-to-item" data-where-index="${i}">
       <span class="where-to-rank">${i+1}</span>
-      <span class="where-to-info"><b>${escapeHtml(x.name||'가맹점')}</b><small>${escapeHtml(x.address||'주소 정보 없음')}</small><em>${escapeHtml(use||'지역사랑상품권')}</em></span>
+      <span class="where-to-info">
+        <b>${escapeHtml(x.name||'가맹점')}</b>
+        <small>${escapeHtml(x.address||'주소 정보 없음')}</small>
+        <em>${escapeHtml(use||'지역사랑상품권')}</em>
+        <span class="where-to-meta-pills"><i class="where-to-mapbtn" role="button" tabindex="0" data-where-map="${i}">지도에서 보기</i></span>
+      </span>
       <strong>${whereDistanceLabel(x._distance)}</strong>
     </button>`;
   }).join('');
 
   // 목록의 가맹점을 지도에서 바로 확인: 해당 위치로 이동하고 마커를 강조한다.
   box.querySelectorAll('[data-where-map]').forEach(btn=>{
-    const go=e=>{e.preventDefault();e.stopPropagation();const p=currentWhereItems()[Number(btn.dataset.whereMap)];if(p)focusOnnuriItem(p)};
+    const go=e=>{e.preventDefault();e.stopPropagation();const p=currentWhereItems()[Number(btn.dataset.whereMap)];if(!p)return;state.whereToTab==='onnuri'?focusOnnuriItem(p):focusVoucherItem(p)};
     btn.onclick=go;btn.onkeydown=e=>{if(e.key==='Enter'||e.key===' ')go(e)};
   });
   box.querySelectorAll('[data-where-index]').forEach(btn=>btn.onclick=async()=>{
@@ -1391,6 +1396,21 @@ function focusOnnuriItem(item){
     if(done)return;done=true;
     try{if(state.onnuriData)renderOnnuriMarkers(state.onnuriData)}catch{}
     setTimeout(()=>{try{openOnnuriStoreInfo(item)}catch{}},150);
+  };
+  try{state.map.once('moveend',()=>setTimeout(finish,60))}catch{}
+  try{state.map.easeTo({center:[lng,lat],zoom:Math.max(Number(state.map.getZoom())||0,17),duration:520})}catch{}
+  setTimeout(finish,1100);
+}
+function focusVoucherItem(item){
+  const lng=Number(item?.lng),lat=Number(item?.lat);
+  if(!state.map||!Number.isFinite(lng)||!Number.isFinite(lat))return;
+  state.localVoucherFocus={key:voucherFocusKeyOf(item),at:Date.now()};
+  closeWhereTo();
+  let done=false;
+  const finish=()=>{
+    if(done)return;done=true;
+    try{if(state.localVoucherData)renderLocalVoucherMarkers(state.localVoucherData)}catch{}
+    setTimeout(()=>{try{openVoucherStoreInfo(item)}catch{}},150);
   };
   try{state.map.once('moveend',()=>setTimeout(finish,60))}catch{}
   try{state.map.easeTo({center:[lng,lat],zoom:Math.max(Number(state.map.getZoom())||0,17),duration:520})}catch{}
@@ -1679,23 +1699,120 @@ function openOnnuriBuildingList(items,opts={}){
   $('voucherBuildingModal')?.classList.remove('hidden');
 }
 
-function renderVoucherShopMarkers(items){
-  for(const item of (items||[])){
-    const lng=Number(item.lng),lat=Number(item.lat);
-    if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;
-    const el=document.createElement('button');
-    el.type='button';
-    el.className='voucher-shop-marker';
-    el.title=item.name||'지역사랑상품권 가맹점';
-    el.innerHTML=voucherShopSvg();
-    el.onclick=e=>{e.stopPropagation();openVoucherStoreInfo(item)};
-    try{
-      state.localVoucherMarkers.push(
-        new maplibregl.Marker({element:el,anchor:'bottom'})
-          .setLngLat([lng,lat]).addTo(state.map)
-      );
-    }catch{}
+/* ===== 7.6.13.0 지역사랑상품권 마커: 온누리와 동일한 방식의 겹침 해소 =====
+   - 같은 건물 가맹점은 개수 배지로 묶는다.
+   - 화면에서 서로 겹치는 가맹점(건물이 달라도)은 6곳 이하면 펼쳐서 개별 표시, 7곳 이상이면 개수 배지로 묶는다.
+   - 그래도 자리가 없는 마커는 가까운 빈자리로 옮기고, 원래 위치와 가는 선·점으로 잇는다(declutterVoucherMarkers). */
+function voucherFocusKeyOf(item){
+  return `shop:${voucherBuildingKey(item)}`;
+}
+function addVoucherMarker(el,lng,lat,anchor,priority,focusKey='',items=[]){
+  const rec={el,lng,lat,anchor,priority:Number(priority)||0,marker:null,key:focusKey,items};
+  el.style.zIndex='6';
+  const f=state.localVoucherFocus;
+  if(focusKey&&f&&f.key===focusKey&&Date.now()-Number(f.at||0)<90000){el.classList.add('voucher-focus');el.style.zIndex='9';rec.priority=1e9}
+  try{rec.marker=new maplibregl.Marker({element:el,anchor}).setLngLat([lng,lat]).addTo(state.map);state.localVoucherMarkers.push(rec.marker)}catch{return null}
+  return rec;
+}
+function voucherShopGroups(items){
+  const grouped=new Map();
+  for(const item of items||[]){
+    if(!Number.isFinite(Number(item.lng))||!Number.isFinite(Number(item.lat)))continue;
+    const key=voucherBuildingKey(item);
+    if(!grouped.has(key))grouped.set(key,[]);
+    grouped.get(key).push(item);
   }
+  return [...grouped.values()].map(list=>({lng:Number(list[0].lng),lat:Number(list[0].lat),items:list}));
+}
+/* 화면에서 서로 겹치는 가맹점 그룹을 묶는다(온누리 clusterOnnuriGroupsByOverlap과 동일한 방식).
+   6곳 이하 묶음은 개별 마커로(겹침은 배치 단계에서 해소), 초과하면 개수 배지로 표시. */
+function clusterVoucherGroupsByOverlap(groups,thresholdPx=34,maxIndividual=6){
+  if(!state.map?.project)return{singles:groups,clusters:[]};
+  const pts=[];
+  for(const g of groups){try{const p=state.map.project([g.lng,g.lat]);if(p&&Number.isFinite(p.x)&&Number.isFinite(p.y))pts.push({g,x:p.x,y:p.y})}catch{}}
+  const parent=pts.map((_,i)=>i),grid=new Map();
+  const find=i=>{while(parent[i]!==i){parent[i]=parent[parent[i]];i=parent[i]}return i};
+  pts.forEach((p,i)=>{
+    const cx=Math.floor(p.x/thresholdPx),cy=Math.floor(p.y/thresholdPx);
+    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
+      const l=grid.get(`${cx+dx}:${cy+dy}`);if(!l)continue;
+      for(const j of l){const ddx=pts[j].x-p.x,ddy=pts[j].y-p.y;if(ddx*ddx+ddy*ddy<=thresholdPx*thresholdPx){const a=find(i),b=find(j);if(a!==b)parent[a]=b}}
+    }
+    const k=`${cx}:${cy}`;if(!grid.has(k))grid.set(k,[]);grid.get(k).push(i);
+  });
+  const comps=new Map();
+  pts.forEach((p,i)=>{const r=find(i);if(!comps.has(r))comps.set(r,[]);comps.get(r).push(p)});
+  const singles=[],clusters=[];
+  for(const list of comps.values()){
+    if(list.length<=maxIndividual){for(const p of list)singles.push(p.g);continue}
+    let sx=0,sy=0,count=0,items=[];
+    for(const p of list){sx+=p.x;sy+=p.y;count+=p.g.items.length;items=items.concat(p.g.items)}
+    let c=null;try{c=state.map.unproject([sx/list.length,sy/list.length])}catch{}
+    clusters.push({lng:c?.lng??list[0].g.lng,lat:c?.lat??list[0].g.lat,count,items});
+  }
+  return{singles,clusters};
+}
+function sortVoucherByDistance(items){
+  const list=(items||[]).filter(Boolean);
+  if(!pointValid(state.user))return list;
+  return list.map(x=>({x,d:voucherGeoMeters(state.user.lat,state.user.lng,Number(x.lat),Number(x.lng))})).sort((a,b)=>(Number.isFinite(a.d)?a.d:1e12)-(Number.isFinite(b.d)?b.d:1e12)).map(o=>o.x);
+}
+function addVoucherLeader(lng,lat,len,angDeg){
+  try{
+    const root=document.createElement('div');root.className='voucher-leader';root.style.zIndex='3';
+    root.innerHTML=`<i class="voucher-leader-line" style="width:${Math.round(len)}px;transform:rotate(${angDeg.toFixed(1)}deg)"></i><i class="voucher-leader-dot"></i>`;
+    state.localVoucherMarkers.push(new maplibregl.Marker({element:root,anchor:'center'}).setLngLat([lng,lat]).addTo(state.map));
+  }catch{}
+}
+function declutterVoucherMarkers(recs,depth=0){
+  if(!state.map||!recs?.length)return;
+  let cont;try{const c=state.map.getContainer();cont={width:c.clientWidth||c.getBoundingClientRect().width,height:c.clientHeight||c.getBoundingClientRect().height}}catch{return}
+  if(!(cont.width>0&&cont.height>0))return;
+  for(const r of recs){try{r.marker.setOffset([0,0])}catch{}}
+  const items=[];
+  recs.forEach((r,i)=>{
+    // 위치는 지도 투영값(+앵커 규칙)으로 계산하고 요소 크기만 DOM 에서 읽는다(마커 transform 반영 시점에 의존하지 않음).
+    const w=r.el.offsetWidth,h=r.el.offsetHeight;if(!(w>0&&h>0))return;
+    let p;try{p=state.map.project([r.lng,r.lat])}catch{return}
+    if(!p||!Number.isFinite(p.x)||!Number.isFinite(p.y))return;
+    items.push({id:i,x:p.x-w/2,y:r.anchor==='center'?p.y-h/2:p.y-h,w,h,priority:r.priority,anchorCenter:r.anchor==='center',canCompact:false,cw:0,ch:0});
+  });
+  const layout=resolveMarkerLayout(items,{w:cont.width,h:cont.height});
+  // 접어서도 자리를 찾지 못한 마커(아주 밀집)는 하나의 개수 배지로 묶는다: 누르면 확대하거나 전체 목록을 보여준다.
+  const failed=items.filter(it=>layout.get(it.id)?.failed).map(it=>recs[it.id]);
+  if(failed.length>=2&&depth<2){
+    let sx=0,sy=0,all=[];
+    for(const r of failed){
+      sx+=r.lng;sy+=r.lat;all=all.concat(r.items||[]);
+      try{r.marker.remove()}catch{}
+      state.localVoucherMarkers=(state.localVoucherMarkers||[]).filter(m=>m!==r.marker);
+    }
+    const bubble=renderVoucherClusterMarkers([{lng:sx/failed.length,lat:sy/failed.length,count:Math.max(all.length,failed.length),items:all}]);
+    return declutterVoucherMarkers([...recs.filter(r=>!failed.includes(r)),...bubble],depth+1);
+  }
+  for(const it of items){
+    const L=layout.get(it.id),r=recs[it.id];if(!L||!r)continue;
+    if(L.dx||L.dy){
+      try{r.marker.setOffset([L.dx,L.dy])}catch{}
+      // 원래 위치에서 옮겨졌다면, 진짜 위치와 마커를 잇는 가는 선과 점을 함께 표시
+      const cx=L.rect.x+L.rect.w/2,cy=L.rect.y+L.rect.h/2,dx=cx-L.ax,dy=cy-L.ay,len=Math.hypot(dx,dy);
+      if(len>12)addVoucherLeader(r.lng,r.lat,len,Math.atan2(dy,dx)*180/Math.PI);
+    }
+  }
+}
+function renderVoucherShopMarkers(items){
+  const recs=[];
+  for(const g of (Array.isArray(items)&&items[0]&&items[0].items?items:voucherShopGroups(items))){
+    const list=g.items,item=list[0];
+    const el=document.createElement('button');
+    el.type='button';el.className='voucher-shop-marker';
+    el.title=list.length>1?`지역사랑상품권 가맹점 ${list.length}곳`:item.name||'지역사랑상품권 가맹점';
+    el.innerHTML=`${voucherShopSvg()}<span>${list.length>1?(list.length>99?'99+':list.length):''}</span>`;
+    el.onclick=e=>{e.stopPropagation();list.length>1?openVoucherBuildingList(list):openVoucherStoreInfo(item)};
+    const r=addVoucherMarker(el,Number(item.lng),Number(item.lat),'bottom',list.length,voucherFocusKeyOf(item),list);
+    if(r)recs.push(r);
+  }
+  return recs;
 }
 
 // 완전 동일 좌표 반복이 아니어도, 좁은 경도/위도 밴드에 다수 지점이 몰리면서 반대축으로 넓게(약 30km+)
@@ -1781,12 +1898,13 @@ function clusterVoucherItemsByPixel(items){
   return out;
 }
 function renderVoucherClusterMarkers(clusters){
-  for(const c of clusters){
+  const recs=[];
+  for(const c of clusters||[]){
     const el=document.createElement('button');
     el.type='button';
     const size=c.count>=25?'large':c.count>=8?'medium':'small';
     el.className=`voucher-cluster-marker ${size}`;
-    el.title=`가맹점 ${c.count}곳 · 확대하면 개별 매장이 표시됩니다`;
+    el.title=`가맹점 ${c.count}곳`;
     el.innerHTML=`<strong>${c.count>99?'99+':c.count}</strong>`;
     el.onclick=e=>{
       e.stopPropagation();
@@ -1794,17 +1912,18 @@ function renderVoucherClusterMarkers(clusters){
         const lngs=c.items.map(x=>Number(x.lng)).filter(Number.isFinite);
         const lats=c.items.map(x=>Number(x.lat)).filter(Number.isFinite);
         if(!lngs.length||!lats.length)return;
-        if(lngs.length===1){state.map.easeTo({center:[lngs[0],lats[0]],zoom:Math.max(state.map.getZoom(),16.5),duration:420});return}
-        state.map.fitBounds([[Math.min(...lngs),Math.min(...lats)],[Math.max(...lngs),Math.max(...lats)]],{padding:70,maxZoom:16.5,duration:420});
+        const spanM=voucherGeoMeters(Math.min(...lats),Math.min(...lngs),Math.max(...lats),Math.max(...lngs));
+        let zoom=0;try{zoom=Number(state.map.getZoom())||0}catch{}
+        // 더 확대해도 분리되지 않는 경우(같은 지점이거나 이미 최대 확대)에는 가맹점 전체 목록을 보여준다.
+        if(spanM<25||zoom>=17.2){openVoucherBuildingList(sortVoucherByDistance(c.items).slice(0,300));return}
+        if(lngs.length===1)state.map.easeTo({center:[lngs[0],lats[0]],zoom:Math.max(zoom,16.5),duration:420});
+        else state.map.fitBounds([[Math.min(...lngs),Math.min(...lats)],[Math.max(...lngs),Math.max(...lats)]],{padding:70,maxZoom:16.5,duration:420});
       }catch{}
     };
-    try{
-      state.localVoucherMarkers.push(
-        new maplibregl.Marker({element:el,anchor:'center'})
-          .setLngLat([c.lng,c.lat]).addTo(state.map)
-      );
-    }catch{}
+    const r=addVoucherMarker(el,c.lng,c.lat,'center',c.count,'',c.items);
+    if(r)recs.push(r);
   }
+  return recs;
 }
 function renderLocalVoucherMarkers(data){
   clearLocalVoucherMarkers();
@@ -1817,14 +1936,19 @@ function renderLocalVoucherMarkers(data){
   // 7.6.2.0: 화면이 넓게(1km 이상) 보일 때는 지점들이 화면에 겹쳐 보이거나(과거 버그로는 한 줄로
   // 늘어서 보이는 문제까지) 발생했다. 이제는 구역별로 묶어 큰/중간/작은 숫자 배지의 클러스터로
   // 표시하고, 화면 폭이 1km 미만으로 확대되었을 때만 개별 가맹점 SVG 아이콘을 표시한다.
+  // 7.6.13.0: 화면 폭이 좁아 개별 핀을 보여줄 때도, 온누리와 동일하게 화면 좌표 기준으로 겹침을
+  // 해소한다(가까운 빈자리로 이동 + 원위치 표시선, 자리가 없으면 개수 배지).
   const visibleWidthMeters=voucherVisibleRadiusMeters()*2;
   const zoomedInEnoughForIndividualPins=Number.isFinite(visibleWidthMeters)&&visibleWidthMeters<1600;
 
+  let recs;
   if(zoomedInEnoughForIndividualPins){
-    renderVoucherShopMarkers(items);
+    const {singles,clusters}=clusterVoucherGroupsByOverlap(voucherShopGroups(items));
+    recs=[...renderVoucherShopMarkers(singles),...renderVoucherClusterMarkers(clusters)];
   }else{
-    renderVoucherClusterMarkers(clusterVoucherItemsByPixel(items));
+    recs=renderVoucherClusterMarkers(clusterVoucherItemsByPixel(items));
   }
+  try{declutterVoucherMarkers(recs)}catch(e){console.warn('voucher declutter failed',e)}
 }
 // 지역명 + 할인율을 지도 위 배지에 표시한다. 값이 없을 때는 상태에 맞는 안내 문구로 대체하고,
 // 지역 자체를 확인할 수 없을 때만 배지를 숨긴다.
