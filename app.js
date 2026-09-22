@@ -109,7 +109,41 @@ window.JofamsNative.onMotionUpdate=packet=>{
   const p=parseNativePacket(packet);state.imu={at:Date.now(),yawRateDegS:Number(p.yawRateDegS)||0,accelMagnitude:Number(p.accelMagnitude)||0,headingDeg:Number.isFinite(Number(p.headingDeg))?Number(p.headingDeg):state.imu.headingDeg};
   if(Number.isFinite(state.imu.headingDeg)){state.compassHeading=state.imu.headingDeg;state.compassAt=Date.now()}
 };
-window.JofamsNative.onTunnelState=packet=>{const p=parseNativePacket(packet);if(p.active===true)state.lastRealGpsAt=Math.min(state.lastRealGpsAt||Date.now(),Date.now()-2600)};
+window.JofamsNative.onTunnelState=packet=>{
+  const p=parseNativePacket(packet);
+  if(p.active===true){
+    // 7.6.14.1: 예전에는 lastRealGpsAt만 살짝 앞당겨서, 다음 500ms 틱이 돌 때까지 UI/추정 속도가
+    // 갱신 안 되는 틈이 있었다. 이제는 네이티브가 신호 저하를 알려주는 즉시(GPS 타임아웃을 기다리지
+    // 않고) 추정 모드로 전환하고, 진입 속도·칼만필터도 그 순간 값으로 바로 초기화한다.
+    state.lastRealGpsAt=Math.min(state.lastRealGpsAt||Date.now(),Date.now()-2600);
+    if(!state.gpsEstimated){
+      const entrySpeed=Math.max(0,Number(state.speedEmaMps)||Number(state.lastRealSpeedMps)||Number(state.user?.speed)||0);
+      state.tunnelEntrySpeedMps=entrySpeed;state.tunnelEntryAt=Date.now();
+      resetTunnelKalman(entrySpeed);
+    }
+    state.gpsEstimated=true;
+    updateGpsEstimateUi();
+  }else if(p.active===false){
+    // 신호가 돌아왔다는 걸 네이티브가 먼저 알려주면, 그다음 들어오는 GPS fix는 정확도 임계값(70m)에
+    // 걸려도 "터널 직후 나쁜 fix"로 최대 8회까지 버리던 유예를 두지 않고 곧바로 받아들인다.
+    // (네이티브 위성 신호 판정이 accuracy 필드보다 먼저·정확하게 신호 회복을 아는 경우가 많음)
+    state.postTunnelBadFixes=0;
+    state.tunnelSignalRestoredAt=Date.now();
+  }
+};
+
+function resetTunnelKalman(entrySpeedMps){
+  // 1D 칼만필터 상태 초기화: x=속도 추정치(m/s), P=추정 불확실도(분산).
+  // 진입 직후엔 방금 GPS로 확인한 실측 속도라 불확실도를 낮게 잡는다.
+  state.tunnelKalman={x:Math.max(0,Number(entrySpeedMps)||0),P:4,at:Date.now()};
+}
+
+/* 네이티브 DR 타임아웃을 웹과 같은 규칙으로 맞추기 위한 값을 네이티브에 공지한다.
+   (네이티브 쪽에 고정 90초 캡이 있다면, 이 이벤트를 받아 그 값을 쓰도록 바꿔달라고 요청할 것 —
+   이 리포지토리에는 네이티브(Swift/Kotlin) 소스가 없어 여기서 직접 수정할 수는 없음) */
+function notifyNativeDrCapMs(inKnownTunnel){
+  nativePost('tunnelDrConfig',{capMs:inKnownTunnel?1500000:180000,knownTunnel:Boolean(inKnownTunnel)});
+}
 
 async function acquireNavigationWakeLock(){
   if(!state.tripStartedAt||document.hidden)return;
@@ -226,7 +260,7 @@ function directionAwareNearestPointOnRoute(lng,lat,heading,speed,geometry,maxDis
     const h=bearing(p0[1],p0[0],p1[1],p1[0]);
     const diff=Number.isFinite(Number(heading))&&Number(speed)>2.2?angleDiff(Number(heading),h):0;
     // 주행 중에는 같은 위치의 반대방향 차선을 후보에서 강하게 배제한다.
-    const directionPenalty=Number(speed)>2.2?(diff>=135?120:diff>=100?55:diff>=70?18:diff/12):0;
+    const directionPenalty=Number(speed)>2.2?(diff>=135?120:diff>=100?55:diff>=70?18:diff>=45?9:diff/12):0;
     candidates.push({
       lng:proj.lng,lat:proj.lat,index:i,heading:h,distance:d,
       headingDiff:diff,score:d+directionPenalty
@@ -372,30 +406,8 @@ const CAMERA_DATASET_CRITICAL=new Set(['/data/sejong_daejeon_expressway_cameras.
    최신 경찰청 데이터를 경로 주변 범위(bbox)만 가볍게 받아 쓰게 된다. 비워두면(기본값) 기존
    정적 JSON 4개 번들만 사용한다(하위 호환). Worker 응답이 실패하면 자동으로 정적 JSON으로
    폴백하므로 배포 전/장애 시에도 안내가 끊기지 않는다. */
-const CAMERA_API_BASE='';
-const CAMERA_API_TIMEOUT_MS=4500;
-async function fetchCamerasFromApi(bounds){
-  if(!CAMERA_API_BASE||!bounds)return null;
-  const bbox=`${bounds.minLng},${bounds.minLat},${bounds.maxLng},${bounds.maxLat}`;
-  const cacheKey=bbox;
-  const cache=state.cameraApiCache||(state.cameraApiCache={});
-  const cached=cache[cacheKey];
-  if(cached&&Date.now()-cached.at<120000)return cached.rows;
-  const ctrl=new AbortController();
-  const timer=setTimeout(()=>ctrl.abort(),CAMERA_API_TIMEOUT_MS);
-  try{
-    const r=await fetch(`${CAMERA_API_BASE}/api/cameras?bbox=${encodeURIComponent(bbox)}`,{signal:ctrl.signal});
-    if(!r.ok)throw new Error(`HTTP ${r.status}`);
-    const d=await r.json();
-    const rows=Array.isArray(d?.records)?d.records:[];
-    cache[cacheKey]=rows.length||Object.keys(cache).length<8?{rows,at:Date.now()}:cached;
-    return rows;
-  }catch(e){
-    console.warn('camera worker api fetch failed, falling back to static json',e);
-    return null;
-  }finally{clearTimeout(timer)}
-}
-
+/* 7.6.13.3: Cloudflare D1/Worker API 경로는 쓰지 않는다. 카메라 원천은 경찰청 표준데이터(data.go.kr)
+   정적 JSON 4개 번들 그대로. 아래 loadOfficialCameraRows()가 그 파일들을 직접 불러온다. */
 async function loadOfficialCameraRows(){
   // 7.6.9: 예전에는 4개 파일 중 하나라도 일시적 네트워크 오류로 실패하면 빈 배열([])로
   // state.officialCameraRows에 영구 캐시돼, 앱을 새로고침하기 전까지는 세종↔대전 구간단속
@@ -485,19 +497,25 @@ function cameraDirectionHintRaw(row){
   const place=String(pickField(row,['설치장소','itlpc','소재지도로명주소','소재지지번주소'])||'').trim();
   const all=`${explicitRaw} ${place}`.trim();
   const num=Number(String(explicitRaw).replace(/[^0-9.\-]/g,''));
-  let heading=explicitRaw&&Number.isFinite(num)&&num>=0&&num<=360?num:null;
+  const numericHeading=explicitRaw&&Number.isFinite(num)&&num>=0&&num<=360?num:null;
+  let heading=numericHeading;
+  // 숫자(0~360도) 원본 값은 정밀한 방위각이지만, 8방위 단어(북/동/남서 등)에서 유도한 값은
+  // 45도 간격으로만 구분되는 대략값이다. 이후 방위각 필터에서 정밀/대략값의 허용오차를
+  // 다르게 적용하기 위해 두 경우를 구분해둔다(정밀값은 좁게, 대략값은 도로 곡률을 감안해 넓게).
+  let precise=heading!=null;
   if(heading==null){
     const dirs=[['북동',45],['동북',45],['남동',135],['동남',135],['남서',225],['서남',225],['북서',315],['서북',315],['북',0],['동',90],['남',180],['서',270]];
     /* 7.6.11.9 수정: 템플릿 리터럴 안의 \s / \( 는 이스케이프가 사라져 'Invalid regular expression' 예외가 발생했고,
        그 결과 loadStaticCameraEvents 전체가 실패해 모든 공식 단속카메라가 사라졌다. 문자열 연결 + 이중 백슬래시로 교체. */
     for(const [k,h] of dirs){if(new RegExp('(?:^|\\s|\\()'+k+'(?:향|쪽|방향|\\s|$)').test(all)){heading=h;break}}
+    precise=false;
   }
   const target=(all.match(/(?:→|->|방향\s*[:：]?\s*)([가-힣]{2,8})/)||[])[1]||'';
-  return {raw:all,heading,target,reliable:Boolean(explicitRaw&&(Number.isFinite(heading)||target))};
+  return {raw:all,heading,precise,target,reliable:Boolean(explicitRaw&&(Number.isFinite(heading)||target))};
 }
 /* 7.6.11.9 방향 판정 도우미는 어떤 입력에서도 예외를 던지지 않는다(예외 → 공식 카메라 전체 소실 방지). */
 function cameraDirectionHint(row){
-  try{return cameraDirectionHintRaw(row)}catch(e){console.warn('[JOFAMS camera] direction hint failed',e);return{raw:'',heading:null,target:'',reliable:false}}
+  try{return cameraDirectionHintRaw(row)}catch(e){console.warn('[JOFAMS camera] direction hint failed',e);return{raw:'',heading:null,precise:false,target:'',reliable:false}}
 }
 function routeHeadingAtIndex(geometry,idx){
   if(!geometry?.length)return NaN;
@@ -508,12 +526,21 @@ function routeHeadingAtIndex(geometry,idx){
 function cameraDirectionCompatible(row,route,match){
   try{return cameraDirectionCompatibleRaw(row,route,match)}catch(e){console.warn('[JOFAMS camera] direction check failed',e);return true}
 }
+/* 반대편 차선/교차 도로 카메라를 걸러내기 위한 방위각 허용오차.
+   숫자로 명시된 방위각(precise)은 오차가 거의 없으므로 좁게(약 ±35도) 적용하고,
+   8방위 단어(북/동/남서 등)에서 유도한 대략값은 45도 단위로만 구분되는 데다
+   도로 곡률까지 겹치면 실제로는 같은 방향인데도 40~60도 가까이 벌어질 수 있어
+   조금 더 넉넉하게(±60도) 적용한다. 어느 쪽이든 150도를 넘어가면(사실상 반대 차선)
+   정밀도와 무관하게 항상 제외한다. */
+function cameraHeadingToleranceDeg(precise){return precise?35:60}
 function cameraDirectionCompatibleRaw(row,route,match){
   if(!route?.geometry?.length||!match)return true;
   const hint=cameraDirectionHint(row),rh=Number(match.heading??routeHeadingAtIndex(route.geometry,match.index));
-  // 명시적인 카메라 촬영/단속방향이 있는 경우에만 방향 필터를 강하게 적용한다.
-  // 도로노선방향 코드나 출처가 불명확한 heading 값으로 실제 카메라 전체가 사라지는 문제를 방지한다.
-  if(hint.reliable&&Number.isFinite(hint.heading)&&Number.isFinite(rh)&&angleDiff(hint.heading,rh)>88)return false;
+  if(hint.reliable&&Number.isFinite(hint.heading)&&Number.isFinite(rh)){
+    const diff=angleDiff(hint.heading,rh);
+    if(diff>150)return false; // 반대편 차선으로 사실상 확정되는 각도차: 정밀도와 무관하게 제외
+    if(diff>cameraHeadingToleranceDeg(hint.precise))return false;
+  }
   if(hint.reliable&&hint.target){
     const dest=[state.destination?.name,state.destination?.address].filter(Boolean).join(' ');
     // 명시된 "대전 방향/세종 방향"과 목적지 지역이 명확히 충돌하면 반대편 장비로 판단한다.
@@ -532,7 +559,11 @@ function cameraEventDirectionCompatibleRaw(e,geometry){
   const idx=Number(e?.routeIndex);if(!Number.isFinite(idx))return true;
   const rh=routeHeadingAtIndex(geometry,idx);
   const eh=Number(e?.cameraHeading);
-  if(Number.isFinite(eh)&&Number.isFinite(rh)&&angleDiff(eh,rh)>88)return false;
+  if(Number.isFinite(eh)&&Number.isFinite(rh)){
+    const diff=angleDiff(eh,rh);
+    if(diff>150)return false;
+    if(diff>cameraHeadingToleranceDeg(e?.cameraHeadingPrecise===true))return false;
+  }
   return true;
 }
 function statedSectionLengthMeters(row){
@@ -682,7 +713,7 @@ async function loadStaticCameraEvents(route){
   const bounds=expandBounds(geometryBounds(geometry),1400);
   // 7.6.13.2: D1/Worker API가 설정돼 있으면 경로 주변 범위만 가볍게 우선 조회하고,
   // 실패하거나 아직 미설정이면 기존 정적 JSON 번들로 폴백한다(안내 공백 방지).
-  const rows=(await fetchCamerasFromApi(bounds))||(await loadOfficialCameraRows());
+  const rows=await loadOfficialCameraRows();
   const out=[],sectionNodes=[];
   if(!rows.length)return [];
   for(const row of rows){
@@ -732,7 +763,7 @@ async function loadStaticCameraEvents(route){
          받아오는 것(D1 파이프라인 + 실주행 확인 좌표 보정)이지만, 그 전까지는 저정밀 매칭에
          한해 안내 타이밍에 여유(버퍼)를 더 준다(computeSafetyCandidates 참고). */
       lowPrecision:Number.isFinite(d)&&d>40,
-      routeHeading:Number(routeMatch.heading??routeHeadingAtIndex(geometry,idx)),cameraDirection:dirHint.raw||'',cameraHeading:Number.isFinite(dirHint.heading)?dirHint.heading:null,cameraDirectionReliable:Boolean(dirHint.reliable),
+      routeHeading:Number(routeMatch.heading??routeHeadingAtIndex(geometry,idx)),cameraDirection:dirHint.raw||'',cameraHeading:Number.isFinite(dirHint.heading)?dirHint.heading:null,cameraHeadingPrecise:Boolean(dirHint.precise),cameraDirectionReliable:Boolean(dirHint.reliable),
       authority:String(pickField(row,['관리기관명','institutionNm'])).trim(),dataDate,currentOfficial:currentPolice,
       protectedArea,roadName,priorityExpressway:Boolean(row.__priorityExpressway),source:row.__priorityExpressway?'전국무인교통단속카메라표준데이터(세종→대전 고속화도로 우선보정)':'전국무인교통단속카메라표준데이터(로컬 파일)'
     };
@@ -747,6 +778,49 @@ async function loadStaticCameraEvents(route){
   return mergeSafetyEvents(out,geometry);
 }
 function normalizeRoadName(v=''){return String(v||'').replace(/\s+/g,'').replace(/(대로|로|길|거리)$/,'').toLowerCase()}
+/* 7.6.13.3: 설치장소 문구를 비교 가능한 핵심 지명으로 정규화한다.
+   "상서삼거리", "상서 삼거리(→대전)", "상서삼거리 합류지점" 을 모두 같은 지점으로 인식시키기 위함. */
+function normalizeSiteName(v=''){
+  return String(v||'')
+    .replace(/\([^)]*\)/g,'')            // 괄호 안 부가설명(방향 화살표 등) 제거
+    .replace(/[→←↔·,.\-]/g,' ')
+    .replace(/(교차로|사거리|삼거리|네거리|합류지점|진입로|진출로|시점|종점|앞|후|전|부근|주변|인근)/g,'')
+    .replace(/\s+/g,'')
+    .toLowerCase();
+}
+/* 7.6.13.3: 구간단속 종점 근처가 아니어도, 오래된 지자체(2022년 이전) 개별 카메라 레코드가
+   현행 경찰청(2025년 이후) 레코드와 "같은 설치장소 문구 + 같은 도로 + 같은 제한속도"를 가리키면
+   물리적으로 같은 카메라로 보고 하나만 남긴다. (예: 구즉세종로 남행 구간단속 종점을 지나
+   대전 방향으로 더 내려간 '상서삼거리'에 2022년 대전광역시 레코드 G3122와 2026년 경찰청
+   레코드 K0335가 약 170m 간격으로 중복 표시되던 사례 — 종점에서 900m 가까이 떨어져 있어
+   기존 구간단속 종점 반경 규칙으로는 걸러지지 않았다.) */
+function suppressStaleNamedDuplicateCameras(events=[]){
+  const list=[...(events||[])];
+  const byName=new Map();
+  for(const e of list){
+    if(!PHYSICAL_SPEED_FAMILY.has(e.type)||!e.name)continue;
+    const key=normalizeSiteName(e.name);
+    if(!key||key.length<2)continue;
+    if(!byName.has(key))byName.set(key,[]);
+    byName.get(key).push(e);
+  }
+  const drop=new Set();
+  for(const group of byName.values()){
+    if(group.length<2)continue;
+    const current=group.filter(e=>e.currentOfficial),stale=group.filter(e=>!e.currentOfficial);
+    if(!current.length||!stale.length)continue;
+    for(const s of stale){
+      for(const c of current){
+        const sameRoad=!s.roadName||!c.roadName||normalizeRoadName(s.roadName)===normalizeRoadName(c.roadName);
+        const sameLimit=!Number(s.maxspeed)||!Number(c.maxspeed)||Number(s.maxspeed)===Number(c.maxspeed);
+        const dist=(Number.isFinite(Number(s.lat))&&Number.isFinite(Number(c.lat)))?hav(Number(s.lat),Number(s.lng),Number(c.lat),Number(c.lng)):Infinity;
+        // 이름이 이미 같은 지점을 가리키므로 물리 거리 허용범위를 넓게(300m) 둔다.
+        if(sameRoad&&sameLimit&&dist<=300){drop.add(s.id);break}
+      }
+    }
+  }
+  return drop.size?list.filter(e=>!drop.has(e.id)):list;
+}
 function applyRouteSpeedLimitHints(route,events=[]){
   const segs=route?.roadSegments||[],cum=buildCumulative(route);
   const limitEvents=events.filter(e=>Number(e?.maxspeed)>0&&e.type==='speed_limit');
@@ -2498,6 +2572,7 @@ function applyGps(pos,fly=false){
   if(Number.isFinite(stateObj.heading))state.lastRealHeading=stateObj.heading;
   if(!tunnelZeroGps)state.lastRealGpsAt=now;
   state.lastGpsTickAt=now;state.deadReckoningLastAt=now;state.gpsEstimated=Boolean(tunnelZeroGps);
+  if(!state.gpsEstimated)state.tunnelKalman=null;
   updateGpsEstimateUi();
   if(wasEstimated&&!state.gpsEstimated&&state.tunnelDrSpoken){state.tunnelDrSpoken=false;speakNavOnce(`tunnel-exit:${Math.floor(now/1000)}`,'터널을 벗어났습니다. 위치를 다시 확인했습니다.',0)}
   if(!Number.isFinite(stateObj.speed))stateObj.speed=state.lastRealSpeedMps||0;
@@ -2602,11 +2677,13 @@ function updateTunnelRouteLock(idx){
       lock.routeDistance=Number(state.user?.routeDistance);
       if(!Number.isFinite(lock.routeDistance))lock.routeDistance=state.routeCumulative[idx]||0;
       lock.lastAt=now;
+      notifyNativeDrCapMs(true);
     }
     return lock;
   }
   if(lock.active&&idx>lock.endIndex+2){
     lock.active=false;lock.startIndex=-1;lock.endIndex=-1;lock.routeDistance=null;lock.lastAt=0;
+    notifyNativeDrCapMs(false);
   }
   return lock.active?lock:null;
 }
@@ -2630,11 +2707,30 @@ function simulatedTunnelSpeedMps(idx,baseSpeed){
   const trafficKmh=Number(seg?.trafficSpeed);
   const trafficMps=Number.isFinite(trafficKmh)&&trafficKmh>0?trafficKmh/3.6:null;
   const entry=Math.max(0,Number(state.tunnelEntrySpeedMps)||Number(baseSpeed)||0);
-  if(Number.isFinite(trafficMps)){
-    // 터널 진입 직전 실차속도 65% + 같은 도로 ITS 교통흐름 35%
-    return Math.max(0,Math.min(55,entry*.65+trafficMps*.35));
+  if(!state.tunnelKalman)resetTunnelKalman(entry);
+  const kf=state.tunnelKalman,now=Date.now();
+  const dt=Math.max(0,Math.min(2,(now-(kf.at||now))/1000));
+  kf.at=now;
+
+  /* 예측 단계(등속 모델 + IMU 보정): 최근 IMU 가속도가 있으면 ITS 속도 쪽으로 가속/감속 중이라고
+     보고 반영하고, 없으면 직전 추정 속도를 그대로 이어간다. 측정 없이 시간이 흐를수록(dt) 불확실도
+     P가 커져서, 다음에 ITS 값이 들어오면 그만큼 더 크게 반영된다 — 이게 고정 0.65:0.35 대신
+     "시간에 따라 가변하는" 칼만 게인이 하는 일이다. */
+  const imuFresh=state.imu&&now-state.imu.at<1200;
+  const accelHint=imuFresh?Math.max(-3,Math.min(3,(Number(state.imu.accelMagnitude)||0)*(trafficMps!=null&&trafficMps<kf.x?-1:1)*0.4)):0;
+  let xPred=Math.max(0,kf.x+accelHint*dt);
+  const Q=1.1; // 프로세스 노이즈: 값이 클수록 "측정 없이는 금방 못 믿는다"는 뜻(ITS 값을 더 빨리 신뢰)
+  let pPred=kf.P+Q*dt;
+
+  if(trafficMps!=null){
+    const R=9; // 측정 노이즈: ITS 구간평균속도가 이 차량 개별 속도와는 다를 수 있어 분산을 넉넉히 둠
+    const K=pPred/(pPred+R); // 칼만 게인 — 불확실도가 클수록(오래 못 재측정했을수록) 1에 가까워짐
+    kf.x=xPred+K*(trafficMps-xPred);
+    kf.P=(1-K)*pPred;
+  }else{
+    kf.x=xPred;kf.P=pPred; // ITS 데이터가 없는 구간: 예측만으로 진행(불확실도는 계속 누적)
   }
-  return entry;
+  return Math.max(0,Math.min(55,kf.x));
 }
 
 function deadReckoningTick(){
@@ -2662,6 +2758,7 @@ function deadReckoningTick(){
   if(!state.gpsEstimated){
     state.tunnelEntrySpeedMps=Math.max(0,Number(state.speedEmaMps)||Number(state.lastRealSpeedMps)||Number(state.user.speed)||0);
     state.tunnelEntryAt=now;
+    resetTunnelKalman(state.tunnelEntrySpeedMps);
   }
   let speed=simulatedTunnelSpeedMps(state.currentRouteIndex,Number(state.speedEmaMps)||Number(state.lastRealSpeedMps)||Number(state.user.speed)||0);
   try{ // 터널 안 추정 속도는 해당 도로 제한속도를 넘지 않게 한다.
@@ -2728,7 +2825,7 @@ function announceTunnelAhead(idx){
   }
 }
 function startDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningLastAt=Date.now();state.deadReckoningTimer=setInterval(deadReckoningTick,500)}
-function stopDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningTimer=0;state.gpsEstimated=false;updateGpsEstimateUi();state.deadReckoningDistance=null;state.deadReckoningLastAt=0}
+function stopDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningTimer=0;state.gpsEstimated=false;updateGpsEstimateUi();state.deadReckoningDistance=null;state.deadReckoningLastAt=0;state.tunnelKalman=null}
 function startWatch(){if(state.permissionPrefs?.location===false)return;if(nativeBridgeAvailable())setNativeNavigationActive(true);if(state.watchId!=null)return;state.watchId=navigator.geolocation.watchPosition(p=>applyGps(p,false),()=>{}, {enableHighAccuracy:true,maximumAge:0,timeout:7000});startDeadReckoning()}
 function stopWatch(){if(nativeBridgeAvailable())setNativeNavigationActive(false);if(state.watchId!=null){navigator.geolocation.clearWatch(state.watchId);state.watchId=null}state.nativeLocationActive=false;stopDeadReckoning()}
 
@@ -4658,9 +4755,11 @@ async function loadSafetyEvents(route){
   // 후처리 단계에서 예외가 나도 병합된 카메라는 그대로 유지한다.
   for(const step of [
     m=>suppressPostSectionDuplicateCameras(m),
+    m=>suppressStaleNamedDuplicateCameras(m),
     m=>addUserConfirmedHoedeokCamera(m,route),
     m=>mergeSafetyEvents(m,route.geometry),
-    m=>suppressPostSectionDuplicateCameras(m)
+    m=>suppressPostSectionDuplicateCameras(m),
+    m=>suppressStaleNamedDuplicateCameras(m)
   ]){try{const r=step(merged);if(Array.isArray(r))merged=r}catch(e){console.warn('[JOFAMS camera] post-merge step failed',e)}}
   const mergedCameraCount=merged.filter(e=>String(e.type||'').includes('camera')||e.type==='section_speed_end').length;
   if(mergedCameraCount===0&&official.length){
@@ -5068,9 +5167,29 @@ const SAFETY_PRIORITY={accident:0,accident_hotspot:1,fog_zone:1,heavy_rain_zone:
   chronic_congestion:2,construction:2,curve_left:2,curve_right:2,railway_crossing:2,height_limit:2,weight_limit:2,width_limit:2,no_entry:2,
   crosswalk:3,no_overtaking:3,truck_prohibited:3,roundabout:3,section_speed_end:3,section_speed_camera:4,bus_lane_camera:4,mobile_camera:4,signal_speed_camera:5,signal_camera:5,
   speed_camera:6,traffic_camera:6,motorway:8,speed_limit:9,tunnel:9};
-/* 7.6.11.4 단속카메라 안내 시작 거리: 속도 기반(약 13초 전)으로 130~420m. 기존(600m 카드 / 420m 음성)은 너무 일찍 안내했다. */
+/* 단속카메라 안내 시작 거리: 속도에 따라 가변 산출한다.
+   기존(7.6.11.4)에는 v*13(약 13초 전)을 130~420m로 단순히 잘라 썼는데, 이 상한(420m)은
+   저속 구간 기준으로 정한 값이라 고속도로(100km/h+)에서는 실제 반응·제동거리보다도
+   훨씬 짧게 끊겨 안내가 늦게 느껴지는 문제가 있었다.
+   아래는 두 값 중 큰 쪽을 사용한다:
+   1) speedBandTargetM: 실제 도로에서 통용되는 속도 구간별 사전 안내거리 가이드라인을
+      구간 사이 선형보간으로 매끄럽게 표현한 값(30~50km/h 200~300m, 60~80km/h 500m,
+      100km/h 1,000m, 130km/h 이상 2,000m 상한).
+   2) physicalFloorM: 운전자 반응거리(반응시간 1.8초) + 제동거리(평균 감속도 약 4.2m/s²
+      가정) + 인지 여유거리(80m)로 계산한 물리적 최소 안전거리. 저속에서 구간표가
+      과도하게 짧게 보간되는 경우를 대비한 하한선이다. */
 const CAMERA_ALERT_FAMILY=new Set(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','mobile_camera','bus_lane_camera','section_speed_camera']);
-function cameraAlertWindowM(){const v=Math.max(0,Number(state.user?.speed)||0);return Math.max(130,Math.min(420,v*13))}
+const CAMERA_ALERT_SPEED_BANDS_KMH=[{kmh:0,m:130},{kmh:30,m:200},{kmh:50,m:300},{kmh:60,m:500},{kmh:80,m:500},{kmh:100,m:1000},{kmh:130,m:2000}];
+function cameraAlertWindowM(){
+  const v=Math.max(0,Number(state.user?.speed)||0),kmh=v*3.6;
+  let speedBandTargetM=CAMERA_ALERT_SPEED_BANDS_KMH[CAMERA_ALERT_SPEED_BANDS_KMH.length-1].m;
+  for(let i=1;i<CAMERA_ALERT_SPEED_BANDS_KMH.length;i++){
+    const a=CAMERA_ALERT_SPEED_BANDS_KMH[i-1],b=CAMERA_ALERT_SPEED_BANDS_KMH[i];
+    if(kmh<=b.kmh){const t=b.kmh>a.kmh?(kmh-a.kmh)/(b.kmh-a.kmh):0;speedBandTargetM=a.m+(b.m-a.m)*Math.max(0,Math.min(1,t));break}
+  }
+  const physicalFloorM=v*1.8+(v*v)/(2*4.2)+80;
+  return Math.max(130,Math.round(Math.max(speedBandTargetM,physicalFloorM)));
+}
 function computeSafetyCandidates(idx){
   if(!state.routeCumulative.length)return[];
   /* 7.6.11.1 굽은 도로 / 이중 굽은 도로, 7.6.11.2 상습정체 안내는 표시하지 않는다.
@@ -6903,3 +7022,4 @@ function arbitrateDrivePopups(){
 // build 7.6.11.8: remove destination red pin globally; restore route cameras after over-filter regression; soften direction matching; thinner landscape HUD.
 // build 7.6.11.9: fix invalid RegExp (template-literal escapes) in cameraDirectionHint that threw inside loadStaticCameraEvents and removed every official route camera; isolate per-row / post-merge errors; alert criteria aligned with map pins; Hoedeok fallback camera now actually added.
 // build 7.6.12.0: onnuri map markers no longer overlap (screen-space layout with leader lines, count bubbles, compact zone pins), zone marker opens full shop list, where-to list rows get a 'show on map' focus button.
+// build 7.6.13.3: dropped unused Cloudflare D1/Worker fetch path (kept open-data static bundles only); added general name-based stale-duplicate camera suppression (fixes 구즉세종로 남행 구간단속 종료 후 상서삼거리 중복 카메라, and similar patterns anywhere on the map, not just near section ends).
