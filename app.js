@@ -367,6 +367,35 @@ const CAMERA_DATASET_URLS=['/data/sejong_daejeon_expressway_cameras.json','/data
 // 로드 실패하면 다음 호출에서도 재시도한다(전국 대용량 파일 실패는 재시도하지 않아도 무방).
 const CAMERA_DATASET_CRITICAL=new Set(['/data/sejong_daejeon_expressway_cameras.json','/data/daejeon_sejong_corridor_cameras.json']);
 
+/* 7.6.13.2: 전국 카메라 데이터를 Cloudflare D1(+Worker API)에서 실시간으로 받아오기 위한 설정.
+   backend/DEPLOY.md 대로 Worker를 배포한 뒤 아래 값을 그 주소로 바꾸면, 매일 자동 갱신되는
+   최신 경찰청 데이터를 경로 주변 범위(bbox)만 가볍게 받아 쓰게 된다. 비워두면(기본값) 기존
+   정적 JSON 4개 번들만 사용한다(하위 호환). Worker 응답이 실패하면 자동으로 정적 JSON으로
+   폴백하므로 배포 전/장애 시에도 안내가 끊기지 않는다. */
+const CAMERA_API_BASE='';
+const CAMERA_API_TIMEOUT_MS=4500;
+async function fetchCamerasFromApi(bounds){
+  if(!CAMERA_API_BASE||!bounds)return null;
+  const bbox=`${bounds.minLng},${bounds.minLat},${bounds.maxLng},${bounds.maxLat}`;
+  const cacheKey=bbox;
+  const cache=state.cameraApiCache||(state.cameraApiCache={});
+  const cached=cache[cacheKey];
+  if(cached&&Date.now()-cached.at<120000)return cached.rows;
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(),CAMERA_API_TIMEOUT_MS);
+  try{
+    const r=await fetch(`${CAMERA_API_BASE}/api/cameras?bbox=${encodeURIComponent(bbox)}`,{signal:ctrl.signal});
+    if(!r.ok)throw new Error(`HTTP ${r.status}`);
+    const d=await r.json();
+    const rows=Array.isArray(d?.records)?d.records:[];
+    cache[cacheKey]=rows.length||Object.keys(cache).length<8?{rows,at:Date.now()}:cached;
+    return rows;
+  }catch(e){
+    console.warn('camera worker api fetch failed, falling back to static json',e);
+    return null;
+  }finally{clearTimeout(timer)}
+}
+
 async function loadOfficialCameraRows(){
   // 7.6.9: 예전에는 4개 파일 중 하나라도 일시적 네트워크 오류로 실패하면 빈 배열([])로
   // state.officialCameraRows에 영구 캐시돼, 앱을 새로고침하기 전까지는 세종↔대전 구간단속
@@ -649,9 +678,13 @@ function expandBounds(bounds,meters=1200){
 }
 function inBounds(lat,lng,b){return b&&lng>=b.minLng&&lng<=b.maxLng&&lat>=b.minLat&&lat<=b.maxLat}
 async function loadStaticCameraEvents(route){
-  const rows=await loadOfficialCameraRows();
-  const geometry=route?.geometry||[]; if(!rows.length||!geometry.length)return [];
-  const bounds=expandBounds(geometryBounds(geometry),1400),out=[],sectionNodes=[];
+  const geometry=route?.geometry||[]; if(!geometry.length)return [];
+  const bounds=expandBounds(geometryBounds(geometry),1400);
+  // 7.6.13.2: D1/Worker API가 설정돼 있으면 경로 주변 범위만 가볍게 우선 조회하고,
+  // 실패하거나 아직 미설정이면 기존 정적 JSON 번들로 폴백한다(안내 공백 방지).
+  const rows=(await fetchCamerasFromApi(bounds))||(await loadOfficialCameraRows());
+  const out=[],sectionNodes=[];
+  if(!rows.length)return [];
   for(const row of rows){
     try{
     const lat=Number(pickField(row,['위도','latitude','lat'])),lng=Number(pickField(row,['경도','longitude','lng','lon']));
@@ -693,6 +726,12 @@ async function loadStaticCameraEvents(route){
     const base={
       id:`local-camera:${manageNo}`,type,lat,lng,routeIndex:idx,name,maxspeed,
       routeDistance:routeDistanceFromMatch(routeMatch,geometry),snapLng:routeMatch.lng,snapLat:routeMatch.lat,routeMatchDistance:d,
+      /* 7.6.13.2: 경찰청 원본 좌표 ↔ 경로 스냅 지점 거리(d)가 40m를 넘으면 "저정밀" 매칭으로 표시한다.
+         원본 위경도 오차가 크면 스냅된 routeDistance 자체가 실제 카메라 위치보다 앞/뒤로 밀려
+         안내가 일찍 시작되거나 일찍 끝나는 현상의 직접 원인이 된다. 근본 해결은 정확한 좌표를
+         받아오는 것(D1 파이프라인 + 실주행 확인 좌표 보정)이지만, 그 전까지는 저정밀 매칭에
+         한해 안내 타이밍에 여유(버퍼)를 더 준다(computeSafetyCandidates 참고). */
+      lowPrecision:Number.isFinite(d)&&d>40,
       routeHeading:Number(routeMatch.heading??routeHeadingAtIndex(geometry,idx)),cameraDirection:dirHint.raw||'',cameraHeading:Number.isFinite(dirHint.heading)?dirHint.heading:null,cameraDirectionReliable:Boolean(dirHint.reliable),
       authority:String(pickField(row,['관리기관명','institutionNm'])).trim(),dataDate,currentOfficial:currentPolice,
       protectedArea,roadName,priorityExpressway:Boolean(row.__priorityExpressway),source:row.__priorityExpressway?'전국무인교통단속카메라표준데이터(세종→대전 고속화도로 우선보정)':'전국무인교통단속카메라표준데이터(로컬 파일)'
@@ -5040,12 +5079,17 @@ function computeSafetyCandidates(idx){
   const win=cameraAlertWindowM(),geometry=state.route?.geometry||[];
   const pool=[...(state.safetyEvents||[])];
   return pool.filter(e=>!NO_CARD_TYPES.includes(e.type)&&cameraAlertAllowed(e.type)).map(e=>({...e,d:eventAheadMeters(idx,e)})).filter(e=>{
-    if(!(e.routeIndex>=idx-2&&e.d>=0&&e.d<=800))return false;
+    // 7.6.13.2: 저정밀 매칭(원본 좌표 오차 40m 초과)은 뒤쪽(통과 직후)으로도 살짝 여유를 둬,
+    // 실제 카메라 위치가 매칭 지점보다 조금 더 앞에 있었을 경우 안내가 너무 일찍 사라지는 것을 완화한다.
+    const tailGrace=e.lowPrecision?Math.min(60,Number(e.routeMatchDistance)||0):0;
+    if(!(e.routeIndex>=idx-2&&e.d>=-tailGrace&&e.d<=800))return false;
     if(CAMERA_ALERT_FAMILY.has(e.type)){
       // 현재 선택 경로 진행방향과 반대인 카메라는 카드/음성에서도 완전히 제외한다.
       if(!cameraEventDirectionCompatible(e,geometry))return false;
       // 카메라 존재 안내는 현재 속도와 무관하게 제공. 과속 경고는 updateOverspeed가 별도로 담당한다.
-      if(e.d>win)return false;
+      // 저정밀 매칭은 실제 위치가 매칭 지점보다 앞일 수 있어 시작 창을 조금 더 일찍 연다.
+      const winForE=win+(e.lowPrecision?Math.min(80,Number(e.routeMatchDistance)||0)*.5:0);
+      if(e.d>winForE)return false;
       if(e.type!=='mobile_camera'&&e.type!=='bus_lane_camera'){
         // 로딩 단계에서 경로 매칭(허용 반경 내 투영)을 통과한 카메라는 그대로 안내한다. 지도 핀과 안내 카드 기준이 달라
         // '핀은 보이는데 안내가 없는' 카메라가 생기지 않게 한다.
@@ -5092,7 +5136,10 @@ function updateSafetyUI(idx,candidates){
   candidates=(candidates||computeSafetyCandidates(idx));
   const e=candidates[0];
   if(!e){hideSafetyAlert();state.activeSafetyEvent=null;return}
-  if(Number(e.routeIndex)<idx-1||Number(e.d)<0){hideSafetyAlert();state.activeSafetyEvent=null;return}
+  // 7.6.13.2: 저정밀 매칭(computeSafetyCandidates의 tailGrace)으로 살짝 음수인 d까지 통과한
+  // 후보를 여기서 다시 0 미만이라고 잘라버리면 방금 넓혀준 여유가 무의미해진다.
+  const tailGrace=e.lowPrecision?Math.min(60,Number(e.routeMatchDistance)||0):0;
+  if(Number(e.routeIndex)<idx-1||Number(e.d)<-tailGrace){hideSafetyAlert();state.activeSafetyEvent=null;return}
 
   const info=safetyLabel(e),el=$('safetyAlert');
   const typeClass=String(e.type||'unknown').replace(/[^a-z0-9_-]/gi,'-');
