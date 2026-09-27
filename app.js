@@ -109,41 +109,7 @@ window.JofamsNative.onMotionUpdate=packet=>{
   const p=parseNativePacket(packet);state.imu={at:Date.now(),yawRateDegS:Number(p.yawRateDegS)||0,accelMagnitude:Number(p.accelMagnitude)||0,headingDeg:Number.isFinite(Number(p.headingDeg))?Number(p.headingDeg):state.imu.headingDeg};
   if(Number.isFinite(state.imu.headingDeg)){state.compassHeading=state.imu.headingDeg;state.compassAt=Date.now()}
 };
-window.JofamsNative.onTunnelState=packet=>{
-  const p=parseNativePacket(packet);
-  if(p.active===true){
-    // 7.6.14.1: 예전에는 lastRealGpsAt만 살짝 앞당겨서, 다음 500ms 틱이 돌 때까지 UI/추정 속도가
-    // 갱신 안 되는 틈이 있었다. 이제는 네이티브가 신호 저하를 알려주는 즉시(GPS 타임아웃을 기다리지
-    // 않고) 추정 모드로 전환하고, 진입 속도·칼만필터도 그 순간 값으로 바로 초기화한다.
-    state.lastRealGpsAt=Math.min(state.lastRealGpsAt||Date.now(),Date.now()-2600);
-    if(!state.gpsEstimated){
-      const entrySpeed=Math.max(0,Number(state.speedEmaMps)||Number(state.lastRealSpeedMps)||Number(state.user?.speed)||0);
-      state.tunnelEntrySpeedMps=entrySpeed;state.tunnelEntryAt=Date.now();
-      resetTunnelKalman(entrySpeed);
-    }
-    state.gpsEstimated=true;
-    updateGpsEstimateUi();
-  }else if(p.active===false){
-    // 신호가 돌아왔다는 걸 네이티브가 먼저 알려주면, 그다음 들어오는 GPS fix는 정확도 임계값(70m)에
-    // 걸려도 "터널 직후 나쁜 fix"로 최대 8회까지 버리던 유예를 두지 않고 곧바로 받아들인다.
-    // (네이티브 위성 신호 판정이 accuracy 필드보다 먼저·정확하게 신호 회복을 아는 경우가 많음)
-    state.postTunnelBadFixes=0;
-    state.tunnelSignalRestoredAt=Date.now();
-  }
-};
-
-function resetTunnelKalman(entrySpeedMps){
-  // 1D 칼만필터 상태 초기화: x=속도 추정치(m/s), P=추정 불확실도(분산).
-  // 진입 직후엔 방금 GPS로 확인한 실측 속도라 불확실도를 낮게 잡는다.
-  state.tunnelKalman={x:Math.max(0,Number(entrySpeedMps)||0),P:4,at:Date.now()};
-}
-
-/* 네이티브 DR 타임아웃을 웹과 같은 규칙으로 맞추기 위한 값을 네이티브에 공지한다.
-   (네이티브 쪽에 고정 90초 캡이 있다면, 이 이벤트를 받아 그 값을 쓰도록 바꿔달라고 요청할 것 —
-   이 리포지토리에는 네이티브(Swift/Kotlin) 소스가 없어 여기서 직접 수정할 수는 없음) */
-function notifyNativeDrCapMs(inKnownTunnel){
-  nativePost('tunnelDrConfig',{capMs:inKnownTunnel?1500000:180000,knownTunnel:Boolean(inKnownTunnel)});
-}
+window.JofamsNative.onTunnelState=packet=>{const p=parseNativePacket(packet);if(p.active===true)state.lastRealGpsAt=Math.min(state.lastRealGpsAt||Date.now(),Date.now()-2600)};
 
 async function acquireNavigationWakeLock(){
   if(!state.tripStartedAt||document.hidden)return;
@@ -728,21 +694,34 @@ async function loadStaticCameraEvents(route){
     const idx=Math.max(0,Math.min(geometry.length-1,Number(routeMatch.index)));
     const p=geometry[idx]; if(!p)continue;
     const d=Number(routeMatch.distance);
-    if(!cameraDirectionCompatible(row,route,routeMatch))continue;
+    // 구간단속(시작/종점) 카메라는 아래에서 별도의 시종점 짝짓기·거리·도로명 검증
+    // (buildKnownGujikSectionEvents/buildSectionSpeedEvents)을 거치므로, 일반 지점 카메라용
+    // 방위각 필터를 여기서 추가로 적용하지 않는다. 두 필터가 겹치면 시작/종점 중 한쪽만
+    // 미세한 각도차로 탈락해 짝이 깨지고, 그 결과 "구간단속이 시작됐다가 중간에 사라지는"
+    // 문제가 생겼다(실시간 경로 재계산마다 판정이 갈릴 수 있어 간헐적으로 재현됨).
+    const sectionPositionEarly=officialSectionPosition(row);
+    if(!sectionPositionEarly&&!cameraDirectionCompatible(row,route,routeMatch))continue;
     const dataDate=String(pickField(row,['데이터기준일자','dataReferenceDate'])||'');
     const authorityRaw=String(pickField(row,['관리기관명','institutionNm'])||'');
     const currentPolice=/경찰청/.test(authorityRaw)&&/^202[5-9]-/.test(dataDate);
     /* 7.6.11.4 카메라 좌표는 경로 선에서 50m(고속화도로 우선보정 120m) 안일 때만 채택한다. 기존 180~450m 허용은 옆길·반대편·평행도로 카메라까지 경로 위로 끌어와 한꺼번에 여러 대가 보이게 했다. */
     // 반대편 차선/램프 장비를 끌어오지 않도록 허용 반경을 축소한다.
     // 우선 고속화도로 데이터도 좌표 오차를 감안하되 55m를 넘기지 않는다.
-    const cameraTolerance=row.__priorityExpressway?105:70;
+    // 추가 정밀도 개선: 출처가 최신(2025년 이후 경찰청 공식) 확인된 일반 지점 카메라는
+    // 좌표 신뢰도가 가장 높으므로 더 좁은 반경(45m/고속화도로 85m)으로 매칭해 정밀도를
+    // 높인다. 다만 구간단속 시·종점 행은 관리번호 기반 별도 짝짓기 로직이 있고, 터널
+    // 입구 등 도로 곡률이 큰 구간에 설치되는 경우가 많아 기존 허용치를 그대로 유지한다
+    // (여기서 더 좁히면 짝의 한쪽만 탈락해 구간단속이 중간에 끊기는 문제가 재발할 수 있음).
+    const cameraTolerance=sectionPositionEarly
+      ?(row.__priorityExpressway?105:70)
+      :(row.__priorityExpressway?(currentPolice?85:105):(currentPolice?45:70));
     if(!Number.isFinite(d)||d>cameraTolerance)continue;
     const maxspeed=Number(pickField(row,['제한속도','lmttVe','speedLimit']))||0;
     const protectedArea=String(pickField(row,['보호구역구분','protectedArea'])).trim();
     const roadName=String(pickField(row,['도로노선명','도로명','roadName'])).trim();
     const name=String(pickField(row,['설치장소','itlpc','소재지도로명주소','소재지지번주소','도로노선명'])).trim()||'무인교통단속카메라';
     const manageNo=pickField(row,['무인교통단속카메라관리번호','mnlssRegltCameraManageNo'])||`${lat}:${lng}`;
-    const sectionPosition=officialSectionPosition(row);
+    const sectionPosition=sectionPositionEarly;
 
     if(sectionPosition&&maxspeed>0){
       sectionNodes.push({
@@ -2501,10 +2480,17 @@ function applyGps(pos,fly=false){
     }else{startupStationary=true;state.stationaryActive=true;stateObj.speed=0;}
 
   }
+  // 도로 세그먼트에 '터널'로 이름표가 붙어있지 않은 짧은 터널·지하차도·고가 하부 등에서도
+  // 신호가 약해지는 순간에는 GPS 정확도가 함께 급격히 나빠지는 경우가 대부분이다(위성 가림).
+  // 이름 기반 터널 인식(tunnelBoundsAtIndex)에만 의존하면 이런 구간에서 "속도 0으로 튄
+  // 마지막 fix"가 진짜 정지로 오인되어 이후 추정주행(dead reckoning)의 기준 속도까지
+  // 0으로 고정되고, 그 결과 터널에 들어가는 순간 캐릭터가 멈춰버리는 현상으로 이어졌다.
+  // 정확도가 뚜렷하게 나쁠 때(60m↑)는 이름표가 없어도 같은 신호저하 상황으로 간주한다.
+  const accuracyDegraded=Number.isFinite(stateObj.accuracy)&&stateObj.accuracy>=60;
   const tunnelZeroGps=Boolean(
     state.tripStartedAt &&
     Number.isFinite(reportedSpeed) && reportedSpeed<=0.05 &&
-    (state.tunnelRouteLock?.active||tunnelBoundsAtIndex(state.currentRouteIndex))
+    (state.tunnelRouteLock?.active||tunnelBoundsAtIndex(state.currentRouteIndex)||accuracyDegraded)
   );
   let forceStationary=false;
 
@@ -2572,7 +2558,6 @@ function applyGps(pos,fly=false){
   if(Number.isFinite(stateObj.heading))state.lastRealHeading=stateObj.heading;
   if(!tunnelZeroGps)state.lastRealGpsAt=now;
   state.lastGpsTickAt=now;state.deadReckoningLastAt=now;state.gpsEstimated=Boolean(tunnelZeroGps);
-  if(!state.gpsEstimated)state.tunnelKalman=null;
   updateGpsEstimateUi();
   if(wasEstimated&&!state.gpsEstimated&&state.tunnelDrSpoken){state.tunnelDrSpoken=false;speakNavOnce(`tunnel-exit:${Math.floor(now/1000)}`,'터널을 벗어났습니다. 위치를 다시 확인했습니다.',0)}
   if(!Number.isFinite(stateObj.speed))stateObj.speed=state.lastRealSpeedMps||0;
@@ -2677,13 +2662,11 @@ function updateTunnelRouteLock(idx){
       lock.routeDistance=Number(state.user?.routeDistance);
       if(!Number.isFinite(lock.routeDistance))lock.routeDistance=state.routeCumulative[idx]||0;
       lock.lastAt=now;
-      notifyNativeDrCapMs(true);
     }
     return lock;
   }
   if(lock.active&&idx>lock.endIndex+2){
     lock.active=false;lock.startIndex=-1;lock.endIndex=-1;lock.routeDistance=null;lock.lastAt=0;
-    notifyNativeDrCapMs(false);
   }
   return lock.active?lock:null;
 }
@@ -2707,30 +2690,11 @@ function simulatedTunnelSpeedMps(idx,baseSpeed){
   const trafficKmh=Number(seg?.trafficSpeed);
   const trafficMps=Number.isFinite(trafficKmh)&&trafficKmh>0?trafficKmh/3.6:null;
   const entry=Math.max(0,Number(state.tunnelEntrySpeedMps)||Number(baseSpeed)||0);
-  if(!state.tunnelKalman)resetTunnelKalman(entry);
-  const kf=state.tunnelKalman,now=Date.now();
-  const dt=Math.max(0,Math.min(2,(now-(kf.at||now))/1000));
-  kf.at=now;
-
-  /* 예측 단계(등속 모델 + IMU 보정): 최근 IMU 가속도가 있으면 ITS 속도 쪽으로 가속/감속 중이라고
-     보고 반영하고, 없으면 직전 추정 속도를 그대로 이어간다. 측정 없이 시간이 흐를수록(dt) 불확실도
-     P가 커져서, 다음에 ITS 값이 들어오면 그만큼 더 크게 반영된다 — 이게 고정 0.65:0.35 대신
-     "시간에 따라 가변하는" 칼만 게인이 하는 일이다. */
-  const imuFresh=state.imu&&now-state.imu.at<1200;
-  const accelHint=imuFresh?Math.max(-3,Math.min(3,(Number(state.imu.accelMagnitude)||0)*(trafficMps!=null&&trafficMps<kf.x?-1:1)*0.4)):0;
-  let xPred=Math.max(0,kf.x+accelHint*dt);
-  const Q=1.1; // 프로세스 노이즈: 값이 클수록 "측정 없이는 금방 못 믿는다"는 뜻(ITS 값을 더 빨리 신뢰)
-  let pPred=kf.P+Q*dt;
-
-  if(trafficMps!=null){
-    const R=9; // 측정 노이즈: ITS 구간평균속도가 이 차량 개별 속도와는 다를 수 있어 분산을 넉넉히 둠
-    const K=pPred/(pPred+R); // 칼만 게인 — 불확실도가 클수록(오래 못 재측정했을수록) 1에 가까워짐
-    kf.x=xPred+K*(trafficMps-xPred);
-    kf.P=(1-K)*pPred;
-  }else{
-    kf.x=xPred;kf.P=pPred; // ITS 데이터가 없는 구간: 예측만으로 진행(불확실도는 계속 누적)
+  if(Number.isFinite(trafficMps)){
+    // 터널 진입 직전 실차속도 65% + 같은 도로 ITS 교통흐름 35%
+    return Math.max(0,Math.min(55,entry*.65+trafficMps*.35));
   }
-  return Math.max(0,Math.min(55,kf.x));
+  return entry;
 }
 
 function deadReckoningTick(){
@@ -2744,7 +2708,13 @@ function deadReckoningTick(){
     return;
   }
   // 실제 정지 상태에서는 마지막 주행속도를 재사용한 추정주행을 절대 시작하지 않는다.
-  if(state.stationaryActive||Math.max(0,Number(state.user?.speed)||0)<=0.05){
+  // 주의: 이 조건은 반드시 이 함수가 스스로 덮어쓰지 않는 값(speedEmaMps/lastRealSpeedMps)으로
+  // 판단해야 한다. 예전에는 state.user.speed를 검사했는데, 이 값은 바로 아래에서 이 함수가
+  // 매번 0으로 다시 써버리는 값이라 한 번이라도 0으로 찍히면(터널 진입 직전 위성 신호가
+  // 약해지며 GPS 속도가 순간적으로 0에 가깝게 튀는 경우가 흔함) 다음 틱에도 계속 0으로만
+  // 보여 "터널에 들어가면 캐릭터가 멈춰버리는" 현상이 발생했다.
+  const priorMovingSpeed=Math.max(0,Number(state.speedEmaMps)||Number(state.lastRealSpeedMps)||0);
+  if(state.stationaryActive||priorMovingSpeed<=0.05){
     state.deadReckoningLastAt=now;
     state.lastRealSpeedMps=0;
     state.user.speed=0;
@@ -2758,7 +2728,6 @@ function deadReckoningTick(){
   if(!state.gpsEstimated){
     state.tunnelEntrySpeedMps=Math.max(0,Number(state.speedEmaMps)||Number(state.lastRealSpeedMps)||Number(state.user.speed)||0);
     state.tunnelEntryAt=now;
-    resetTunnelKalman(state.tunnelEntrySpeedMps);
   }
   let speed=simulatedTunnelSpeedMps(state.currentRouteIndex,Number(state.speedEmaMps)||Number(state.lastRealSpeedMps)||Number(state.user.speed)||0);
   try{ // 터널 안 추정 속도는 해당 도로 제한속도를 넘지 않게 한다.
@@ -2825,7 +2794,7 @@ function announceTunnelAhead(idx){
   }
 }
 function startDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningLastAt=Date.now();state.deadReckoningTimer=setInterval(deadReckoningTick,500)}
-function stopDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningTimer=0;state.gpsEstimated=false;updateGpsEstimateUi();state.deadReckoningDistance=null;state.deadReckoningLastAt=0;state.tunnelKalman=null}
+function stopDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningTimer=0;state.gpsEstimated=false;updateGpsEstimateUi();state.deadReckoningDistance=null;state.deadReckoningLastAt=0}
 function startWatch(){if(state.permissionPrefs?.location===false)return;if(nativeBridgeAvailable())setNativeNavigationActive(true);if(state.watchId!=null)return;state.watchId=navigator.geolocation.watchPosition(p=>applyGps(p,false),()=>{}, {enableHighAccuracy:true,maximumAge:0,timeout:7000});startDeadReckoning()}
 function stopWatch(){if(nativeBridgeAvailable())setNativeNavigationActive(false);if(state.watchId!=null){navigator.geolocation.clearWatch(state.watchId);state.watchId=null}state.nativeLocationActive=false;stopDeadReckoning()}
 
@@ -4269,17 +4238,34 @@ function resetSectionSpeedState(){
 }
 function updateSectionAverageSpeed(idx){
   const e=sectionSpeedEventAtIndex(idx),panel=$('sectionSpeedPanel');
-  if(!e){resetSectionSpeedState();return}
   const now=Date.now(),cum=state.routeCumulative||[],routeNow=Number(state.user?.routeDistance);
+  const st0=state.sectionSpeedState;
+  if(!e){
+    // 실시간 경로 갱신(교통정보 반영 재계산)이나 GPS/터널 추정주행의 순간적인 맵매칭
+    // 흔들림으로 이번 틱에 못 찾았다고 해서 곧바로 '구간단속 시작했다가 중간에 사라짐'이
+    // 되지 않도록, 이미 진행 중인 구간은 유지한다. 실제로 종점을 지났거나(진행거리 기준
+    // +80m 이상), 45초 넘게 계속 매칭이 안 될 때만 진짜로 종료 처리한다.
+    if(st0){
+      const currentDistance=Number.isFinite(routeNow)?routeNow:(cum[idx]||st0.lastDistance||0);
+      const passedEnd=Number.isFinite(st0.endDistance)&&currentDistance>=st0.endDistance+80;
+      const staleTooLong=now-(st0.lastMatchAt||st0.lastAt||now)>45000;
+      if(passedEnd||staleTooLong){resetSectionSpeedState();return}
+      st0.lastDistance=Math.max(Number(st0.lastDistance)||0,currentDistance);st0.lastAt=now;
+      renderSectionSpeedPanel(st0,panel,now);
+      return;
+    }
+    resetSectionSpeedState();return;
+  }
   const currentDistance=Number.isFinite(routeNow)?routeNow:(cum[idx]||0),startDistance=Number.isFinite(Number(e.routeDistance))?Number(e.routeDistance):(cum[Number(e.routeIndex)]||0),endDistance=Number.isFinite(Number(e.endRouteDistance))?Number(e.endRouteDistance):(cum[Number(e.endRouteIndex)]||startDistance);
-  if(!state.sectionSpeedState||state.sectionSpeedState.id!==e.id){
+  if(!st0||st0.id!==e.id){
     const totalLength=Math.max(1,endDistance-startDistance);
     const progressed=Math.max(0,currentDistance-startDistance);
     const progressRatio=Math.min(1,progressed/totalLength);
     const remainAtInit=Math.max(0,endDistance-currentDistance);
     state.sectionSpeedState={
-      id:e.id,enteredAt:now,enteredDistance:Math.max(startDistance,currentDistance),
-      lastDistance:currentDistance,lastAt:now,lastAverageSpokenAt:0,lateEntry:progressRatio>.25
+      id:e.id,maxspeed:Number(e.maxspeed)||0,endDistance,
+      enteredAt:now,enteredDistance:Math.max(startDistance,currentDistance),
+      lastDistance:currentDistance,lastAt:now,lastMatchAt:now,lastAverageSpokenAt:0,lateEntry:progressRatio>.25
     };
     // 실시간 경로 갱신/GPS 재매칭으로 구간 중후반에서 상태가 다시 만들어진 경우
     // 종점 직전에 '구간단속 시작'을 잘못 말하지 않는다. 시작점 부근에서 진입한 경우에만 안내한다.
@@ -4289,24 +4275,31 @@ function updateSectionAverageSpeed(idx){
   }
   const st=state.sectionSpeedState;
   // 맵매칭 노이즈로 후진하지 않도록 누적 진행거리는 단조 증가로 유지한다.
-  st.lastDistance=Math.max(Number(st.lastDistance)||0,currentDistance);st.lastAt=now;
+  st.lastDistance=Math.max(Number(st.lastDistance)||0,currentDistance);st.lastAt=now;st.lastMatchAt=now;
+  st.endDistance=endDistance;st.maxspeed=Number(e.maxspeed)||st.maxspeed||0;
+  renderSectionSpeedPanel(st,panel,now);
+}
+/* updateSectionAverageSpeed의 렌더링(패널 표시/음성 안내) 부분을 분리했다.
+   실시간 이벤트 매칭에 실패한 틱에서도(위 폴백 분기) e 없이 st만으로 계속 표시할 수 있게 하기 위함. */
+function renderSectionSpeedPanel(st,panel,now){
   const elapsed=Math.max(1,(now-st.enteredAt)/1000),travelled=Math.max(0,st.lastDistance-st.enteredDistance);
-  const avg=Math.max(0,Math.min(250,travelled/elapsed*3.6)),remain=Math.max(0,endDistance-st.lastDistance);
+  const avg=Math.max(0,Math.min(250,travelled/elapsed*3.6)),remain=Math.max(0,Number(st.endDistance)-st.lastDistance);
+  const maxspeed=Number(st.maxspeed)||0;
   if(panel)panel.classList.remove('hidden');
   $('driveView')?.classList.add('has-section-speed');
   if($('sectionAverageSpeed'))$('sectionAverageSpeed').innerHTML=`${Math.round(avg)} <i>km/h</i>`;
-  if($('sectionLimitSpeed'))$('sectionLimitSpeed').textContent=e.maxspeed?`${Math.round(e.maxspeed)} km/h`:'-- km/h';
+  if($('sectionLimitSpeed'))$('sectionLimitSpeed').textContent=maxspeed?`${Math.round(maxspeed)} km/h`:'-- km/h';
   if($('sectionRemainDistance'))$('sectionRemainDistance').innerHTML=km(remain).replace(/(\d)(km|m)$/,'$1 <i>$2</i>');
-  panel?.classList.toggle('over',Number(e.maxspeed)>0&&avg>Number(e.maxspeed));
+  panel?.classList.toggle('over',maxspeed>0&&avg>maxspeed);
   panel?.classList.toggle('nearing-end',remain<=1500);
-  if(panel)panel.dataset.sectionState=(Number(e.maxspeed)>0&&avg>Number(e.maxspeed))?'over':(remain<=1500?'ending':'normal');
+  if(panel)panel.dataset.sectionState=(maxspeed>0&&avg>maxspeed)?'over':(remain<=1500?'ending':'normal');
 
   // 구간 진입 후 30초가 지나면 평균속도를 음성으로도 안내하고 이후 60초마다 갱신한다.
   if(elapsed>=10 && (!st.lastAverageSpokenAt||now-st.lastAverageSpokenAt>=20000)){
     st.lastAverageSpokenAt=now;
-    const over=Number(e.maxspeed)>0&&avg>Number(e.maxspeed);
+    const over=maxspeed>0&&avg>maxspeed;
     speakNavOnce(
-      `sectionavg:${e.id}:${Math.floor(elapsed/60)}`,
+      `sectionavg:${st.id}:${Math.floor(elapsed/60)}`,
       `현재 구간 평균속도는 ${Math.round(avg)}킬로미터입니다.${over?' 제한속도를 초과했습니다. 감속하세요.':''}`,
       15000
     );
