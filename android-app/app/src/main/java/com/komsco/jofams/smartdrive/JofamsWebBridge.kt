@@ -27,6 +27,7 @@ class JofamsWebBridge(
     fun emitRoadEvents(json: JSONObject) = call("onRoadEvents", json)
     fun emitAlternativeRoute(json: JSONObject) = call("onAlternativeRoute", json)
     fun emitLocation(json: JSONObject) = call("onLocationUpdate", json)
+    fun emitMotion(json: JSONObject) = call("onMotionUpdate", json)
     fun emitTunnelState(active: Boolean) = call("onTunnelState", JSONObject().put("active", active))
     fun emitARStatus(json: JSONObject) = call("onARStatus", json)
 
