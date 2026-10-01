@@ -100,10 +100,22 @@ function nativeBridgeAvailable(){return Boolean(window.JofamsNavigationBridge&&t
 function nativePost(type,payload={}){try{if(nativeBridgeAvailable())window.JofamsNavigationBridge.postMessage(JSON.stringify({type,payload,ts:Date.now()}))}catch(e){console.warn('native bridge post failed',e)}}
 function parseNativePacket(packet){try{return typeof packet==='string'?JSON.parse(packet):packet||{}}catch{return {}}}
 window.JofamsNative=window.JofamsNative||{};
+// app.js is an ES module; Android's evaluateJavascript cannot access its lexical state.
+window.JofamsWebNavigation={
+  getState:()=>state,
+  stop:()=>stopNavigation(),
+  applyRoute(route){
+    state.route=route;state.routeCumulative=buildCumulative(route);
+    state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};
+    state.safetyEvents=[];resetSectionSpeedState();
+    drawRoute(route,{fit:false});
+    loadSafetyEvents(route).catch(e=>console.warn('native reroute safety refresh failed',e));
+  }
+};
 window.JofamsNative.onLocationUpdate=packet=>{
   const p=parseNativePacket(packet),lat=Number(p.lat??p.latitude),lng=Number(p.lng??p.longitude);if(!Number.isFinite(lat)||!Number.isFinite(lng))return;
   state.nativeLocationAt=Date.now();state.nativeLocationActive=true;
-  applyGps({native:true,timestamp:Number(p.timestamp)||Date.now(),coords:{latitude:lat,longitude:lng,accuracy:Number(p.accuracy)||8,speed:Number(p.speedMps??p.speed),heading:Number(p.headingDeg??p.bearing),speedAccuracy:Number(p.speedAccuracy),headingAccuracy:Number(p.bearingAccuracy)}},false);
+  applyGps({native:true,estimated:Boolean(p.estimated),rawLatitude:p.rawLat,rawLongitude:p.rawLng,routeIndex:p.routeIndex,routeDistance:p.routeDistance,timestamp:Number(p.timestamp)||Date.now(),coords:{latitude:lat,longitude:lng,accuracy:Number(p.accuracy)||8,speed:p.speedMps??p.speed,heading:p.headingDeg??p.bearing,speedAccuracy:p.speedAccuracy,headingAccuracy:p.bearingAccuracy}},false);
 };
 window.JofamsNative.onMotionUpdate=packet=>{
   const p=parseNativePacket(packet);state.imu={at:Date.now(),yawRateDegS:Number(p.yawRateDegS)||0,accelMagnitude:Number(p.accelMagnitude)||0,headingDeg:Number.isFinite(Number(p.headingDeg))?Number(p.headingDeg):state.imu.headingDeg};
@@ -2431,6 +2443,24 @@ function applyGps(pos,fly=false){
   if(state.simulationActive)return;
   if(state.permissionPrefs?.location===false)return;
   const native=Boolean(pos?.native),now=Date.now();
+  if(native){
+    const c=pos.coords||pos,t=Number(pos.timestamp)||now;
+    if(t<=Number(state.lastNativeSampleAt||0))return;
+    const lat=Number(c.latitude??c.lat),lng=Number(c.longitude??c.lng);
+    if(!Number.isFinite(lat)||!Number.isFinite(lng))return;
+    state.lastNativeSampleAt=t;state.nativeLocationAt=now;state.nativeLocationActive=true;
+    const estimated=Boolean(pos.estimated);
+    state.user={lat,lng,rawLat:pos.rawLatitude==null?lat:Number(pos.rawLatitude),rawLng:pos.rawLongitude==null?lng:Number(pos.rawLongitude),
+      speed:c.speed==null?0:Number(c.speed),heading:c.heading==null?null:Number(c.heading),accuracy:Number(c.accuracy)||0,
+      routeIndex:pos.routeIndex??null,routeDistance:pos.routeDistance??null,mapSnapped:pos.routeDistance!=null,estimated,native:true};
+    state.gpsEstimated=estimated;state.lastGpsTickAt=now;
+    if(!estimated){state.lastRealGpsAt=now;state.lastRealSpeedMps=state.user.speed;}
+    if(pos.routeDistance!=null)state.deadReckoningDistance=Number(pos.routeDistance);
+    updateGpsEstimateUi();ensureUserMarker();
+    if(fly&&state.map)state.map.easeTo({center:[lng,lat],zoom:16,duration:500});
+    if(!window.__JOFAMS_NATIVE_DRIVE_ACTIVE__&&state.route&&$('driveView')&&!$('driveView').classList.contains('hidden'))updateDriving();
+    return;
+  }
   const wasEstimated=Boolean(state.gpsEstimated||state.user?.estimated);
   if(!native&&state.nativeLocationAt&&now-state.nativeLocationAt<2200)return;
 
@@ -2698,6 +2728,7 @@ function simulatedTunnelSpeedMps(idx,baseSpeed){
 }
 
 function deadReckoningTick(){
+  if(nativeBridgeAvailable()&&!state.simulationActive)return;
   if(!state.tripStartedAt||!state.route?.geometry?.length||!state.routeCumulative.length||!state.user)return;
   const now=Date.now(),sinceReal=now-(state.lastRealGpsAt||0);
   if(!state.simulationActive&&!state.navigationStartReleased){
@@ -4040,6 +4071,7 @@ function driveCameraPadding(){
   return{top:Math.round(h*.48),bottom:76,left:0,right:0};
 }
 function updateDriving(force=false){
+  if(window.__JOFAMS_NATIVE_DRIVE_ACTIVE__)return;
   refreshVslSpeedLimit();
   if(!state.user||!state.route?.geometry?.length)return;
   const g=state.route.geometry;
