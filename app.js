@@ -2274,19 +2274,26 @@ function scheduleSmoothDriveMarker(){
     // Exponential easing along route distance; never interpolate straight across a curve.
     const tau=state.gpsEstimated?.34:.22;
     const alpha=1-Math.exp(-dt/tau);
-    let next=rendered+(target-rendered)*alpha;
+    // GPS는 1초에 한 번 계단식으로 들어온다. 목표를 그대로 따라가면 매초 '쑥 가다가 멈추는'
+    // 움직임이 되어 달리는 중에 멈춘 것처럼 보인다. 마지막 수신 후 경과 시간만큼 현재 속도로
+    // 목표를 앞으로 연장(최대 1.6초)해서 끊김 없이 미끄러지게 한다.
+    const ageSec=Math.min(1.6,Math.max(0,(Date.now()-Number(state.driveMarkerTargetAt||0))/1000));
+    const lead=(!state.simulationActive&&!state.stationaryActive&&currentSpeed>0.5&&state.driveMarkerTargetAt)?currentSpeed*ageSec:0;
+    const goal=target+lead;
+    let next=rendered+(goal-rendered)*alpha;
     // Forward movement is monotonic; avoid one-frame teleport after GPS recovery.
     const speed=Math.max(1.5,Number(state.user?.speed)||0);
     const maxStep=Math.max(.45,speed*dt*1.65+1.2);
     next=Math.min(next,rendered+maxStep);
-    if(target<rendered)next=Math.max(target,rendered-Math.max(.25,maxStep*.25));
+    // 연장 때문에 실제 위치보다 조금 앞서 있을 때는 뒤로 되돌리지 않고 멈춰 기다린다(8m 이내).
+    if(goal<rendered)next=(rendered-goal<=8)?rendered:Math.max(goal,rendered-Math.max(.25,maxStep*.25));
 
     const p=pointAtRouteDistance(next);
     if(p){
       state.driveMarkerRenderedDistance=next;
       state.userMarker.setLngLat([p.lng,p.lat]);
     }
-    if(Math.abs(target-next)>.12){
+    if(Math.abs(goal-next)>.12||lead>0){
       state.driveMarkerRaf=requestAnimationFrame(frame);
     }else{
       state.driveMarkerRenderedDistance=target;
@@ -2318,6 +2325,7 @@ function ensureUserMarker(){
     // 정지 중에는 GPS/맵매칭 오차가 앞쪽 점을 잡더라도 캐릭터 목표거리를 갱신하지 않는다.
     state.driveMarkerTargetDistance=Number(state.driveMarkerRenderedDistance);
   }else if(Number.isFinite(incomingRouteDistance)){
+    if(state.driveMarkerTargetDistance!==incomingRouteDistance)state.driveMarkerTargetAt=Date.now();
     state.driveMarkerTargetDistance=incomingRouteDistance;
   }
     if(!Number.isFinite(Number(state.driveMarkerRenderedDistance)))state.driveMarkerRenderedDistance=Number(state.user.routeDistance);
@@ -2464,9 +2472,13 @@ function applyGps(pos,fly=false){
   const wasEstimated=Boolean(state.gpsEstimated||state.user?.estimated);
   if(!native&&state.nativeLocationAt&&now-state.nativeLocationAt<2200)return;
 
-  const c=pos.coords||pos,stateObj={
+  const c=pos.coords||pos;
+  // Android WebView는 속도를 모를 때 speed=null을 준다. Number(null)은 0이라 "정지"로 오인되어
+  // 주행 중 캐릭터가 멈추는 원인이었다. null/undefined/NaN은 '알 수 없음'(NaN)으로 취급한다.
+  const speedKnown=c.speed!=null&&c.speed!==''&&Number.isFinite(Number(c.speed));
+  const stateObj={
     lng:Number(c.longitude??c.lng),lat:Number(c.latitude??c.lat),
-    speed:Number(c.speed),heading:Number(c.heading),accuracy:Number(c.accuracy)||0,
+    speed:speedKnown?Number(c.speed):NaN,heading:Number(c.heading),accuracy:Number(c.accuracy)||0,
     estimated:false,native
   };
   if(!pointValid(stateObj))return;
@@ -2492,7 +2504,7 @@ function applyGps(pos,fly=false){
     }
     state.preTripAnchor={lat:rawLat,lng:rawLng};state.preTripMoveHits=0;
   }
-  const reportedSpeed=Number(c.speed);
+  const reportedSpeed=speedKnown?Number(c.speed):NaN;
   // 안내 시작 직후 실제 차량이 움직이지 않았는데 GPS 흔들림만으로 캐릭터가 앞서가는 현상을 방지한다.
   // 출발 기준점에서 12m 이내이며 실제 speed가 1m/s를 넘지 않는 동안은 정지 상태를 유지한다.
   let startupStationary=false;
@@ -2532,7 +2544,7 @@ function applyGps(pos,fly=false){
   }else if(state.tripStartedAt&&!state.simulationActive&&!tunnelZeroGps&&Number.isFinite(reportedSpeed)&&reportedSpeed<=0.05){
     if(!state.stationaryGpsAnchor){
       state.stationaryGpsAnchor={
-        lat:rawLat,lng:rawLng,
+        t:now,lat:rawLat,lng:rawLng,
         routeDistance:Number.isFinite(Number(state.driveMarkerRenderedDistance))
           ?Number(state.driveMarkerRenderedDistance)
           :(Number.isFinite(Number(state.routeLockedDistance))
@@ -2541,7 +2553,11 @@ function applyGps(pos,fly=false){
       };
     }
     const stationaryDrift=hav(state.stationaryGpsAnchor.lat,state.stationaryGpsAnchor.lng,rawLat,rawLng);
-    if(Number.isFinite(stationaryDrift)&&stationaryDrift<=10){
+    // 직전까지 달리던 차량(표시 속도 0.8m/s 초과)은 속도 0 한 번으로 곧바로 정지 처리하지 않는다.
+    // 앵커가 1.5초 이상 유지되며 계속 정지일 때만 고정한다(그렇지 않으면 1~2초씩 멈췄다 가는 현상).
+    const anchorAge=now-Number(state.stationaryGpsAnchor.t||0);
+    const wasMoving=Number(state.user?.speed)>0.8&&!state.stationaryActive;
+    if(Number.isFinite(stationaryDrift)&&stationaryDrift<=10&&!(wasMoving&&anchorAge<1500&&state.stationaryGpsAnchor.t)){
       forceStationary=true;
       state.stationaryActive=true;
       stateObj.speed=0;
@@ -2728,7 +2744,9 @@ function simulatedTunnelSpeedMps(idx,baseSpeed){
 }
 
 function deadReckoningTick(){
-  if(nativeBridgeAvailable()&&!state.simulationActive)return;
+  // 네이티브가 위치(실측/추정)를 계속 보내는 동안에는 네이티브가 담당하고, 2.5초 넘게 침묵하면
+  // (터널·네이티브 추정 실패) 웹 추정 주행이 이어받는다. 예전에는 앱에서 무조건 return 해서 터널에서 멈췄다.
+  if(nativeBridgeAvailable()&&!state.simulationActive&&Date.now()-Number(state.nativeLocationAt||0)<2500)return;
   if(!state.tripStartedAt||!state.route?.geometry?.length||!state.routeCumulative.length||!state.user)return;
   const now=Date.now(),sinceReal=now-(state.lastRealGpsAt||0);
   if(!state.simulationActive&&!state.navigationStartReleased){
@@ -2836,7 +2854,37 @@ function fuelWon(v){const n=Number(v);return Number.isFinite(n)&&n>0?`${Math.rou
 function fuelBrandName(code){
   return ({SKE:'SK',GSC:'GS칼텍스',HDO:'HD현대오일뱅크',SOL:'S-OIL',RTE:'알뜰',RTX:'고속도로알뜰',NHO:'농협알뜰',ETC:'자가상표',E1G:'E1',SKG:'SK가스'})[code]||code||'';
 }
-function fuelFreshEnough(){return state.fuelData&&Date.now()-Number(state.fuelFetchedAt||0)<5*60*1000}
+function fuelFreshEnough(){
+  if(!(state.fuelData&&Date.now()-Number(state.fuelFetchedAt||0)<5*60*1000))return false;
+  // 주행 중에는 조회 시점보다 3km 이상 진행했으면 앞쪽 구간 주유소를 다시 조회한다.
+  if(state.tripStartedAt&&state.route?.geometry?.length){
+    const moved=currentRouteDistanceAt(state.currentRouteIndex||0)-Number(state.fuelFetchedRouteM||0);
+    if(!(moved<3000))return false;
+  }
+  return true;
+}
+/* 주행 중 유가 칩/목록은 '앞으로 달릴 경로 위(양옆 120m 이내)'에 있는 주유소만 대상으로 한다. */
+function scopeFuelToRoute(stations){
+  const g=state.route?.geometry;
+  if(!state.tripStartedAt||!g?.length)return stations||[];
+  const cur=currentRouteDistanceAt(state.currentRouteIndex||0),out=[];
+  for(const x of stations||[]){
+    const lng=Number(x.lng??x.lon??x.x),lat=Number(x.lat??x.y);
+    if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;
+    const m=routePosOfPoint(lng,lat,g,null,200);
+    if(!m||Number(m.distance)>120)continue;
+    const ahead=Number(m.routeDistance)-cur;
+    if(ahead<50||ahead>20000)continue;
+    out.push({...x,__aheadM:ahead});
+  }
+  return out.sort((a,b)=>Number(a.price)-Number(b.price));
+}
+function refreshFuelWhileDriving(){
+  const now=Date.now();if(now-Number(state.lastFuelGuardAt||0)<30000)return;
+  state.lastFuelGuardAt=now;
+  if(!state.tripStartedAt||state.fuelLoading||!state.route?.geometry?.length)return;
+  if(!fuelFreshEnough())loadFuelPrices(state.fuelProduct,{force:true}).catch(()=>{});
+}
 async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false}={}){
   state.fuelProduct=product||'B027';
   syncFuelTabs();
@@ -2852,16 +2900,29 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
   state.fuelLoading=true;
   renderFuelLoading();
   try{
-    const u=new URL('/api/fuel',location.origin);
-    u.searchParams.set('lat',state.user.lat);u.searchParams.set('lng',state.user.lng);
-    u.searchParams.set('prodcd',state.fuelProduct);u.searchParams.set('cnt','8');
-    const res=await fetch(u,{headers:{accept:'application/json'}});
-    const d=await res.json().catch(()=>({}));
-    if(!res.ok){
-      const err=new Error(d?.error||`유가 조회 실패 (${res.status})`);
-      err.code=d?.code||'';
-      throw err;
+    const driving=Boolean(state.tripStartedAt&&state.route?.geometry?.length);
+    // 주행 중에는 현재 위치 주변만이 아니라 앞으로 달릴 경로를 따라 여러 지점에서 조회해 합친다.
+    const curM=driving?currentRouteDistanceAt(state.currentRouteIndex||0):0;
+    const probes=driving?[0,4000,8000,12000,16000].map(o=>pointAtRouteDistance(curM+o)).filter(Boolean):[{lat:state.user.lat,lng:state.user.lng}];
+    const results=await Promise.all(probes.map(async pt=>{
+      const u=new URL('/api/fuel',location.origin);
+      u.searchParams.set('lat',pt.lat);u.searchParams.set('lng',pt.lng);
+      u.searchParams.set('prodcd',state.fuelProduct);u.searchParams.set('cnt',driving?'15':'8');
+      const res=await fetch(u,{headers:{accept:'application/json'}});
+      const dd=await res.json().catch(()=>({}));
+      if(!res.ok){const err=new Error(dd?.error||`유가 조회 실패 (${res.status})`);err.code=dd?.code||'';throw err}
+      return dd;
+    }).map(p=>p.catch(e=>({__err:e}))));
+    const okRes=results.filter(r=>!r.__err);
+    if(!okRes.length)throw results[0].__err;
+    const d={...okRes[0]};
+    if(okRes.length>1){
+      const seen=new Set(),all=[];
+      for(const r of okRes)for(const x of (r.stations||[])){const k=String(x.id||x.uni||`${x.name}:${x.lat}:${x.lng}`);if(seen.has(k))continue;seen.add(k);all.push(x)}
+      all.sort((a,b)=>Number(a.price)-Number(b.price));
+      d.stations=all;
     }
+    state.fuelFetchedRouteM=curM;
     state.fuelData=d;state.fuelFetchedAt=Date.now();
     try{localStorage.setItem('jofams_fuel_last_success_v1',JSON.stringify({savedAt:Date.now(),payload:d}))}catch{}
     renderFuelData(d);
@@ -2912,6 +2973,7 @@ function bindFuelStationRowClicks(container,items){
   });
 }
 function renderFuelData(data){
+  if(state.tripStartedAt&&state.route?.geometry?.length)data={...data,stations:scopeFuelToRoute(data?.stations)};
   const area=data?.areaName||'현재 지역';
   const items=(data?.stations||[]).filter(x=>Number(x.price)>0);
   const min=items.length?Math.min(...items.map(x=>Number(x.price))):0;
@@ -2927,6 +2989,9 @@ function renderFuelData(data){
     $('driveFuelPrice').textContent=fuelWon(items[0].price);
     $('driveFuelName').textContent=String(items[0].name||'주유소').replace(/\(주\)/g,'㈜');
     chip.classList.remove('hidden');
+  }else if(chip&&state.tripStartedAt&&!items.length){
+    // 달리는 경로 위에 주유소가 없으면 경로 밖 주유소를 보여주지 않는다.
+    chip.classList.add('hidden');
   }
 }
 function renderFuelLoading(){
@@ -4096,8 +4161,12 @@ function updateDriving(force=false){
     const now=Date.now();
     if(force||now-Number(state.lastDriveCameraAt||0)>=280){
       state.lastDriveCameraAt=now;
+      // 카메라 중심은 '화면에 그려지는 캐릭터' 위치를 따른다. 위치(state.user)와 렌더링 위치가
+      // 어긋나는 순간(보간 지연·정지 고정·추정 주행)에도 캐릭터가 화면 밖으로 벗어나지 않는다.
+      const camPt=Number.isFinite(Number(state.driveMarkerRenderedDistance))?pointAtRouteDistance(Number(state.driveMarkerRenderedDistance)):null;
+      const camCenter=camPt?[camPt.lng,camPt.lat]:[state.user.lng,state.user.lat];
       state.map.easeTo({
-        center:[state.user.lng,state.user.lat],
+        center:camCenter,
         zoom:17.2,
         pitch:state.map3D?55:0,
         bearing:heading,
@@ -4109,6 +4178,39 @@ function updateDriving(force=false){
   updateProgressUI(idx);
   if(state.arRunning)updateAROverlay();
   checkOffRoute(idx);
+  keepDriveCharacterVisible();
+  ensureSafetyMarkersPresent();
+  refreshFuelWhileDriving();
+}
+/* 캐릭터가 화면(패딩 반영 중심)에서 크게 벗어나면 즉시 되돌린다. 지도 조작 중에는 건드리지 않는다. */
+function keepDriveCharacterVisible(){
+  try{
+    if(!state.map||!state.userMarker||!state.tripStartedAt||state.simulationActive)return;
+    if(!canAutoRecenterMap())return;
+    const now=Date.now();if(now-Number(state.lastVisibleGuardAt||0)<400)return;
+    const ll=state.userMarker.getLngLat?.();if(!ll)return;
+    const canvas=state.map.getCanvas?.();if(!canvas)return;
+    const w=canvas.clientWidth||window.innerWidth||360,h=canvas.clientHeight||window.innerHeight||640;
+    const c=state.map.project(state.map.getCenter()),p=state.map.project([ll.lng,ll.lat]);
+    const dev=Math.hypot(p.x-c.x,p.y-c.y);
+    if(dev>Math.max(70,Math.min(w,h)*.28)){
+      state.lastVisibleGuardAt=now;
+      state.map.easeTo({center:[ll.lng,ll.lat],duration:220,essential:true,padding:driveCameraPadding()});
+    }
+  }catch(e){console.warn('visibility guard failed',e)}
+}
+/* 경로 위 카메라 핀이 어떤 이유로든 사라졌으면(경로 재계산·DOM 유실) 다시 그린다. */
+function ensureSafetyMarkersPresent(){
+  try{
+    const now=Date.now();if(now-Number(state.lastMarkerGuardAt||0)<2500)return;
+    state.lastMarkerGuardAt=now;
+    if(!state.tripStartedAt||!state.map||!state.route?.geometry?.length)return;
+    const hasCam=(state.safetyEvents||[]).some(e=>['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','section_speed_end'].includes(e.type));
+    if(!hasCam)return;
+    const ms=state.safetyMarkers||[];
+    const lost=!ms.length||ms.some(m=>{const el=m.getElement?.();return !el||!el.isConnected});
+    if(lost)renderSafetyMarkers();
+  }catch(e){console.warn('marker guard failed',e)}
 }
 function hideDestinationBottom(){clearTimeout(state.destinationHideTimer);$('driveBottomDestination')?.classList.add('hidden');$('driveBottomNormal')?.classList.remove('hidden')}
 function showDestinationBottom(duration=10000){if(!state.tripStartedAt||!state.destination)return;clearTimeout(state.destinationHideTimer);$('driveBottomNormal')?.classList.add('hidden');$('driveBottomDestination')?.classList.remove('hidden');state.lastDestinationShownAt=Date.now();state.destinationHideTimer=setTimeout(hideDestinationBottom,duration)}
@@ -4263,52 +4365,82 @@ function sectionSpeedEventAtIndex(idx){
     return idx>=Number(e.routeIndex)&&idx<=Number(e.endRouteIndex);
   })||null;
 }
+/* 구간단속 평균속도가 제한속도를 넘으면 화면 전체를 빨갛게 깜빡여 경고한다(HTML/CSS 수정 없이 동작). */
+function setSectionOverspeedFlash(on){
+  let el=document.getElementById('sectionAvgOverspeedFlash');
+  if(!el){
+    if(!on)return;
+    if(!document.getElementById('sectionAvgOverspeedFlashStyle')){
+      const st=document.createElement('style');st.id='sectionAvgOverspeedFlashStyle';
+      st.textContent='#sectionAvgOverspeedFlash{position:fixed;inset:0;z-index:2147483000;pointer-events:none;background:rgba(255,0,0,.38);opacity:0;display:none}'+
+        '#sectionAvgOverspeedFlash.on{display:block;animation:sectionAvgFlash .7s ease-in-out infinite}'+
+        '@keyframes sectionAvgFlash{0%,100%{opacity:0}50%{opacity:1}}'+
+        '.safety-map-marker.next-camera{transform-origin:center;filter:drop-shadow(0 0 6px rgba(255,60,60,.9));z-index:70!important}';
+      document.head.appendChild(st);
+    }
+    el=document.createElement('div');el.id='sectionAvgOverspeedFlash';el.setAttribute('aria-hidden','true');document.body.appendChild(el);
+  }
+  el.classList.toggle('on',Boolean(on));
+}
 function resetSectionSpeedState(){
+  setSectionOverspeedFlash(false);
   state.sectionSpeedState=null;
   $('sectionSpeedPanel')?.classList.add('hidden');
   $('driveView')?.classList.remove('has-section-speed');
 }
 function updateSectionAverageSpeed(idx){
+  /* 구간단속은 시작하면 종점까지 같은 상태로 안내한다. 경로가 재계산돼 거리 기준이 바뀌거나,
+     이벤트 id가 바뀌거나, GPS/터널로 잠시 매칭이 끊겨도 중간에 끝내거나 평균속도를 초기화하지 않는다.
+     평균속도는 경로 기준이 아닌 '누적 주행거리(오도미터)'로 계산해 경로가 바뀌어도 이어진다. */
   const e=sectionSpeedEventAtIndex(idx),panel=$('sectionSpeedPanel');
   const now=Date.now(),cum=state.routeCumulative||[],routeNow=Number(state.user?.routeDistance);
-  const st0=state.sectionSpeedState;
+  const currentDistance=Number.isFinite(routeNow)?routeNow:(cum[idx]||0);
+  let st=state.sectionSpeedState;
+  // 오도미터 갱신: 같은 경로에서의 전진량만 더한다(후진/점프 제외).
+  if(st){
+    if(st.routeRef!==state.route){st.routeRef=state.route;st.routeLast=currentDistance}
+    else{
+      const delta=currentDistance-Number(st.routeLast||currentDistance);
+      const cap=Math.max(80,(Number(state.user?.speed)||0)*Math.max(2,(now-Number(st.lastAt||now))/1000)*2+40);
+      if(delta>0&&delta<=cap)st.lastDistance=Number(st.lastDistance||0)+delta;
+      st.routeLast=currentDistance;
+    }
+    st.lastAt=now;
+  }
   if(!e){
-    // 실시간 경로 갱신(교통정보 반영 재계산)이나 GPS/터널 추정주행의 순간적인 맵매칭
-    // 흔들림으로 이번 틱에 못 찾았다고 해서 곧바로 '구간단속 시작했다가 중간에 사라짐'이
-    // 되지 않도록, 이미 진행 중인 구간은 유지한다. 실제로 종점을 지났거나(진행거리 기준
-    // +80m 이상), 45초 넘게 계속 매칭이 안 될 때만 진짜로 종료 처리한다.
-    if(st0){
-      const currentDistance=Number.isFinite(routeNow)?routeNow:(cum[idx]||st0.lastDistance||0);
-      const passedEnd=Number.isFinite(st0.endDistance)&&currentDistance>=st0.endDistance+80;
-      const staleTooLong=now-(st0.lastMatchAt||st0.lastAt||now)>45000;
-      if(passedEnd||staleTooLong){resetSectionSpeedState();return}
-      st0.lastDistance=Math.max(Number(st0.lastDistance)||0,currentDistance);st0.lastAt=now;
-      renderSectionSpeedPanel(st0,panel,now);
+    if(st){
+      // 종점을 실제로 지났을 때만 종료한다(누적 주행거리 기준 15m 여유). 매칭 실패만으로는 종료하지 않는다.
+      const passedEnd=Number.isFinite(st.endDistance)&&st.lastDistance>=st.endDistance+15;
+      const hardStale=now-(st.lastMatchAt||now)>30*60*1000;
+      if(passedEnd||hardStale){resetSectionSpeedState();return}
+      renderSectionSpeedPanel(st,panel,now);
       return;
     }
     resetSectionSpeedState();return;
   }
-  const currentDistance=Number.isFinite(routeNow)?routeNow:(cum[idx]||0),startDistance=Number.isFinite(Number(e.routeDistance))?Number(e.routeDistance):(cum[Number(e.routeIndex)]||0),endDistance=Number.isFinite(Number(e.endRouteDistance))?Number(e.endRouteDistance):(cum[Number(e.endRouteIndex)]||startDistance);
-  if(!st0||st0.id!==e.id){
+  const startDistance=Number.isFinite(Number(e.routeDistance))?Number(e.routeDistance):(cum[Number(e.routeIndex)]||0),endDistance=Number.isFinite(Number(e.endRouteDistance))?Number(e.endRouteDistance):(cum[Number(e.endRouteIndex)]||startDistance);
+  const remainRoute=Math.max(0,endDistance-currentDistance);
+  // 같은 구간인지: id가 같거나, 진행 중인 구간의 남은 거리와 새 이벤트의 남은 거리가 비슷하면 같은 구간(id만 바뀐 것).
+  const sameSection=Boolean(st)&&(st.id===e.id||(Number(st.endDistance)-Number(st.lastDistance)>30&&Math.abs((Number(st.endDistance)-Number(st.lastDistance))-remainRoute)<=450));
+  if(!sameSection){
     const totalLength=Math.max(1,endDistance-startDistance);
     const progressed=Math.max(0,currentDistance-startDistance);
     const progressRatio=Math.min(1,progressed/totalLength);
-    const remainAtInit=Math.max(0,endDistance-currentDistance);
-    state.sectionSpeedState={
-      id:e.id,maxspeed:Number(e.maxspeed)||0,endDistance,
-      enteredAt:now,enteredDistance:Math.max(startDistance,currentDistance),
-      lastDistance:currentDistance,lastAt:now,lastMatchAt:now,lastAverageSpokenAt:0,lateEntry:progressRatio>.25
+    state.sectionSpeedState=st={
+      id:e.id,maxspeed:Number(e.maxspeed)||0,
+      enteredAt:now,enteredDistance:0,lastDistance:0,endDistance:remainRoute,
+      routeRef:state.route,routeLast:currentDistance,lastAt:now,lastMatchAt:now,lastAverageSpokenAt:0,lateEntry:progressRatio>.25
     };
-    // 실시간 경로 갱신/GPS 재매칭으로 구간 중후반에서 상태가 다시 만들어진 경우
-    // 종점 직전에 '구간단속 시작'을 잘못 말하지 않는다. 시작점 부근에서 진입한 경우에만 안내한다.
-    if(progressRatio<=.25&&progressed<=900&&remainAtInit>=500){
+    // 구간 중후반에서 상태가 새로 만들어진 경우 종점 직전에 '구간단속 시작'을 잘못 말하지 않는다.
+    if(progressRatio<=.25&&progressed<=900&&remainRoute>=500){
       speakNavOnce(`section:${e.id}` ,`구간단속 시작 구간입니다.${e.maxspeed?` 제한속도 ${e.maxspeed}킬로미터입니다.`:''}`,12000);
     }
+  }else{
+    st.id=e.id;
+    // 종점은 최신 경로 기준 남은 거리로 재동기화한다(누적 주행거리 좌표계 유지).
+    st.endDistance=Number(st.lastDistance)+remainRoute;
   }
-  const st=state.sectionSpeedState;
-  // 맵매칭 노이즈로 후진하지 않도록 누적 진행거리는 단조 증가로 유지한다.
-  st.lastDistance=Math.max(Number(st.lastDistance)||0,currentDistance);st.lastAt=now;st.lastMatchAt=now;
-  st.endDistance=endDistance;st.maxspeed=Number(e.maxspeed)||st.maxspeed||0;
+  st.lastMatchAt=now;st.maxspeed=Number(e.maxspeed)||st.maxspeed||0;
   renderSectionSpeedPanel(st,panel,now);
 }
 /* updateSectionAverageSpeed의 렌더링(패널 표시/음성 안내) 부분을 분리했다.
@@ -4323,6 +4455,7 @@ function renderSectionSpeedPanel(st,panel,now){
   if($('sectionLimitSpeed'))$('sectionLimitSpeed').textContent=maxspeed?`${Math.round(maxspeed)} km/h`:'-- km/h';
   if($('sectionRemainDistance'))$('sectionRemainDistance').innerHTML=km(remain).replace(/(\d)(km|m)$/,'$1 <i>$2</i>');
   panel?.classList.toggle('over',maxspeed>0&&avg>maxspeed);
+  setSectionOverspeedFlash(maxspeed>0&&avg>maxspeed);
   panel?.classList.toggle('nearing-end',remain<=1500);
   if(panel)panel.dataset.sectionState=(maxspeed>0&&avg>maxspeed)?'over':(remain<=1500?'ending':'normal');
 
@@ -4330,8 +4463,9 @@ function renderSectionSpeedPanel(st,panel,now){
   if(elapsed>=10 && (!st.lastAverageSpokenAt||now-st.lastAverageSpokenAt>=20000)){
     st.lastAverageSpokenAt=now;
     const over=maxspeed>0&&avg>maxspeed;
+    // 키가 분 단위였던 탓에 20초 주기로 말하려 해도 1분에 한 번만 안내되던 문제 → 20초 단위 키.
     speakNavOnce(
-      `sectionavg:${st.id}:${Math.floor(elapsed/60)}`,
+      `sectionavg:${st.id}:${Math.floor(elapsed/20)}`,
       `현재 구간 평균속도는 ${Math.round(avg)}킬로미터입니다.${over?' 제한속도를 초과했습니다. 감속하세요.':''}`,
       15000
     );
@@ -4759,6 +4893,14 @@ async function loadSafetyEvents(route){
   const seq=++state.safetyRequestSeq;state.safetyEvents=[];state.lastSafetySpoken=new Set();hideSafetyAlert();clearSafetyMarkers();if(!route?.geometry?.length)return;
   const primary=normalizeRouteSafety(route);
   const official=await loadStaticCameraEvents(route).catch(e=>{console.warn('static camera merge failed',e);return []});
+  // 보조 API 응답을 기다리는 동안(수 초) 카메라가 하나도 없어 '누락'되던 구간을 없애기 위해
+  // 경로 기반/공식 카메라를 먼저 반영하고, 보조 이벤트가 오면 병합본으로 교체한다.
+  if(seq===state.safetyRequestSeq){
+    try{
+      const early=enforceCameraMinSpacing(mergeSafetyEvents([...primary,...official],route.geometry));
+      if(early.length){state.safetyEvents=early;renderSafetyMarkers();if(state.currentRouteIndex>=0)updateSafetyUI(state.currentRouteIndex)}
+    }catch(e){console.warn('early camera apply failed',e)}
+  }
   let supplemental=[];
   try{
     const r=await fetch('/api/safety',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({points:sampleRoutePoints(route.geometry),trafficSamples:buildTrafficSafetySamples(route)})});
@@ -4784,7 +4926,8 @@ async function loadSafetyEvents(route){
     m=>addUserConfirmedHoedeokCamera(m,route),
     m=>mergeSafetyEvents(m,route.geometry),
     m=>suppressPostSectionDuplicateCameras(m),
-    m=>suppressStaleNamedDuplicateCameras(m)
+    m=>suppressStaleNamedDuplicateCameras(m),
+    m=>enforceCameraMinSpacing(m)
   ]){try{const r=step(merged);if(Array.isArray(r))merged=r}catch(e){console.warn('[JOFAMS camera] post-merge step failed',e)}}
   const mergedCameraCount=merged.filter(e=>String(e.type||'').includes('camera')||e.type==='section_speed_end').length;
   if(mergedCameraCount===0&&official.length){
@@ -4822,7 +4965,7 @@ function clusterPhysicalCameras(events,rank=()=>0){
       ?hav(Number(e.lat),Number(e.lng),Number(ref.lat),Number(ref.lng)):Infinity;
     // 같은 물리 단속지점이 여러 기관/방향/출처로 중복된 경우 하나로 병합한다.
     // 회덕IC처럼 10~수십m 간격으로 3개 핀이 연속 표시되는 현상을 차단한다.
-    if(routeGap<=120||physicalGap<=80)g.push(e);else groups.push([e]);
+    if(routeGap<=60||physicalGap<=60)g.push(e);else groups.push([e]);
   }
   const out=[...rest];
   for(const g of groups){
@@ -4848,7 +4991,7 @@ function suppressPostSectionDuplicateCameras(events=[]){
       const gap=rd-Number(end.routeDistance);
       // 구간단속 종점 직후 220m 안에서 같은 제한속도(주로 80km/h)로 연달아 잡히는 일반카메라는
       // 종점 장비의 중복/차로별 레코드로 취급해 한 번만 보이게 한다.
-      if(gap>=-20&&gap<=220){
+      if(gap>=-20&&gap<=CAMERA_MIN_SPACING_M){
         const sameLimit=!Number(end.maxspeed)||!Number(e.maxspeed)||Number(end.maxspeed)===Number(e.maxspeed);
         const sameRoad=!end.roadName||!e.roadName||normalizeRoadName(end.roadName)===normalizeRoadName(e.roadName);
         if(sameLimit&&(sameRoad||gap<=120))return false;
@@ -4858,7 +5001,7 @@ function suppressPostSectionDuplicateCameras(events=[]){
          합류지점'이 경찰청 최신 데이터의 종점과 대전광역시 2022년 구버전 데이터에 각각 등록되어 종점
          통과 직전 카메라 2개가 겹쳐 보임). currentOfficial(2025년 이후 경찰청 데이터)인 개별 카메라는
          실제로 별도 지점일 수 있으므로 건드리지 않고, 구버전/타기관 레코드에 한해서만 접는다. */
-      if(!e.currentOfficial&&gap<-20&&gap>=-250){
+      if(!e.currentOfficial&&gap<-20&&gap>=-60){
         const sameLimit=!Number(end.maxspeed)||!Number(e.maxspeed)||Number(end.maxspeed)===Number(e.maxspeed);
         const sameRoad=!end.roadName||!e.roadName||normalizeRoadName(end.roadName)===normalizeRoadName(e.roadName);
         if(sameLimit&&sameRoad)return false;
@@ -4936,6 +5079,29 @@ function mergeSafetyEvents(events,geometry){
   }
   return clusterPhysicalCameras(out,priority).sort((a,b)=>(Number.isFinite(a.routeDistance)&&Number.isFinite(b.routeDistance))?a.routeDistance-b.routeDistance:a.routeIndex-b.routeIndex)
 }
+/* 경로 기준 50m 이내에 단속카메라가 연달아 나오지 않게 한다(지도 핀·안내 카드·음성 공통).
+   구간단속 시작/종료 노드는 구간 안내의 기준점이라 지우지 않고, 그 50m 안의 일반 카메라를 접는다.
+   우선순위: 신호·과속 > 일반 과속/신호/교통 > 이동식 > 버스전용. */
+const CAMERA_MIN_SPACING_M=50;
+function enforceCameraMinSpacing(events=[],minGap=CAMERA_MIN_SPACING_M){
+  const isCam=e=>String(e?.type||'').includes('camera')||e?.type==='section_speed_end';
+  const isSection=e=>e?.type==='section_speed_camera'||e?.type==='section_speed_end';
+  const rank=e=>({signal_speed_camera:0,speed_camera:1,signal_camera:1,traffic_camera:2,mobile_camera:3,bus_lane_camera:4})[e?.type]??5;
+  const cams=[],rest=[];
+  for(const e of events||[]){if(isCam(e)&&Number.isFinite(Number(e.routeDistance)))cams.push(e);else rest.push(e)}
+  cams.sort((a,b)=>Number(a.routeDistance)-Number(b.routeDistance));
+  const out=[];
+  for(const e of cams){
+    const prev=out[out.length-1];
+    if(!prev||Math.abs(Number(e.routeDistance)-Number(prev.routeDistance))>=minGap){out.push(e);continue}
+    if(isSection(prev)&&isSection(e)){out.push(e);continue}        // 시작/종료 노드끼리는 유지
+    if(isSection(prev))continue;                                    // 구간 노드 우선
+    if(isSection(e)){out[out.length-1]=e;continue}
+    if(rank(e)<rank(prev)){out[out.length-1]={...e,maxspeed:Number(e.maxspeed)||Number(prev.maxspeed)||e.maxspeed}}
+    else if(!(Number(prev.maxspeed)>0)&&Number(e.maxspeed)>0)prev.maxspeed=e.maxspeed;
+  }
+  return [...rest,...out].sort((a,b)=>(Number.isFinite(Number(a.routeDistance))&&Number.isFinite(Number(b.routeDistance)))?Number(a.routeDistance)-Number(b.routeDistance):(Number(a.routeIndex)||0)-(Number(b.routeIndex)||0));
+}
 /* 7.6.11.5 이미 지나친 카메라 핀은 숨긴다. */
 function updateSafetyMarkerVisibility(){
   const cur=Number(state.user?.routeDistance);if(!Number.isFinite(cur))return;
@@ -4943,6 +5109,10 @@ function updateSafetyMarkerVisibility(){
     const rd=Number(m.__rd);if(!Number.isFinite(rd))continue;
     const el=m.getElement?.();if(el)el.classList.toggle('passed',rd<cur-25);
   }
+  // 앞으로 가장 가까운 카메라 핀을 강조해 길 위에서 바로 눈에 띄게 한다.
+  let nextM=null;
+  for(const m of state.safetyMarkers||[]){const rd=Number(m.__rd);if(Number.isFinite(rd)&&rd>=cur-25&&(!nextM||rd<Number(nextM.__rd)))nextM=m}
+  for(const m of state.safetyMarkers||[]){const el=m.getElement?.();if(el)el.classList.toggle('next-camera',m===nextM)}
 }
 function clearSafetyMarkers(){for(const m of state.safetyMarkers||[])try{m.remove()}catch{}state.safetyMarkers=[]}
 
