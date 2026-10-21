@@ -89,6 +89,8 @@ function setArrivalTime(sec,valid=true){const el=$('arrivalTime');if(!el)return;
 function hav(lat1,lon1,lat2,lon2){const R=6371000,p=Math.PI/180,a=Math.sin((lat2-lat1)*p/2)**2+Math.cos(lat1*p)*Math.cos(lat2*p)*Math.sin((lon2-lon1)*p/2)**2;return 2*R*Math.asin(Math.sqrt(a))}
 function bearing(a,b,c,d){const p=Math.PI/180,y=Math.sin((d-b)*p)*Math.cos(c*p),x=Math.cos(a*p)*Math.sin(c*p)-Math.sin(a*p)*Math.cos(c*p)*Math.cos((d-b)*p);return (Math.atan2(y,x)/p+360)%360}
 function pointValid(p){return p&&Number.isFinite(Number(p.lng))&&Number.isFinite(Number(p.lat))}
+/* Number(null)===0 이라 routeDistance/routeIndex 가 null 일 때 '경로 시작점(0m)'으로 오인되던 문제 방지용. */
+function finiteOrNull(v){if(v==null||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null}
 function escapeHtml(v=''){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function nearestIndex(lng,lat,geometry){let bi=0,bd=Infinity;const stride=Math.max(1,Math.floor((geometry?.length||0)/1200));for(let i=0;i<(geometry?.length||0);i+=stride){const p=geometry[i],d=(p[0]-lng)**2+(p[1]-lat)**2;if(d<bd){bd=d;bi=i}}return bi}
 function buildCumulative(route){const g=route?.geometry||[],arr=new Array(g.length).fill(0);for(let i=1;i<g.length;i++)arr[i]=arr[i-1]+hav(g[i-1][1],g[i-1][0],g[i][1],g[i][0]);return arr}
@@ -107,6 +109,8 @@ window.JofamsWebNavigation={
   applyRoute(route){
     state.route=route;state.routeCumulative=buildCumulative(route);
     state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};
+    // 이전 경로 기준 진행거리/정지 앵커를 버리고 새 경로에서 첫 유효 GPS 위치로 즉시 맞춘다.
+    state.routeLockedDistance=undefined;state.stationaryGpsAnchor=null;state.lockBehindHits=0;state.lockAheadHits=0;state.resyncPending=true;
     state.safetyEvents=[];resetSectionSpeedState();
     drawRoute(route,{fit:false});
     loadSafetyEvents(route).catch(e=>console.warn('native reroute safety refresh failed',e));
@@ -308,7 +312,7 @@ async function requestCompassPermission(){
 }
 /* raw GNSS 픽스를 받아 예측-보정 상보필터 + 텔레포트 감쇠 + 맵스냅을 적용한 최종 좌표를 반환한다. */
 
-function lockDisplayPositionToRoute(rawLike,now=Date.now()){
+function lockDisplayPositionToRoute(rawLike,now=Date.now(),opts={}){
   if(!state.tripStartedAt||!state.route?.geometry?.length||!state.routeCumulative?.length)return null;
   const raw={
     lng:Number(rawLike?.lng),lat:Number(rawLike?.lat),
@@ -327,21 +331,41 @@ function lockDisplayPositionToRoute(rawLike,now=Date.now()){
   if(Number(raw.speed)>2.8&&headingMismatch>=105&&match.distance<=35)return null;
 
   // 기차가 레일을 따라가듯 화면 캐릭터 진행거리는 역행하지 않도록 한다.
+  // 단, 아래 '재동기화(snap)' 조건에서는 실제 수신 위치로 즉시 맞춘다(따라잡기 애니메이션 없음).
   const previous=Number(state.routeLockedDistance);
   const tolerance=Math.max(10,Math.min(28,(raw.accuracy||20)*.8));
-  let distance=Number(match.routeDistance)||0;
-  if(Number.isFinite(previous)){
-    if(distance<previous-tolerance)distance=previous;
-    // GPS 순간 점프로 한 틱에 지나치게 앞서가지 않도록 제한
+  let distance=Number(match.routeDistance);if(!Number.isFinite(distance))distance=0;
+  let snap=false;
+  const trustable=match.distance<=Math.max(30,raw.accuracy*1.5)&&match.confidence>=.3;
+  if(opts.resync&&match.distance<=Math.max(45,raw.accuracy*2)&&match.confidence>=.2){
+    // 터널 복귀/수신 공백 후 첫 유효 GPS: 밀린 구간을 몰아서 채우지 않고 수신된 그 자리에서 바로 시작한다.
+    snap=true;state.lockBehindHits=0;state.lockAheadHits=0;
+  }else if(Number.isFinite(previous)){
     const dt=Math.max(.25,Math.min(2.5,(now-(state.routeLockedAt||now-500))/1000));
     const maxAdvance=Math.max(22,(Math.max(0,raw.speed)||0)*dt*2.8+14);
-    distance=Math.min(distance,previous+maxAdvance);
+    if(distance<previous-tolerance){
+      // 뒤쪽 위치가 연속으로 일관되게 확인되면(앞쪽 잠금이 오매칭이었던 경우) 복구한다. 그렇지 않으면 역행 금지.
+      state.lockBehindHits=trustable?(Number(state.lockBehindHits)||0)+1:0;
+      if(state.lockBehindHits>=3){snap=true;state.lockBehindHits=0}
+      else distance=previous;
+      state.lockAheadHits=0;
+    }else{
+      state.lockBehindHits=0;
+      if(distance<previous)distance=previous;
+      if(distance>previous+maxAdvance){
+        // GPS 순간 점프로 한 틱에 지나치게 앞서가지 않도록 제한하되, 연속 3회 같은 앞쪽 위치가
+        // 확인되면(실제로 그만큼 이동한 것) 계속 뒤처져 '몰아서 따라잡지' 않고 바로 맞춘다.
+        state.lockAheadHits=trustable?(Number(state.lockAheadHits)||0)+1:0;
+        if(state.lockAheadHits>=3){snap=true;state.lockAheadHits=0}
+        else distance=previous+maxAdvance;
+      }else state.lockAheadHits=0;
+    }
   }
   const p=pointAtRouteDistance(distance);
   if(!p)return null;
   state.routeLockedDistance=distance;
   state.routeLockedAt=now;
-  return {...p,confidence:match.confidence,rawDistance:match.distance};
+  return {...p,confidence:match.confidence,rawDistance:match.distance,snap};
 }
 
 function fuseGpsFix(raw,now){
@@ -2268,7 +2292,8 @@ function scheduleSmoothDriveMarker(){
       return;
     }
     const last=Number(state.driveMarkerFrameAt)||ts;
-    const dt=Math.max(.008,Math.min(.08,(ts-last)/1000));
+    const rawDt=(ts-last)/1000;
+    const dt=Math.max(.008,Math.min(.08,rawDt));
     state.driveMarkerFrameAt=ts;
 
     // Exponential easing along route distance; never interpolate straight across a curve.
@@ -2280,13 +2305,20 @@ function scheduleSmoothDriveMarker(){
     const ageSec=Math.min(1.6,Math.max(0,(Date.now()-Number(state.driveMarkerTargetAt||0))/1000));
     const lead=(!state.simulationActive&&!state.stationaryActive&&currentSpeed>0.5&&state.driveMarkerTargetAt)?currentSpeed*ageSec:0;
     const goal=target+lead;
-    let next=rendered+(goal-rendered)*alpha;
-    // Forward movement is monotonic; avoid one-frame teleport after GPS recovery.
     const speed=Math.max(1.5,Number(state.user?.speed)||0);
-    const maxStep=Math.max(.45,speed*dt*1.65+1.2);
-    next=Math.min(next,rendered+maxStep);
-    // 연장 때문에 실제 위치보다 조금 앞서 있을 때는 뒤로 되돌리지 않고 멈춰 기다린다(8m 이내).
-    if(goal<rendered)next=(rendered-goal<=8)?rendered:Math.max(goal,rendered-Math.max(.25,maxStep*.25));
+    let next;
+    if(rawDt>0.4||goal-rendered>Math.max(50,speed*4+20)||rendered-goal>30){
+      // 백그라운드 복귀·터널 복귀·재탐색처럼 위치가 크게 어긋난 경우에는 밀린 구간을 몰아서 채우거나
+      // 뒤로 기어가지 않고, 실제 위치(목표)로 바로 옮긴다.
+      next=target;
+    }else{
+      next=rendered+(goal-rendered)*alpha;
+      // Forward movement is monotonic.
+      const maxStep=Math.max(.45,speed*dt*1.65+1.2);
+      next=Math.min(next,rendered+maxStep);
+      // 속도 보간 때문에 실제 위치보다 조금 앞서 있을 때는 뒤로 되돌리지 않고 멈춰 기다린다(30m 이내).
+      if(goal<rendered)next=rendered;
+    }
 
     const p=pointAtRouteDistance(next);
     if(p){
@@ -2316,10 +2348,10 @@ function ensureUserMarker(){
   }
   if(!state.userMarker){
     state.userMarker=makeCarMarker().setLngLat([state.user.lng,state.user.lat]).addTo(state.map);
-    state.driveMarkerRenderedDistance=Number(state.user.routeDistance);
+    {const rd0=finiteOrNull(state.user.routeDistance);if(rd0!=null)state.driveMarkerRenderedDistance=rd0;}
   }
-  if(state.tripStartedAt&&state.route?.geometry?.length&&Number.isFinite(Number(state.user.routeDistance))){
-    const incomingRouteDistance=Number(state.user?.routeDistance);
+  if(state.tripStartedAt&&state.route?.geometry?.length&&finiteOrNull(state.user.routeDistance)!=null){
+    const incomingRouteDistance=finiteOrNull(state.user?.routeDistance);
   const realSpeed=Math.max(0,Number(state.user?.speed)||0);
   if(state.tripStartedAt&&!state.simulationActive&&(state.stationaryActive||realSpeed<=0.05)&&Number.isFinite(Number(state.driveMarkerRenderedDistance))){
     // 정지 중에는 GPS/맵매칭 오차가 앞쪽 점을 잡더라도 캐릭터 목표거리를 갱신하지 않는다.
@@ -2328,7 +2360,7 @@ function ensureUserMarker(){
     if(state.driveMarkerTargetDistance!==incomingRouteDistance)state.driveMarkerTargetAt=Date.now();
     state.driveMarkerTargetDistance=incomingRouteDistance;
   }
-    if(!Number.isFinite(Number(state.driveMarkerRenderedDistance)))state.driveMarkerRenderedDistance=Number(state.user.routeDistance);
+    if(!Number.isFinite(Number(state.driveMarkerRenderedDistance)))state.driveMarkerRenderedDistance=incomingRouteDistance;
     scheduleSmoothDriveMarker();
   }else state.userMarker.setLngLat([state.user.lng,state.user.lat]);
   updateUserMarkerMotion();
@@ -2447,6 +2479,60 @@ async function locate(fly=true){
     );
   });
 }
+/* ---------- 정지/출발 판정 (히스테리시스) ----------
+   예전에는 GPS speed<=0.05 한 값만으로 정지/출발을 판정해서, 신호대기 중 speed 가 0.06~0.3 처럼 살짝만
+   흔들려도 '출발'로 오인되어 캐릭터가 앞으로 기어갔다. 정지 진입은 STOP_ENTER_SPEED 이하,
+   출발 해제는 STOP_EXIT_SPEED 이상(또는 앵커에서 충분히 이동)일 때만 한다. */
+const STOP_ENTER_SPEED=0.5,STOP_EXIT_SPEED=1.0;
+function stationaryAnchorDistance(){
+  const a=finiteOrNull(state.driveMarkerRenderedDistance);if(a!=null)return a;
+  const b=finiteOrNull(state.routeLockedDistance);if(b!=null)return b;
+  return finiteOrNull(state.user?.routeDistance);
+}
+function evaluateStartupStationary(rawLat,rawLng,reportedSpeed){
+  if(!(state.tripStartedAt&&!state.simulationActive&&!state.navigationStartReleased&&state.navigationStartAnchor))return false;
+  const startMoved=hav(Number(state.navigationStartAnchor.lat),Number(state.navigationStartAnchor.lng),rawLat,rawLng);
+  const confirmedMoving=Number.isFinite(reportedSpeed)&&reportedSpeed>=1.4;
+  if(confirmedMoving)state.navigationMoveConfirmHits=(Number(state.navigationMoveConfirmHits)||0)+1;
+  else state.navigationMoveConfirmHits=0;
+  if(state.navigationMoveConfirmHits>=2||startMoved>=20){
+    state.navigationStartReleased=true;state.navigationMoveConfirmHits=0;state.stationaryActive=false;state.stationaryGpsAnchor=null;
+    return false;
+  }
+  state.stationaryActive=true;
+  return true;
+}
+function resolveStationaryLatch(rawLat,rawLng,speed,accuracy,now){
+  if(!state.tripStartedAt||state.simulationActive)return false;
+  const known=Number.isFinite(speed);
+  const limit=Math.max(10,Math.min(25,(Number(accuracy)||0)*.8));
+  const newAnchor=()=>({t:now,lat:rawLat,lng:rawLng,routeDistance:stationaryAnchorDistance()});
+  let anchor=state.stationaryGpsAnchor;
+  const anchorOk=Boolean(anchor&&Number.isFinite(Number(anchor.lat))&&Number.isFinite(Number(anchor.lng)));
+  if(state.stationaryActive&&anchorOk){
+    const drift=hav(Number(anchor.lat),Number(anchor.lng),rawLat,rawLng);
+    if((known&&speed>=STOP_EXIT_SPEED)||(Number.isFinite(drift)&&drift>limit)){
+      state.stationaryGpsAnchor=null;state.stationaryActive=false;return false;
+    }
+    return true;
+  }
+  if(state.stationaryActive&&!anchorOk&&!known){
+    // 속도를 모르는데 정지 래치만 켜져 있고 앵커가 없으면 영원히 못 풀리므로 지금 위치를 앵커로 잡는다(이후 이동하면 풀림).
+    state.stationaryGpsAnchor=newAnchor();return true;
+  }
+  if(!known)return false;
+  if(speed>STOP_ENTER_SPEED){
+    state.stationaryGpsAnchor=null;state.stationaryActive=false;return false;
+  }
+  if(!anchorOk)anchor=state.stationaryGpsAnchor=newAnchor();
+  const drift=hav(Number(anchor.lat),Number(anchor.lng),rawLat,rawLng);
+  if(Number.isFinite(drift)&&drift>limit){state.stationaryGpsAnchor=newAnchor();state.stationaryActive=false;return false}
+  // 직전까지 달리던 차량은 속도 0 한 번으로 곧바로 정지 처리하지 않고 1.5초 확인 후 고정한다(1~2초씩 멈췄다 가는 현상 방지).
+  const wasMoving=Number(state.user?.speed)>0.8&&!state.stationaryActive;
+  if(wasMoving&&now-Number(anchor.t||0)<1500&&anchor.t)return false;
+  state.stationaryActive=true;
+  return true;
+}
 function applyGps(pos,fly=false){
   if(state.simulationActive)return;
   if(state.permissionPrefs?.location===false)return;
@@ -2456,20 +2542,60 @@ function applyGps(pos,fly=false){
     if(t<=Number(state.lastNativeSampleAt||0))return;
     const lat=Number(c.latitude??c.lat),lng=Number(c.longitude??c.lng);
     if(!Number.isFinite(lat)||!Number.isFinite(lng))return;
+    const prevRealAtN=Number(state.lastRealGpsAt)||0,prevWasEstimatedN=Boolean(state.gpsEstimated||state.user?.estimated);
     state.lastNativeSampleAt=t;state.nativeLocationAt=now;state.nativeLocationActive=true;
     const estimated=Boolean(pos.estimated);
-    state.user={lat,lng,rawLat:pos.rawLatitude==null?lat:Number(pos.rawLatitude),rawLng:pos.rawLongitude==null?lng:Number(pos.rawLongitude),
-      speed:c.speed==null?0:Number(c.speed),heading:c.heading==null?null:Number(c.heading),accuracy:Number(c.accuracy)||0,
-      routeIndex:pos.routeIndex??null,routeDistance:pos.routeDistance??null,mapSnapped:pos.routeDistance!=null,estimated,native:true};
+    const rawLatN=pos.rawLatitude==null?lat:Number(pos.rawLatitude),rawLngN=pos.rawLongitude==null?lng:Number(pos.rawLongitude);
+    // speed=null/undefined 는 '정지(0)'가 아니라 '알 수 없음'이다. 0으로 읽으면 주행 중 캐릭터가 멈춰 버린다.
+    const speedKnownN=c.speed!=null&&c.speed!==''&&Number.isFinite(Number(c.speed));
+    let nSpeed=speedKnownN?Number(c.speed):NaN;
+    const prevN=state.lastNativeSpeedSample;
+    if(!speedKnownN&&prevN&&t>prevN.t){
+      const dtN=(t-prevN.t)/1000,distN=hav(prevN.lat,prevN.lng,lat,lng),jitN=Math.max(1.5,Math.min(6,((prevN.accuracy||0)+(Number(c.accuracy)||0))*.18));
+      if(dtN>=.25&&dtN<=5&&Number.isFinite(distN))nSpeed=distN>=jitN?Math.min(70,distN/dtN):0;
+    }
+    state.lastNativeSpeedSample={lat,lng,t,accuracy:Number(c.accuracy)||0};
+    if(!Number.isFinite(nSpeed))nSpeed=Number(state.lastRealSpeedMps)||0;
+    // 안내 시작 정지 래치 해제와 정지/출발 판정을 네이티브 위치에도 동일하게 적용한다.
+    // (이전에는 네이티브 경로에서 navigationStartReleased 가 영원히 false 라서 캐릭터가 출발 지점에 고정되는 문제가 있었다.)
+    let forceN=false;
+    if(!estimated){
+      if(evaluateStartupStationary(rawLatN,rawLngN,speedKnownN?Number(c.speed):nSpeed))forceN=true;
+      else forceN=resolveStationaryLatch(rawLatN,rawLngN,nSpeed,Number(c.accuracy)||0,now);
+    }else{state.stationaryGpsAnchor=null;state.stationaryActive=false}
+    if(forceN)nSpeed=0;
+    let nLat=lat,nLng=lng,nRouteDistance=finiteOrNull(pos.routeDistance),nRouteIndex=finiteOrNull(pos.routeIndex);
+    if(forceN&&state.route?.geometry?.length){
+      let fd=finiteOrNull(state.stationaryGpsAnchor?.routeDistance);
+      if(fd==null)fd=finiteOrNull(state.driveMarkerRenderedDistance);
+      if(fd==null)fd=nRouteDistance;
+      const fp=fd!=null?pointAtRouteDistance(fd):null;
+      if(fp){nLat=fp.lat;nLng=fp.lng;nRouteDistance=fp.distance;nRouteIndex=fp.index;if(state.stationaryGpsAnchor)state.stationaryGpsAnchor.routeDistance=fp.distance}
+    }
+    state.user={lat:nLat,lng:nLng,rawLat:rawLatN,rawLng:rawLngN,
+      speed:nSpeed,heading:c.heading==null?null:Number(c.heading),accuracy:Number(c.accuracy)||0,
+      routeIndex:nRouteIndex,routeDistance:nRouteDistance,mapSnapped:nRouteDistance!=null,estimated,native:true};
     state.gpsEstimated=estimated;state.lastGpsTickAt=now;
-    if(!estimated){state.lastRealGpsAt=now;state.lastRealSpeedMps=state.user.speed;}
-    if(pos.routeDistance!=null)state.deadReckoningDistance=Number(pos.routeDistance);
+    if(!estimated){
+      state.lastRealGpsAt=now;state.lastRealSpeedMps=state.user.speed;
+      state.speedEmaMps=forceN?0:(Number.isFinite(state.speedEmaMps)?state.speedEmaMps*.65+nSpeed*.35:nSpeed);
+    }
+    if(nRouteDistance!=null){
+      state.deadReckoningDistance=nRouteDistance;
+      if(Number.isFinite(Number(state.routeLockedDistance))||forceN)state.routeLockedDistance=nRouteDistance;
+      // 터널 복귀/수신 공백(3.5초↑) 뒤 첫 유효 위치는 수신된 자리로 바로 옮긴다. 밀린 구간을 몰아서 채우지 않는다.
+      if(state.tripStartedAt&&!estimated&&((prevWasEstimatedN)||(prevRealAtN&&now-prevRealAtN>3500))){
+        state.driveMarkerRenderedDistance=nRouteDistance;state.driveMarkerTargetDistance=nRouteDistance;state.driveMarkerTargetAt=now;
+        try{state.userMarker?.setLngLat([nLng,nLat])}catch{}
+      }
+    }
     updateGpsEstimateUi();ensureUserMarker();
     if(fly&&state.map)state.map.easeTo({center:[lng,lat],zoom:16,duration:500});
     if(!window.__JOFAMS_NATIVE_DRIVE_ACTIVE__&&state.route&&$('driveView')&&!$('driveView').classList.contains('hidden'))updateDriving();
     return;
   }
   const wasEstimated=Boolean(state.gpsEstimated||state.user?.estimated);
+  const prevRealAt=Number(state.lastRealGpsAt)||0;
   if(!native&&state.nativeLocationAt&&now-state.nativeLocationAt<2200)return;
 
   const c=pos.coords||pos;
@@ -2505,86 +2631,49 @@ function applyGps(pos,fly=false){
     state.preTripAnchor={lat:rawLat,lng:rawLng};state.preTripMoveHits=0;
   }
   const reportedSpeed=speedKnown?Number(c.speed):NaN;
-  // 안내 시작 직후 실제 차량이 움직이지 않았는데 GPS 흔들림만으로 캐릭터가 앞서가는 현상을 방지한다.
-  // 출발 기준점에서 12m 이내이며 실제 speed가 1m/s를 넘지 않는 동안은 정지 상태를 유지한다.
-  let startupStationary=false;
-  if(state.tripStartedAt&&!state.simulationActive&&!state.navigationStartReleased&&state.navigationStartAnchor){
-    const startMoved=hav(
-      Number(state.navigationStartAnchor.lat),Number(state.navigationStartAnchor.lng),
-      rawLat,rawLng
-    );
-    const confirmedMoving=Number.isFinite(reportedSpeed)&&reportedSpeed>=1.4;
-    if(confirmedMoving)state.navigationMoveConfirmHits=(Number(state.navigationMoveConfirmHits)||0)+1;
-    else state.navigationMoveConfirmHits=0;
-    const moveReleased=state.navigationMoveConfirmHits>=2 || startMoved>=20;
-    if(moveReleased){
-      state.navigationStartReleased=true;state.navigationMoveConfirmHits=0;state.stationaryActive=false;state.stationaryGpsAnchor=null;
-    }else{startupStationary=true;state.stationaryActive=true;stateObj.speed=0;}
-
+  // GPS 좌표 변화로 계산한 파생 속도(속도값이 없거나 부정확할 때 보조로 사용)
+  let derivedSpeed=NaN;
+  const prevSpeedSample=state.lastSpeedSample;
+  if(prevSpeedSample&&sampleTime>prevSpeedSample.t){
+    const dtS=(sampleTime-prevSpeedSample.t)/1000;
+    const distS=hav(prevSpeedSample.lat,prevSpeedSample.lng,stateObj.lat,stateObj.lng);
+    if(dtS>=.25&&dtS<=5&&Number.isFinite(distS)){
+      const jitter=Math.max(1.5,Math.min(6,((prevSpeedSample.accuracy||0)+(stateObj.accuracy||0))*.18));
+      derivedSpeed=distS>=jitter?Math.min(70,distS/dtS):(distS<1.5?0:NaN);
+    }
   }
-  // 도로 세그먼트에 '터널'로 이름표가 붙어있지 않은 짧은 터널·지하차도·고가 하부 등에서도
+  // 안내 시작 직후 실제 차량이 움직이지 않았는데 GPS 흔들림만으로 캐릭터가 앞서가는 현상을 방지한다.
+  const startupStationary=evaluateStartupStationary(rawLat,rawLng,reportedSpeed);
+  if(startupStationary)stateObj.speed=0;
   // 신호가 약해지는 순간에는 GPS 정확도가 함께 급격히 나빠지는 경우가 대부분이다(위성 가림).
-  // 이름 기반 터널 인식(tunnelBoundsAtIndex)에만 의존하면 이런 구간에서 "속도 0으로 튄
-  // 마지막 fix"가 진짜 정지로 오인되어 이후 추정주행(dead reckoning)의 기준 속도까지
-  // 0으로 고정되고, 그 결과 터널에 들어가는 순간 캐릭터가 멈춰버리는 현상으로 이어졌다.
-  // 정확도가 뚜렷하게 나쁠 때(60m↑)는 이름표가 없어도 같은 신호저하 상황으로 간주한다.
+  // 이름 기반 터널 인식에만 의존하지 않도록 정확도가 뚜렷하게 나쁠 때(60m↑)도 같은 신호저하 상황으로 본다.
+  // 단, '직전까지 달리다가 갑자기 0'이 된 경우(또는 이미 추정 중인 경우)만 신호 상실로 본다.
+  // 감속하며 천천히 0이 된 것은 실제 정지(신호대기)이므로 추정 주행을 시작하지 않는다.
+  // (예전에는 터널/저정확도 구간의 실제 정지도 추정 주행 → 멈추지 않고 계속 전진하는 원인이었다.)
   const accuracyDegraded=Number.isFinite(stateObj.accuracy)&&stateObj.accuracy>=60;
+  const priorShownSpeed=wasEstimated?0:Math.max(0,Number(state.user?.speed)||0);
+  const abruptZero=wasEstimated||priorShownSpeed>=4.5;
   const tunnelZeroGps=Boolean(
     state.tripStartedAt &&
-    Number.isFinite(reportedSpeed) && reportedSpeed<=0.05 &&
+    Number.isFinite(reportedSpeed) && reportedSpeed<=0.05 && abruptZero &&
     (state.tunnelRouteLock?.active||tunnelBoundsAtIndex(state.currentRouteIndex)||accuracyDegraded)
   );
   let forceStationary=false;
-
-  // 실제 GPS 속도가 0이고 최초 정지 GPS 기준 ±10m 안이면 캐릭터/경로 진행을 완전히 고정한다.
-  // 이 구간에서는 GPS 위치 흔들림으로 계산한 파생속도도 사용하지 않는다.
   if(startupStationary){
     forceStationary=true;
-    stateObj.speed=0;
-  }else if(state.tripStartedAt&&!state.simulationActive&&!tunnelZeroGps&&Number.isFinite(reportedSpeed)&&reportedSpeed<=0.05){
-    if(!state.stationaryGpsAnchor){
-      state.stationaryGpsAnchor={
-        t:now,lat:rawLat,lng:rawLng,
-        routeDistance:Number.isFinite(Number(state.driveMarkerRenderedDistance))
-          ?Number(state.driveMarkerRenderedDistance)
-          :(Number.isFinite(Number(state.routeLockedDistance))
-            ?Number(state.routeLockedDistance)
-            :Number(state.user?.routeDistance))
-      };
-    }
-    const stationaryDrift=hav(state.stationaryGpsAnchor.lat,state.stationaryGpsAnchor.lng,rawLat,rawLng);
-    // 직전까지 달리던 차량(표시 속도 0.8m/s 초과)은 속도 0 한 번으로 곧바로 정지 처리하지 않는다.
-    // 앵커가 1.5초 이상 유지되며 계속 정지일 때만 고정한다(그렇지 않으면 1~2초씩 멈췄다 가는 현상).
-    const anchorAge=now-Number(state.stationaryGpsAnchor.t||0);
-    const wasMoving=Number(state.user?.speed)>0.8&&!state.stationaryActive;
-    if(Number.isFinite(stationaryDrift)&&stationaryDrift<=10&&!(wasMoving&&anchorAge<1500&&state.stationaryGpsAnchor.t)){
-      forceStationary=true;
-      state.stationaryActive=true;
-      stateObj.speed=0;
-    }else{
-      state.stationaryGpsAnchor=null;
-      state.stationaryActive=false;
-    }
-  }else if(Number.isFinite(reportedSpeed)&&reportedSpeed>0.05){
+  }else if(tunnelZeroGps){
     state.stationaryGpsAnchor=null;
     state.stationaryActive=false;
+  }else{
+    const speedForStop=Number.isFinite(reportedSpeed)?reportedSpeed:derivedSpeed;
+    forceStationary=resolveStationaryLatch(rawLat,rawLng,speedForStop,stateObj.accuracy,now);
   }
-  const prevSpeedSample=state.lastSpeedSample;
-  if(prevSpeedSample&&sampleTime>prevSpeedSample.t){
-    const dt=(sampleTime-prevSpeedSample.t)/1000;
-    const dist=hav(prevSpeedSample.lat,prevSpeedSample.lng,stateObj.lat,stateObj.lng);
-    if(dt>=.25&&dt<=5&&Number.isFinite(dist)){
-      const jitter=Math.max(1.5,Math.min(6,((prevSpeedSample.accuracy||0)+(stateObj.accuracy||0))*.18));
-      const derived=dist>=jitter?Math.min(70,dist/dt):(dist<1.5?0:NaN);
-      if(!forceStationary){
-        if(Number.isFinite(derived)&&(!Number.isFinite(stateObj.speed)||(stateObj.speed<.7&&derived>=.7)))stateObj.speed=derived;
-        else if(Number.isFinite(derived)&&Number.isFinite(stateObj.speed)&&stateObj.speed>=.7)stateObj.speed=stateObj.speed*.78+derived*.22;
-      }else stateObj.speed=0;
-    }
+  if(forceStationary)stateObj.speed=0;
+  else{
+    if(Number.isFinite(derivedSpeed)&&(!Number.isFinite(stateObj.speed)||(stateObj.speed<.7&&derivedSpeed>=.7)))stateObj.speed=derivedSpeed;
+    else if(Number.isFinite(derivedSpeed)&&Number.isFinite(stateObj.speed)&&stateObj.speed>=.7)stateObj.speed=stateObj.speed*.78+derivedSpeed*.22;
   }
   if(tunnelZeroGps){
-    state.stationaryGpsAnchor=null;
-    state.stationaryActive=false;
     stateObj.speed=Math.max(
       2.5,
       Number(state.tunnelEntrySpeedMps)||0,
@@ -2612,20 +2701,18 @@ function applyGps(pos,fly=false){
   // 원시 GPS는 반드시 보존: 실제 이탈 판정/도착 판정에 사용.
   stateObj.rawLat=rawLat;stateObj.rawLng=rawLng;
 
+  let snapInfo=null;
   if(state.tripStartedAt&&state.route?.geometry?.length){
     // 주행 화면 위치는 항상 현재 경로에 강제 스냅.
-    const locked=lockDisplayPositionToRoute(stateObj,now);
-    if(locked&&wasEstimated){
-      // 터널 출구 첫 GPS가 DR 위치보다 앞서더라도 한 프레임에 따라잡지 않는다.
-      const simulated=Number(state.deadReckoningDistance);
-      if(Number.isFinite(simulated)&&locked.distance>simulated+12){
-        const cap=simulated+Math.max(5,(Number(stateObj.speed)||0)*1.2);
-        const q=pointAtRouteDistance(Math.min(locked.distance,cap));
-        if(q){locked.lng=q.lng;locked.lat=q.lat;locked.heading=q.heading;locked.index=q.index;locked.distance=q.distance}
-      }
-    }
+    // 터널 복귀/수신 공백(3.5초↑) 뒤 첫 유효 GPS 는 수신된 그 자리에서 바로 시작한다.
+    // (예전에는 DR 위치 + 소폭으로 제한한 뒤 밀린 구간을 빠르게 몰아서 채웠다.)
+    const needResync=Boolean(!tunnelZeroGps&&(wasEstimated||state.resyncPending||(prevRealAt&&now-prevRealAt>3500)));
+    const locked=lockDisplayPositionToRoute(stateObj,now,{resync:needResync});
     if(locked){
-      if(forceStationary){
+      state.resyncPending=false;
+      if(locked.snap)snapInfo=locked;
+      if(forceStationary&&locked.snap&&state.stationaryGpsAnchor)state.stationaryGpsAnchor.routeDistance=locked.distance;
+      if(forceStationary&&!locked.snap){
         let fixedDistance=Number(state.stationaryGpsAnchor?.routeDistance);
         if(!Number.isFinite(fixedDistance))fixedDistance=Number(state.driveMarkerRenderedDistance);
         if(!Number.isFinite(fixedDistance))fixedDistance=Number(state.routeLockedDistance);
@@ -2634,7 +2721,7 @@ function applyGps(pos,fly=false){
         if(fixed){
           locked.lng=fixed.lng;locked.lat=fixed.lat;locked.heading=fixed.heading;
           locked.index=fixed.index;locked.distance=fixed.distance;
-          state.stationaryGpsAnchor.routeDistance=fixed.distance;
+          if(state.stationaryGpsAnchor)state.stationaryGpsAnchor.routeDistance=fixed.distance;
           state.routeLockedDistance=fixed.distance;
           state.routeLockedAt=now;
         }
@@ -2648,7 +2735,15 @@ function applyGps(pos,fly=false){
       if(Number.isFinite(fused.heading))stateObj.heading=fused.heading;
       stateObj.mapSnapped=Boolean(fused.mapSnapped);
       stateObj.routeIndex=Number.isFinite(fused.routeIndex)?fused.routeIndex:null;
-      stateObj.routeDistance=Number.isFinite(fused.routeDistance)?fused.routeDistance:null;
+      let fusedRd=Number.isFinite(fused.routeDistance)?fused.routeDistance:null;
+      const prevLocked=Number(state.routeLockedDistance);
+      if(fusedRd!=null&&Number.isFinite(prevLocked)){
+        // 경로 잠금이 실패한 틱에도 캐릭터 진행거리가 뒤로 가거나 한 번에 튀지 않게 같은 규칙으로 제한한다.
+        const dtF=Math.max(.25,Math.min(2.5,(now-(state.routeLockedAt||now-500))/1000));
+        fusedRd=Math.max(prevLocked,Math.min(fusedRd,prevLocked+Math.max(22,(Number(stateObj.speed)||0)*dtF*2.8+14)));
+        state.routeLockedDistance=fusedRd;state.routeLockedAt=now;
+      }
+      stateObj.routeDistance=fusedRd;
       stateObj.matchConfidence=Number(fused.matchConfidence)||0;
     }
   }else{
@@ -2666,6 +2761,13 @@ function applyGps(pos,fly=false){
     stateObj.estimated=false;
   }
   state.user=stateObj;
+  if(snapInfo&&Number.isFinite(stateObj.routeDistance)){
+    // 수신된 그 자리에서 바로 출발: 보간(따라잡기) 없이 렌더링/목표 거리를 함께 맞춘다.
+    state.driveMarkerRenderedDistance=stateObj.routeDistance;
+    state.driveMarkerTargetDistance=stateObj.routeDistance;
+    state.driveMarkerTargetAt=now;
+    try{state.userMarker?.setLngLat([stateObj.lng,stateObj.lat])}catch{}
+  }
   if(Number.isFinite(stateObj.routeDistance))state.deadReckoningDistance=stateObj.routeDistance;
   else if(state.route?.geometry?.length&&state.routeCumulative?.length){
     const idx=nearestIndex(stateObj.lng,stateObj.lat,state.route.geometry);
@@ -2774,6 +2876,7 @@ function deadReckoningTick(){
   const inKnownTunnel=Boolean(state.tunnelRouteLock?.active||tunnelBoundsAtIndex(state.currentRouteIndex));
   if(sinceReal<2500||sinceReal>(inKnownTunnel?1500000:180000))return;
 
+  const startingEstimate=!state.gpsEstimated;
   if(!state.gpsEstimated){
     state.tunnelEntrySpeedMps=Math.max(0,Number(state.speedEmaMps)||Number(state.lastRealSpeedMps)||Number(state.user.speed)||0);
     state.tunnelEntryAt=now;
@@ -2796,6 +2899,15 @@ function deadReckoningTick(){
     state.deadReckoningDistance=Number(state.routeCumulative[idx])||0;
   }
   updateTunnelRouteLock(state.currentRouteIndex);
+  if(startingEstimate){
+    // 추정 주행은 화면에 '이미 그려진' 캐릭터 위치에서 이어서 시작한다. 마지막 GPS 지점에서 시작하면
+    // (마커는 수신 간격 보간으로 최대 1.6초분 앞서 있으므로) 시작 순간 캐릭터가 뒤로 되돌아간다.
+    const shown=finiteOrNull(state.driveMarkerRenderedDistance);
+    if(shown!=null){
+      if(!Number.isFinite(state.deadReckoningDistance)||shown>state.deadReckoningDistance)state.deadReckoningDistance=shown;
+      if(state.tunnelRouteLock?.active&&shown>(Number(state.tunnelRouteLock.routeDistance)||0))state.tunnelRouteLock.routeDistance=shown;
+    }
+  }
   state.deadReckoningDistance=Math.min(state.routeCumulative.at(-1)||Infinity,state.deadReckoningDistance+speed*dt);
 
   let p=state.tunnelRouteLock?.active?forceTunnelPointOnRoute(speed,now,state.deadReckoningDistance):pointAtRouteDistance(state.deadReckoningDistance);
@@ -3197,6 +3309,10 @@ function resumeNavigationWithSelectedRoute(){
   state.offRouteSince=0;
   state.arrivalCandidateSince=0;
   state.navigationStartAt=Date.now();
+  // 이전 경로 기준 진행거리(state.user.routeDistance)를 새 경로에 그대로 쓰면 캐릭터가 엉뚱한 위치로 가므로 새 경로에서 다시 계산한다.
+  {let d0=0;if(pointValid(state.user)){const i0=nearestIndex(state.user.lng,state.user.lat,state.route.geometry);d0=Number(state.routeCumulative[i0])||0}
+   state.routeLockedDistance=d0;state.driveMarkerRenderedDistance=d0;state.driveMarkerTargetDistance=d0;state.stationaryGpsAnchor=null;state.lockBehindHits=0;state.lockAheadHits=0;
+   if(state.user){state.user={...state.user,routeDistance:d0}}}
   state.navigationStartAnchor=pointValid(state.user)?{lat:Number(state.user.lat),lng:Number(state.user.lng),routeDistance:Number(state.user.routeDistance)}:null;
   state.navigationStartReleased=false;state.navigationMoveConfirmHits=0;
   state.stationaryActive=true;
@@ -4140,7 +4256,7 @@ function updateDriving(force=false){
   refreshVslSpeedLimit();
   if(!state.user||!state.route?.geometry?.length)return;
   const g=state.route.geometry;
-  let idx=Number(state.user.routeIndex);
+  let idx=finiteOrNull(state.user.routeIndex);
   if(!Number.isFinite(idx)){
     const match=probabilisticRouteMatch({lng:state.user.lng,lat:state.user.lat,heading:state.user.heading,speed:state.user.speed,accuracy:state.user.accuracy},Date.now());
     idx=match?.index??nearestIndex(state.user.lng,state.user.lat,g);
@@ -4773,6 +4889,7 @@ async function reroute(originOverride=null){
     const initialDistance=Number(state.routeCumulative[initialIndex]||0);
     state.mapMatch={index:initialIndex,routeDistance:initialDistance,score:0,confidence:1,at:Date.now()};
     state.routeLockedDistance=initialDistance;state.routeLockedAt=Date.now();
+    state.stationaryGpsAnchor=null;state.lockBehindHits=0;state.lockAheadHits=0;state.resyncPending=false;
     const rp=pointAtRouteDistance(initialDistance);
     if(rp){
       state.user={...state.user,lng:rp.lng,lat:rp.lat,routeIndex:rp.index,routeDistance:rp.distance,mapSnapped:true};
