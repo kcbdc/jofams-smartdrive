@@ -4032,3 +4032,8 @@ body:has(#driveView:not(.hidden)) .origin-pin{display:none!important;visibility:
 .voucher-focus{animation:onnuriFocusPulse 1.2s ease-out 3}
 .voucher-shop-marker.voucher-focus{border-color:#ef7d00!important;box-shadow:0 0 0 4px rgba(239,125,0,.3),0 6px 16px rgba(116,62,0,.3)!important}
 .where-to-meta-pills .where-to-mapbtn{background:#eaf1ff!important;color:#1c56d9!important;border:1px solid #c9dbff!important;font-weight:800!important;font-style:normal;cursor:pointer}
+
+/* Navigation marker visual stacking: car drives over the road-camera icon. */
+body:has(#driveView:not(.hidden)) .maplibregl-marker:has(>.character-car-marker){z-index:100!important}
+body:has(#driveView:not(.hidden)) .maplibregl-marker:has(>.safety-map-marker.camera-pin){z-index:3!important}
+.character-car-marker.rear-version.jofams-car-moving img{animation-duration:1.15s!important;animation-timing-function:ease-in-out!important}
