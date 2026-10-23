@@ -94,6 +94,26 @@ function finiteOrNull(v){if(v==null||v==='')return null;const n=Number(v);return
 function escapeHtml(v=''){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function nearestIndex(lng,lat,geometry){let bi=0,bd=Infinity;const stride=Math.max(1,Math.floor((geometry?.length||0)/1200));for(let i=0;i<(geometry?.length||0);i+=stride){const p=geometry[i],d=(p[0]-lng)**2+(p[1]-lat)**2;if(d<bd){bd=d;bi=i}}return bi}
 function buildCumulative(route){const g=route?.geometry||[],arr=new Array(g.length).fill(0);for(let i=1;i<g.length;i++)arr[i]=arr[i-1]+hav(g[i-1][1],g[i-1][0],g[i][1],g[i][0]);return arr}
+/* 가장 최근에 수신한 원시 위치(캐릭터 표시용 state.user는 출발 전 흔들림 방지로 갱신이 지연될 수 있다). */
+function currentOriginPoint(){
+  const u=pointValid(state.user)?state.user:null,r=state.lastRawFix;
+  const rawFresh=r&&pointValid(r)&&Date.now()-Number(r.at||0)<=15000&&(Number(r.accuracy)||0)<=120;
+  if(rawFresh&&(!u||Number(r.at)>=Number(state.lastGpsTickAt||0)-50))return{...(u||{}),lat:Number(r.lat),lng:Number(r.lng),accuracy:r.accuracy,heading:u?.heading};
+  return u;
+}
+async function refreshCurrentLocation({maxAgeMs=3500,timeoutMs=3000}={}){
+  const freshEnough=()=>{const r=state.lastRawFix;return r&&pointValid(r)&&Date.now()-Number(r.at||0)<=maxAgeMs};
+  if(freshEnough())return currentOriginPoint();
+  const t0=Date.now();
+  if(nativeBridgeAvailable()){
+    nativePost('requestLocation',{highAccuracy:true});
+    while(Date.now()-t0<timeoutMs){if(Number(state.lastRawFix?.at||0)>=t0)return currentOriginPoint();await new Promise(r=>setTimeout(r,100))}
+  }
+  if(navigator.geolocation){
+    await new Promise(res=>navigator.geolocation.getCurrentPosition(p=>{try{applyGps(p,false)}catch{}res(true)},()=>res(false),{enableHighAccuracy:true,timeout:timeoutMs,maximumAge:0}));
+  }
+  return currentOriginPoint();
+}
 function normalizedPlace(x){return x?{id:x.id||'',name:x.name||'목적지',address:x.address||'',lng:Number(x.lng),lat:Number(x.lat)}:null}
 
 
@@ -122,7 +142,7 @@ window.JofamsNative.onLocationUpdate=packet=>{
   applyGps({native:true,estimated:Boolean(p.estimated),rawLatitude:p.rawLat,rawLongitude:p.rawLng,routeIndex:p.routeIndex,routeDistance:p.routeDistance,timestamp:Number(p.timestamp)||Date.now(),coords:{latitude:lat,longitude:lng,accuracy:Number(p.accuracy)||8,speed:p.speedMps??p.speed,heading:p.headingDeg??p.bearing,speedAccuracy:p.speedAccuracy,headingAccuracy:p.bearingAccuracy}},false);
 };
 window.JofamsNative.onMotionUpdate=packet=>{
-  const p=parseNativePacket(packet);state.imu={at:Date.now(),yawRateDegS:Number(p.yawRateDegS)||0,accelMagnitude:Number(p.accelMagnitude)||0,headingDeg:Number.isFinite(Number(p.headingDeg))?Number(p.headingDeg):state.imu.headingDeg};
+  const p=parseNativePacket(packet);try{pushMotionSample(Number(p.accelMagnitude),Date.now())}catch{}state.imu={at:Date.now(),yawRateDegS:Number(p.yawRateDegS)||0,accelMagnitude:Number(p.accelMagnitude)||0,headingDeg:Number.isFinite(Number(p.headingDeg))?Number(p.headingDeg):state.imu.headingDeg};
   if(Number.isFinite(state.imu.headingDeg)){state.compassHeading=state.imu.headingDeg;state.compassAt=Date.now()}
 };
 window.JofamsNative.onTunnelState=packet=>{const p=parseNativePacket(packet);if(p.active===true)state.lastRealGpsAt=Math.min(state.lastRealGpsAt||Date.now(),Date.now()-2600)};
@@ -2242,6 +2262,7 @@ function ensureDriveCharacterAfterViewportChange(){
     if(el){el.style.opacity='1';el.style.visibility='visible';el.style.display='block'}
     alignDriveCharacterWithSpeedLimit();
     updateDriving(true);
+    snapDriveCameraNow();setTimeout(snapDriveCameraNow,250);
   }catch(e){console.warn('drive marker viewport recovery failed',e)}
 }
 
@@ -2489,18 +2510,100 @@ function stationaryAnchorDistance(){
   const b=finiteOrNull(state.routeLockedDistance);if(b!=null)return b;
   return finiteOrNull(state.user?.routeDistance);
 }
-function evaluateStartupStationary(rawLat,rawLng,reportedSpeed){
+/* ---------- 휴대폰 가속도 센서(IMU) 기반 출발/정지 판단 ----------
+   GPS만으로는 주차장·지하·고층 건물 사이에서 위치가 수십 m 흔들리거나 속도값이 튀어 '출발하지 않았는데
+   출발한 것'으로 오인된다. 휴대폰 가속도(중력 제외)로 실제 차량 움직임(출발 가속·주행 진동)을 교차 확인한다.
+   - 웹 DeviceMotion(안드로이드/iOS) 또는 네이티브 onMotionUpdate 값을 같은 창(10초)에 모은다.
+   - 임계값(MOTION_*)은 일반 승용차 기준 초기값이며 차종/거치 방식에 따라 조정이 필요할 수 있다. */
+const MOTION_WINDOW_MS=10000;
+const MOTION_LAUNCH_PEAK=0.6,MOTION_LAUNCH_MIN_SAMPLES=4,MOTION_ACTIVE_RMS=0.18,MOTION_STILL_RMS=0.05,MOTION_STILL_PEAK=0.3;
+state.motion=state.motion||{ready:false,at:0,samples:[],gx:null,gy:null,gz:null};
+function pushMotionSample(mag,t=Date.now()){
+  const m=state.motion;if(!Number.isFinite(mag))return;
+  const last=m.samples[m.samples.length-1];if(last&&t-last.t<40)return;
+  m.samples.push({t,mag});m.at=t;
+  while(m.samples.length&&t-m.samples[0].t>MOTION_WINDOW_MS)m.samples.shift();
+}
+function onDeviceMotion(e){
+  const t=Date.now(),m=state.motion;let ax,ay,az;
+  const a=e.acceleration;
+  if(a&&a.x!=null&&a.y!=null&&a.z!=null){ax=a.x;ay=a.y;az=a.z}
+  else{
+    const g=e.accelerationIncludingGravity;if(!g||g.x==null||g.y==null||g.z==null)return;
+    // 중력 제외 값이 없는 기기: 저역통과로 중력을 추정해 빼 고역통과 가속도를 얻는다.
+    if(m.gx==null){m.gx=g.x;m.gy=g.y;m.gz=g.z}
+    m.gx=m.gx*.9+g.x*.1;m.gy=m.gy*.9+g.y*.1;m.gz=m.gz*.9+g.z*.1;
+    ax=g.x-m.gx;ay=g.y-m.gy;az=g.z-m.gz;
+  }
+  pushMotionSample(Math.hypot(ax,ay,az),t);
+}
+function initMotionSensor(){
+  if(state.motion.ready)return;state.motion.ready=true;
+  try{window.addEventListener('devicemotion',onDeviceMotion,{passive:true})}catch(e){console.warn('devicemotion unavailable',e)}
+}
+async function requestMotionPermission(){
+  initMotionSensor();
+  try{if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function')await DeviceMotionEvent.requestPermission()}catch{}
+}
+function motionEvidence(now=Date.now()){
+  const m=state.motion;
+  if(!m||m.samples.length<8||now-m.at>2500)return{available:false,active:false,still:false,rms4:0,peak8:0};
+  const win8=m.samples.filter(x=>now-x.t<=8000),win4=m.samples.filter(x=>now-x.t<=4000);
+  const rms=arr=>arr.length?Math.sqrt(arr.reduce((acc,x)=>acc+x.mag*x.mag,0)/arr.length):0;
+  const peak8=win8.reduce((p,x)=>Math.max(p,x.mag),0),peak4=win4.reduce((p,x)=>Math.max(p,x.mag),0),rms4=rms(win4),rms8=rms(win8);
+  const launch=win8.filter(x=>x.mag>=MOTION_LAUNCH_PEAK).length>=MOTION_LAUNCH_MIN_SAMPLES;
+  const cover=win4.length?now-win4[0].t:0;
+  return{available:true,active:launch||rms8>=MOTION_ACTIVE_RMS,still:cover>=3000&&rms4<MOTION_STILL_RMS&&peak4<MOTION_STILL_PEAK,rms4,peak8};
+}
+/* 출발 판정: 안내를 시작한 뒤 실제로 출발하기 전까지 캐릭터는 절대 움직이지 않는다.
+   GPS 이동 증거(속도 지속 또는 위치 이동 지속)에 휴대폰 가속도 증거가 함께 있어야 출발로 본다.
+   - 가속도 센서가 '완전 정지'를 가리키면 GPS 위치 튐/속도 노이즈만으로는 절대 출발하지 않는다.
+   - 가속도 센서를 쓸 수 없으면(미지원/권한 거부) GPS 증거를 더 길게 요구한다. */
+try{initMotionSensor()}catch{}
+function evaluateStartupStationary(rawLat,rawLng,reportedSpeed,accuracy=0){
   if(!(state.tripStartedAt&&!state.simulationActive&&!state.navigationStartReleased&&state.navigationStartAnchor))return false;
-  const startMoved=hav(Number(state.navigationStartAnchor.lat),Number(state.navigationStartAnchor.lng),rawLat,rawLng);
-  const confirmedMoving=Number.isFinite(reportedSpeed)&&reportedSpeed>=1.4;
-  if(confirmedMoving)state.navigationMoveConfirmHits=(Number(state.navigationMoveConfirmHits)||0)+1;
-  else state.navigationMoveConfirmHits=0;
-  if(state.navigationMoveConfirmHits>=2||startMoved>=20){
+  const now=Date.now(),acc=Number(accuracy)||0;
+  const anc=state.navigationStartAnchor;
+  // 안내 시작 후 첫 수신: 시작 기준점이 오래된 위치였다면 첫 실측 위치로 기준점을 바로잡는다(이동으로 보지 않는다).
+  if(!state.navigationStartFixed){
+    state.navigationStartFixed=true;
+    if(acc<=0||acc<=40){
+      const d0=hav(Number(anc.lat),Number(anc.lng),rawLat,rawLng);
+      if(Number.isFinite(d0)&&d0>12){
+        state.navigationStartAnchor={...anc,lat:rawLat,lng:rawLng};
+        if(state.stationaryGpsAnchor){state.stationaryGpsAnchor.lat=rawLat;state.stationaryGpsAnchor.lng=rawLng}
+      }
+    }
+    state.stationaryActive=true;return true;
+  }
+  const a=state.navigationStartAnchor;
+  const moved=hav(Number(a.lat),Number(a.lng),rawLat,rawLng),radius=Math.max(30,acc*1.8);
+  const speedKnown=Number.isFinite(reportedSpeed);
+  // 속도 증거: 2m/s(7km/h)↑가 지속되는지. 위치 증거: 기준점에서 radius↑ 벗어난 상태가 지속되는지.
+  if(speedKnown&&reportedSpeed>=2.0){if(!state.departSpeedSince)state.departSpeedSince=now}
+  else if(speedKnown&&reportedSpeed<1.0)state.departSpeedSince=0;
+  if(moved>=radius){if(!state.departMoveSince)state.departMoveSince=now}
+  else if(moved<radius*.7)state.departMoveSince=0;
+  const speedMs=state.departSpeedSince?now-state.departSpeedSince:0,moveMs=state.departMoveSince?now-state.departMoveSince:0;
+  const speedEvidence=speedMs>=1500,moveEvidence=moveMs>=2500;
+  const gpsMove=speedEvidence||(moveEvidence&&speedMs>0)||(!speedKnown&&moveMs>=4000);
+  const imu=motionEvidence(now);
+  let release=false;
+  if(gpsMove){
+    if(!imu.available)release=true;                                                   // 센서 없음: GPS 증거(지속)만으로
+    else if(imu.active)release=true;                                                  // 출발 가속/주행 진동 확인
+    else if(!imu.still&&(speedMs>=5000||(speedEvidence&&Number(reportedSpeed)>=6&&speedMs>=2500)))release=true; // 센서가 애매해도 GPS가 충분히 강하면
+    // 안전장치: 이미 달리는 중에 안내를 시작했거나 일정 속도로 부드럽게 순항하면 가속도가 거의 0이라 '정지'로 읽힐 수 있다.
+    // 8m/s(29km/h)↑가 4초 이상 지속되고 기준점에서 60m↑ 이동했으면(주차 중 GPS 튐으로는 만들어지지 않음) 센서와 무관하게 출발로 본다.
+    if(!release&&speedMs>=4000&&Number(reportedSpeed)>=8&&moved>=60)release=true;
+  }
+  state.departureDebug={moved:Math.round(moved),speedMs,moveMs,imu:imu.available?{active:imu.active,still:imu.still,rms4:+imu.rms4.toFixed(3)}:null,release};
+  if(release){
     state.navigationStartReleased=true;state.navigationMoveConfirmHits=0;state.stationaryActive=false;state.stationaryGpsAnchor=null;
+    state.departSpeedSince=0;state.departMoveSince=0;
     return false;
   }
-  state.stationaryActive=true;
-  return true;
+  state.stationaryActive=true;return true;
 }
 function resolveStationaryLatch(rawLat,rawLng,speed,accuracy,now){
   if(!state.tripStartedAt||state.simulationActive)return false;
@@ -2545,6 +2648,7 @@ function applyGps(pos,fly=false){
     const prevRealAtN=Number(state.lastRealGpsAt)||0,prevWasEstimatedN=Boolean(state.gpsEstimated||state.user?.estimated);
     state.lastNativeSampleAt=t;state.nativeLocationAt=now;state.nativeLocationActive=true;
     const estimated=Boolean(pos.estimated);
+    if(!estimated)state.lastRawFix={lat:pos.rawLatitude==null?lat:Number(pos.rawLatitude),lng:pos.rawLongitude==null?lng:Number(pos.rawLongitude),accuracy:Number(c.accuracy)||0,at:now};
     const rawLatN=pos.rawLatitude==null?lat:Number(pos.rawLatitude),rawLngN=pos.rawLongitude==null?lng:Number(pos.rawLongitude);
     // speed=null/undefined 는 '정지(0)'가 아니라 '알 수 없음'이다. 0으로 읽으면 주행 중 캐릭터가 멈춰 버린다.
     const speedKnownN=c.speed!=null&&c.speed!==''&&Number.isFinite(Number(c.speed));
@@ -2560,7 +2664,7 @@ function applyGps(pos,fly=false){
     // (이전에는 네이티브 경로에서 navigationStartReleased 가 영원히 false 라서 캐릭터가 출발 지점에 고정되는 문제가 있었다.)
     let forceN=false;
     if(!estimated){
-      if(evaluateStartupStationary(rawLatN,rawLngN,speedKnownN?Number(c.speed):nSpeed))forceN=true;
+      if(evaluateStartupStationary(rawLatN,rawLngN,speedKnownN?Number(c.speed):nSpeed,Number(c.accuracy)||0))forceN=true;
       else forceN=resolveStationaryLatch(rawLatN,rawLngN,nSpeed,Number(c.accuracy)||0,now);
     }else{state.stationaryGpsAnchor=null;state.stationaryActive=false}
     if(forceN)nSpeed=0;
@@ -2616,6 +2720,7 @@ function applyGps(pos,fly=false){
   }else state.postTunnelBadFixes=0;
 
   const rawLat=stateObj.lat,rawLng=stateObj.lng,sampleTime=Number(pos?.timestamp)||now;
+  state.lastRawFix={lat:rawLat,lng:rawLng,accuracy:stateObj.accuracy,at:now};
   /* 7.6.11.3 운행(경로 안내) 시작 전에는 GPS 흔들림만으로 차량 캐릭터가 스물스물 움직이지 않게 고정한다.
      마지막으로 받아들인 위치에서 max(25m, 정확도×1.6) 이내이고, 실제 이동 속도(1.8m/s↑)가 2회 연속 확인되지 않으면 갱신하지 않는다. */
   if(!state.tripStartedAt&&!state.simulationActive){
@@ -2623,7 +2728,9 @@ function applyGps(pos,fly=false){
     if(anc&&pointValid(anc)&&pointValid(state.user)){
       const moved=hav(anc.lat,anc.lng,rawLat,rawLng),radius=Math.max(25,Math.min(80,accNow*1.6));
       state.preTripMoveHits=(Number.isFinite(spdNow)&&spdNow>=1.8)?(Number(state.preTripMoveHits)||0)+1:0;
-      if(moved<radius&&state.preTripMoveHits<2){
+      // 가속도 센서가 '완전 정지'를 가리키면(속도 5m/s 미만) GPS 위치가 튀어도 출발 전 캐릭터를 움직이지 않는다.
+      const imuP=motionEvidence(),stillVeto=imuP.available&&imuP.still&&!(Number.isFinite(spdNow)&&spdNow>=5);
+      if((moved<radius&&state.preTripMoveHits<2)||stillVeto){
         if(fly&&state.map)state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:16,duration:500});
         return;
       }
@@ -2643,7 +2750,7 @@ function applyGps(pos,fly=false){
     }
   }
   // 안내 시작 직후 실제 차량이 움직이지 않았는데 GPS 흔들림만으로 캐릭터가 앞서가는 현상을 방지한다.
-  const startupStationary=evaluateStartupStationary(rawLat,rawLng,reportedSpeed);
+  const startupStationary=evaluateStartupStationary(rawLat,rawLng,Number.isFinite(reportedSpeed)?reportedSpeed:derivedSpeed,stateObj.accuracy);
   if(startupStationary)stateObj.speed=0;
   // 신호가 약해지는 순간에는 GPS 정확도가 함께 급격히 나빠지는 경우가 대부분이다(위성 가림).
   // 이름 기반 터널 인식에만 의존하지 않도록 정확도가 뚜렷하게 나쁠 때(60m↑)도 같은 신호저하 상황으로 본다.
@@ -2706,7 +2813,8 @@ function applyGps(pos,fly=false){
     // 주행 화면 위치는 항상 현재 경로에 강제 스냅.
     // 터널 복귀/수신 공백(3.5초↑) 뒤 첫 유효 GPS 는 수신된 그 자리에서 바로 시작한다.
     // (예전에는 DR 위치 + 소폭으로 제한한 뒤 밀린 구간을 빠르게 몰아서 채웠다.)
-    const needResync=Boolean(!tunnelZeroGps&&(wasEstimated||state.resyncPending||(prevRealAt&&now-prevRealAt>3500)));
+    const waitingToDepart=Boolean(state.tripStartedAt&&!state.navigationStartReleased&&!state.simulationActive);
+    const needResync=Boolean(!tunnelZeroGps&&!waitingToDepart&&(wasEstimated||state.resyncPending||(prevRealAt&&now-prevRealAt>3500)));
     const locked=lockDisplayPositionToRoute(stateObj,now,{resync:needResync});
     if(locked){
       state.resyncPending=false;
@@ -3257,6 +3365,10 @@ async function chooseDestination(item,{autoGuide=true}={}){
     return;
   }
 
+  // 즐겨찾기/최근/홈·회사 등으로 '새 목적지'를 고르면 출발지는 항상 현재 위치다.
+  // (이전 경로에서 출발지/도착지 바꾸기·출발지 지정이 남아 있으면 그 위치에서 출발하던 문제)
+  // 경로 화면에서 사용자가 직접 지정한 출발지를 두고 목적지만 바꾸는 경우에만 유지한다.
+  if(!arguments[1]?.keepOrigin&&$('routeView')?.classList.contains('hidden')){state.origin=null;state.originMode='current';state.routeOriginUsed=null}
   state.routeMode='car';
   state.carRouteOptions=[];
   state.walkingRoute=null;
@@ -3282,9 +3394,11 @@ async function chooseDestination(item,{autoGuide=true}={}){
     showPermissionGate();
     return;
   }
+  // 저장돼 있던/오래된 위치가 아니라 지금 위치로 출발하도록 최신 위치를 다시 받는다.
+  if(state.originMode==='current')await refreshCurrentLocation().catch(()=>{});
 
   if(!state.origin||state.originMode==='current'){
-    state.origin={...state.user,name:'내 위치',address:'현재 GPS 위치'};
+    state.origin={...(currentOriginPoint()||state.user),name:'내 위치',address:'현재 GPS 위치'};
     state.originMode='current';
   }
   updateOriginUI();
@@ -3314,7 +3428,7 @@ function resumeNavigationWithSelectedRoute(){
    state.routeLockedDistance=d0;state.driveMarkerRenderedDistance=d0;state.driveMarkerTargetDistance=d0;state.stationaryGpsAnchor=null;state.lockBehindHits=0;state.lockAheadHits=0;
    if(state.user){state.user={...state.user,routeDistance:d0}}}
   state.navigationStartAnchor=pointValid(state.user)?{lat:Number(state.user.lat),lng:Number(state.user.lng),routeDistance:Number(state.user.routeDistance)}:null;
-  state.navigationStartReleased=false;state.navigationMoveConfirmHits=0;
+  state.navigationStartReleased=false;state.navigationMoveConfirmHits=0;state.navigationStartFixed=false;state.departSpeedSince=0;state.departMoveSince=0;
   state.stationaryActive=true;
   state.stationaryGpsAnchor=state.navigationStartAnchor?{...state.navigationStartAnchor}:null;
   state.lastRealSpeedMps=0;
@@ -3336,6 +3450,7 @@ function resumeNavigationWithSelectedRoute(){
   ensureUserMarker();
   updateCarMarkerImage();
   updateDriving(true);
+  snapDriveCameraNow();setTimeout(snapDriveCameraNow,200);
   toast('선택한 경로로 안내를 계속합니다.',1600);
   return true;
 }
@@ -3366,8 +3481,9 @@ async function startRouteGuidanceNow(){
   try{
     if(!state.user)await locate(false);
     if(!state.user){showPermissionGate();return}
+    if(state.originMode==='current')await refreshCurrentLocation().catch(()=>{});
     if(!state.origin||state.originMode==='current'){
-      state.origin={...state.user,name:'내 위치',address:'현재 GPS 위치'};
+      state.origin={...(currentOriginPoint()||state.user),name:'내 위치',address:'현재 GPS 위치'};
       state.originMode='current';
     }
     updateOriginUI();
@@ -3510,7 +3626,8 @@ function updateCameraAlertSetting(kind,value){if(!['speed','signal'].includes(ki
 
 /* ---------- ROUTES ---------- */
 async function routeRequest(priority='RECOMMEND',avoid=null,waypointsOverride=null,mode=state.routeMode,originOverride=null){
-  const o=pointValid(originOverride)?originOverride:(state.originMode==='current'?(state.user||state.origin):(state.origin||state.user)),wps=Array.isArray(waypointsOverride)?waypointsOverride:state.waypoints;
+  const o=pointValid(originOverride)?originOverride:(state.originMode==='current'?(currentOriginPoint()||state.user||state.origin):(state.origin||state.user)),wps=Array.isArray(waypointsOverride)?waypointsOverride:state.waypoints;
+  if(!pointValid(originOverride))state.routeOriginUsed={lat:Number(o.lat),lng:Number(o.lng)};
   const originHeading=Number.isFinite(Number(originOverride?.heading))
     ?Number(originOverride.heading)
     :(mode==='car'&&state.originMode==='current'&&Number.isFinite(Number(state.user?.heading))?Number(state.user.heading):null);
@@ -3585,10 +3702,9 @@ function persistSavedWaypointCourses(){
 function saveCurrentWaypointCourse(){
   const points=(state.waypoints||[]).filter(pointValid);
   if(!points.length||!pointValid(state.destination))return false;
-  const origin=state.originMode==='current'
-    ?(pointValid(state.user)?{...state.user,name:'내 위치',address:'현재 GPS 위치'}:null)
-    :(pointValid(state.origin)?{...state.origin}:null);
-  const key=[origin,...points,state.destination].filter(Boolean).map(p=>`${Number(p.lat).toFixed(5)},${Number(p.lng).toFixed(5)}`).join('|');
+  // 현재 위치 출발은 좌표를 저장하지 않는다(저장 당시 위치에서 출발하는 문제). 지정 출발지만 저장한다.
+  const origin=state.originMode==='current'?null:(pointValid(state.origin)?{...state.origin}:null);
+  const key=[origin||'current',...points,state.destination].map(p=>p==='current'?'current':`${Number(p.lat).toFixed(5)},${Number(p.lng).toFixed(5)}`).join('|');
   const routeText=[...points.map(p=>p.name||'경유지'),state.destination.name||'목적지'].join(' → ');
   const item={id:'wc_'+Date.now(),key,name:routeText,origin:origin?{...origin}:null,destination:{...state.destination},waypoints:points.map(p=>({...p})),savedAt:Date.now()};
   state.savedWaypointCourses=[item,...(state.savedWaypointCourses||[]).filter(x=>x.key!==key)].slice(0,20);
@@ -3602,9 +3718,14 @@ async function useSavedWaypointCourse(id){
   const item=(state.savedWaypointCourses||[]).find(x=>x.id===id);if(!item)return;
   state.destination=normalizedPlace(item.destination);
   state.waypoints=(item.waypoints||[]).map(normalizedPlace).filter(pointValid);
-  if(pointValid(item.origin)){
-    state.origin=normalizedPlace(item.origin);
-    state.originMode=item.origin?.name==='내 위치'?'current':'custom';
+  const savedWasCurrent=!pointValid(item.origin)||item.origin?.name==='내 위치'||item.origin?.address==='현재 GPS 위치';
+  if(savedWasCurrent){
+    // 예전에 저장된 코스에 '내 위치' 좌표가 들어 있어도 쓰지 않고 지금 위치에서 출발한다.
+    state.originMode='current';state.origin=null;
+    await refreshCurrentLocation().catch(()=>{});
+    const cp=currentOriginPoint();if(cp)state.origin={...cp,name:'내 위치',address:'현재 GPS 위치'};
+  }else{
+    state.origin=normalizedPlace(item.origin);state.originMode='custom';
   }
   updateOriginUI();renderRouteWaypoints();
   $('routeAddressDest').textContent=state.destination.name||'목적지';
@@ -4151,7 +4272,33 @@ function initializeDriveSummary(){
   const limit=Number(seg?.speedLimit)||0;
   renderSpeedOrSignBadge(limit,[]);
 }
-function startNavigation(){
+async function refreshOriginThenStart(){
+  if(state.startingFresh)return;state.startingFresh=true;cancelAutoStart();
+  try{
+    toast('현재 위치를 확인하는 중...',1200);
+    await refreshCurrentLocation({maxAgeMs:2500,timeoutMs:3500});
+    const u=currentOriginPoint(),ro=state.routeOriginUsed;
+    if(u&&(!ro||hav(ro.lat,ro.lng,u.lat,u.lng)>80)){
+      state.origin={...u,name:'내 위치',address:'현재 GPS 위치'};state.originMode='current';updateOriginUI();
+      await loadRouteOptions();
+    }
+  }catch(e){console.warn('origin refresh before start failed',e)}
+  finally{state.startingFresh=false}
+  startNavigation({fresh:true});
+}
+function startNavigation(opts={}){
+  // 출발 지점이 오래된 위치(즐겨찾기 선택 당시 등)였다면 지금 위치로 경로를 다시 계산한 뒤 시작한다.
+  if(!opts?.fresh&&!state.tripStartedAt&&state.originMode==='current'&&state.route&&state.destination){
+    const ro=state.routeOriginUsed,u=currentOriginPoint();
+    const stale=!u||Date.now()-Number(state.lastRawFix?.at||0)>8000;
+    const far=ro&&u&&hav(ro.lat,ro.lng,u.lat,u.lng)>80;
+    if(stale||far){
+      // 전체화면/센서 권한은 사용자 제스처 안에서만 요청할 수 있으므로 비동기 작업 전에 먼저 요청한다.
+      try{if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen();requestCompassPermission();requestMotionPermission()}catch{}
+      refreshOriginThenStart();return;
+    }
+  }
+  try{requestMotionPermission()}catch{}
   $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearOnnuriMarkers();clearHomeCameraMarkers();
   // 경로선택/현재위치 화면에서 쓰던 보조 위치 마커는 주행 화면에 남기지 않는다.
   try{if(state.originMarker){state.originMarker.remove();state.originMarker=null}}catch{state.originMarker=null}
@@ -4161,7 +4308,7 @@ function startNavigation(){
   if((state.waypoints||[]).filter(pointValid).length)saveCurrentWaypointCourse();if(!state.route||!state.destination)return;cancelAutoStart();state.preTripAnchor=null;state.tripStartedAt=Date.now();
   state.navigationStartAt=state.tripStartedAt;
   state.navigationStartAnchor=pointValid(state.user)?{lat:Number(state.user.lat),lng:Number(state.user.lng),routeDistance:Number(state.user.routeDistance)}:null;
-  state.navigationStartReleased=false;state.navigationMoveConfirmHits=0;
+  state.navigationStartReleased=false;state.navigationMoveConfirmHits=0;state.navigationStartFixed=false;state.departSpeedSince=0;state.departMoveSince=0;
   state.stationaryActive=true;
   state.stationaryGpsAnchor=state.navigationStartAnchor?{...state.navigationStartAnchor}:null;
   state.lastRealSpeedMps=0;
@@ -4170,6 +4317,7 @@ function startNavigation(){
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
   if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 바로 요청해야 브라우저가 확실히 허용한다.
   initializeDriveSummary();startWatch();ensureUserMarker();updateCarMarkerImage();drawRoute(state.route,{fit:false});updateDriving(true);
+  snapDriveCameraNow();setTimeout(snapDriveCameraNow,160);setTimeout(snapDriveCameraNow,650);
   // 길안내 진입 시 라디오는 60% 기준으로 초기화한다.
   // MP3 원본별 음량 편차는 Web Audio 자동 음량 평준화(AGC + compressor)로 보정한다.
   {
@@ -4285,7 +4433,7 @@ function updateDriving(force=false){
         center:camCenter,
         zoom:17.2,
         pitch:state.map3D?55:0,
-        bearing:heading,
+        bearing:driveCameraBearing(),
         duration:force?220:420,
         padding:driveCameraPadding()
       });
@@ -4299,6 +4447,31 @@ function updateDriving(force=false){
   refreshFuelWhileDriving();
 }
 /* 캐릭터가 화면(패딩 반영 중심)에서 크게 벗어나면 즉시 되돌린다. 지도 조작 중에는 건드리지 않는다. */
+/* 주행 카메라 방향: 가로/세로 모두 '진행 방향이 화면 위쪽'(heading-up)이 되게 한다.
+   GPS heading은 저속·정차 중 튀므로 캐릭터 앞쪽 경로(35m)의 방향을 기준으로 하고, 급커브에서만 부드럽게 따라간다. */
+function driveCameraBearing(){
+  let h=NaN;
+  const cur=Number(state.driveMarkerRenderedDistance);
+  if(Number.isFinite(cur)&&state.route?.geometry?.length&&state.routeCumulative?.length&&state.user?.mapSnapped!==false){
+    const a=pointAtRouteDistance(cur),b=pointAtRouteDistance(cur+35);
+    if(a&&b&&hav(a.lat,a.lng,b.lat,b.lng)>3)h=bearing(a.lat,a.lng,b.lat,b.lng);
+  }
+  if(!Number.isFinite(h)&&Number.isFinite(Number(state.user?.heading))&&(Number(state.user?.speed)||0)>1.5)h=Number(state.user.heading);
+  const prev=state.driveCameraBearingLast;
+  if(!Number.isFinite(h))h=Number.isFinite(prev)?prev:(Number(state.user?.heading)||0);
+  if(Number.isFinite(prev)){const d=((h-prev+540)%360)-180;h=(prev+d*.55+360)%360}
+  state.driveCameraBearingLast=h;return h;
+}
+/* 안내 시작/방향 전환 직후 지도가 옆으로 훑으며(오른쪽→왼쪽) 이동하지 않도록 카메라를 즉시 진행방향 위쪽 기준으로 맞춘다. */
+function snapDriveCameraNow(){
+  try{
+    if(!state.map||!state.tripStartedAt||!pointValid(state.user)||state.userMapInteracting)return;
+    state.map.resize();
+    const camPt=Number.isFinite(Number(state.driveMarkerRenderedDistance))?pointAtRouteDistance(Number(state.driveMarkerRenderedDistance)):null;
+    state.map.jumpTo({center:camPt?[camPt.lng,camPt.lat]:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?55:0,bearing:driveCameraBearing(),padding:driveCameraPadding()});
+    updateDriveCompass();
+  }catch(e){console.warn('drive camera snap failed',e)}
+}
 function keepDriveCharacterVisible(){
   try{
     if(!state.map||!state.userMarker||!state.tripStartedAt||state.simulationActive)return;
@@ -4309,9 +4482,12 @@ function keepDriveCharacterVisible(){
     const w=canvas.clientWidth||window.innerWidth||360,h=canvas.clientHeight||window.innerHeight||640;
     const c=state.map.project(state.map.getCenter()),p=state.map.project([ll.lng,ll.lat]);
     const dev=Math.hypot(p.x-c.x,p.y-c.y);
-    if(dev>Math.max(70,Math.min(w,h)*.28)){
+    // 방향 감시: 화면 회전·리사이즈·fitBounds 등으로 지도가 북쪽 기준으로 되돌아가면 진행방향 위쪽으로 복원한다.
+    const tb=state.driveCameraBearingLast,mb=Number(state.map.getBearing());
+    const bearingOff=Number.isFinite(tb)&&Number.isFinite(mb)&&Math.abs(((mb-tb+540)%360)-180)>20&&!state.map.isMoving?.();
+    if(dev>Math.max(70,Math.min(w,h)*.28)||bearingOff){
       state.lastVisibleGuardAt=now;
-      state.map.easeTo({center:[ll.lng,ll.lat],duration:220,essential:true,padding:driveCameraPadding()});
+      state.map.easeTo({center:[ll.lng,ll.lat],bearing:Number.isFinite(tb)?tb:mb,duration:bearingOff?320:220,essential:true,padding:driveCameraPadding()});
     }
   }catch(e){console.warn('visibility guard failed',e)}
 }
