@@ -4268,3 +4268,28 @@ html body #app #driveView #drivePoiPanel .drive-poi-entry{padding:9px!important;
  html body #app #driveView #drivePoiPanel .drive-poi-entry .entry-icon{width:30px!important;height:30px!important}
  html body #app #driveView #drivePoiPanel .drive-poi-entry .entry-left{grid-template-columns:30px 1fr!important}
 }
+
+/* Dangollo v7.6.21.2: reduce upper-left guidance panel by 10% without affecting guide calculations. */
+html body #app #driveView .maneuver-stack{
+  transform:scale(.9)!important;
+  transform-origin:top left!important;
+}
+/* Fill the newly available visual space with the requested recommendation sheet. */
+html body #app #driveView .drive-poi-panel-sheet{
+  box-sizing:border-box!important;
+  max-width:calc(100vw - 16px)!important;
+}
+@media (orientation:landscape){
+  html body #app #driveView .maneuver-stack{
+    transform:scale(.9)!important;
+    transform-origin:top left!important;
+  }
+}
+/* Ensure mascot does not inherit an entry transition that keeps it invisible. */
+html body #app #driveView .character-car-marker,
+html body #app #driveView .character-car-marker img{
+  opacity:1!important;
+  visibility:visible!important;
+  animation-delay:0s!important;
+  transition-delay:0s!important;
+}

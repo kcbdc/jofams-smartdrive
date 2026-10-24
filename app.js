@@ -13,6 +13,18 @@ const characterDefs = {
   sunsik:{name:'순식',car:'/assets/sunsik_car.png',marker:'/assets/sunsik_car_marker.png',rear:'/assets/sunsik_car_rear.png',avatar:'/assets/sunsik.png',rate:.80,pitch:.50,voiceLabel:'순식 · 저음 중년 남성 보이스'},
   hunmin:{name:'훈민',car:'/assets/hunmin_car.png',marker:'/assets/hunmin_car_marker.png',rear:'/assets/hunmin_car_rear.png',avatar:'/assets/hunmin.png',rate:1.12,pitch:.88,voiceLabel:'훈민 · 밝은 청년 남성 보이스'}
 };
+/* Preload the current drive character before WebView/map transitions. */
+const dangolloPreloadedCharacters=new Map();
+function preloadDangolloDriveCharacters(){
+  for(const def of Object.values(characterDefs)){
+    for(const src of [def.rear,def.marker]){
+      if(!src||dangolloPreloadedCharacters.has(src))continue;
+      const img=new Image();img.decoding='sync';img.fetchPriority='high';img.src=src;
+      dangolloPreloadedCharacters.set(src,img);
+    }
+  }
+}
+preloadDangolloDriveCharacters();
 const state = {
   map:null,mapReady:false,pendingRouteDraw:null,mapFallbackTried:false,mapWatchdog:0,user:null, destination:null, routeOptions:[], route:null, selectedRoute:0,
   userMarker:null,destMarker:null,originMarker:null,watchId:null,character:'daim',voiceVolume:.8,sound:true,radioVolume:.6,radioPlaying:false,radioIndex:0,radioDucked:false,radioDuckTimer:0,activeGuideSnapshot:null,
@@ -2286,7 +2298,16 @@ function characterGuideImage(kind){
   if(kind==='marker')return c.marker;
   return c.rear||c.marker;
 }
-function makeCarMarker(){const el=document.createElement('div');el.className='character-car-marker rear-version';el.classList.toggle('walking-character-marker',isWalkingGuide());el.innerHTML=`<img src="${characterGuideImage('rear')}" alt="${characterDefs[state.character].name}">`;return new maplibregl.Marker({element:el,anchor:'center',rotationAlignment:'viewport'});}
+function makeCarMarker(){
+  const el=document.createElement('div');el.className='character-car-marker rear-version';
+  el.classList.toggle('walking-character-marker',isWalkingGuide());
+  const img=document.createElement('img');
+  img.alt=characterDefs[state.character].name;img.decoding='sync';img.loading='eager';
+  img.style.opacity='1';img.style.visibility='visible';
+  img.src=characterGuideImage('rear');el.appendChild(img);
+  el.style.opacity='1';el.style.visibility='visible';el.style.display='block';
+  return new maplibregl.Marker({element:el,anchor:'center',rotationAlignment:'viewport'});
+}
 function updateCarMarkerImage(){
   const el=state.userMarker?.getElement();if(!el)return;
   el.classList.toggle('walking-character-marker',isWalkingGuide());
@@ -4460,7 +4481,12 @@ function startNavigation(opts={}){
   state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false};state.mapMatch={index:Number(startMatch?.index)||0,routeDistance:startM,score:Infinity,confidence:0,at:0};state.routeLockedDistance=startM;state.routeLockedAt=Date.now();state.offRouteHits=0;state.offRouteHeadingHits=0;state.offRouteSince=0;state.arrivalCandidateSince=0; // 새 주행마다 상보필터 상태 초기화
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
   if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 바로 요청해야 브라우저가 확실히 허용한다.
-  initializeDriveSummary();startWatch();ensureUserMarker();updateCarMarkerImage();drawRoute(state.route,{fit:false});updateDriving(true);
+  initializeDriveSummary();
+  // Render an already loaded character at the departure point before requesting a new GPS frame.
+  preloadDangolloDriveCharacters();ensureUserMarker();updateCarMarkerImage();
+  const openingMarker=state.userMarker?.getElement?.();
+  if(openingMarker){openingMarker.style.display='block';openingMarker.style.visibility='visible';openingMarker.style.opacity='1';}
+  startWatch();drawRoute(state.route,{fit:false});updateDriving(true);
   snapDriveCameraNow();setTimeout(snapDriveCameraNow,160);setTimeout(snapDriveCameraNow,650);
   // 길안내 진입 시 라디오는 60% 기준으로 초기화한다.
   // MP3 원본별 음량 편차는 Web Audio 자동 음량 평준화(AGC + compressor)로 보정한다.
@@ -6416,13 +6442,13 @@ function layoutDrivePoiPanel(){
     leftBound=Math.min(width-205,leftBound);
     sheet.style.left=`${Math.round(leftBound)}px`;
     sheet.style.right='auto';
-    sheet.style.width=`${Math.max(190,Math.min(350,width-leftBound-72))}px`;
+    sheet.style.width=`${Math.max(210,Math.min(420,width-leftBound-52))}px`;
     sheet.style.top=`${Math.round(Math.max(12,Math.min(top,Math.max(12,bottomY-175))))}px`;
     sheet.style.maxHeight=`${Math.max(120,Math.round(bottomY-parseFloat(sheet.style.top)-8))}px`;
   }else{
     // Place under the visible navigation/branch HUD and keep a scrollable window above the ETA bar.
     const usableTop=Math.min(Math.max(top,150),bottomY-110);
-    sheet.style.left='12px';sheet.style.right='12px';sheet.style.width='auto';
+    sheet.style.left='8px';sheet.style.right='8px';sheet.style.width='auto';
     sheet.style.top=`${Math.max(12,Math.round(usableTop))}px`;
     sheet.style.maxHeight=`${Math.max(100,Math.round(bottomY-usableTop))}px`;
   }
