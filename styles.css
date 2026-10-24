@@ -4312,3 +4312,35 @@ html body #app #driveView #driveRecommendBtn .dangollo-recommend-symbol svg path
 #driveView .drive-poi-tabs button.active{background:#087b60!important}
 #driveView .drive-poi-card.local .poi-icon{background:#087b60!important}
 @media(prefers-reduced-motion:reduce){#homeView .guide-card{transition:none!important}}
+
+/* 단골로 7.6.21.6: 홈 상단 양쪽 메뉴의 명료한 접근성 */
+#homeView .home-header{
+  grid-template-columns:50px minmax(0,1fr) 50px!important;
+  min-height:62px!important;
+  top:calc(var(--safeT) + 8px)!important;
+  left:max(12px,env(safe-area-inset-left,0px))!important;
+  right:max(12px,env(safe-area-inset-right,0px))!important;
+  gap:8px!important;
+  align-items:center!important;
+  padding:4px 5px!important;
+  border-radius:20px!important;
+  box-shadow:0 12px 28px rgba(3,69,52,.25)!important;
+}
+#homeView .home-header > b{font-size:18px!important;line-height:1.2!important;white-space:nowrap!important;text-align:center!important}
+#homeView .home-header .dangollo-top-action{
+  width:48px!important;height:48px!important;min-width:48px!important;
+  padding:0!important;display:grid!important;place-items:center!important;
+  border:1px solid rgba(8,97,68,.12)!important;
+  border-radius:16px!important;background:#fff!important;color:#074d3c!important;
+  box-shadow:0 4px 12px rgba(0,44,34,.14)!important;
+  -webkit-tap-highlight-color:transparent;
+}
+#homeView .home-header .dangollo-top-action svg{
+  display:block!important;visibility:visible!important;opacity:1!important;
+  width:27px!important;height:27px!important;fill:none!important;
+  stroke:currentColor!important;stroke-width:2.35!important;
+}
+#homeView .home-header .dangollo-top-action svg circle[fill="currentColor"]{fill:currentColor!important;stroke:none!important}
+#homeView .home-header .dangollo-top-action:focus-visible{outline:3px solid #ccff9b!important;outline-offset:3px!important}
+#homeView .home-header .dangollo-top-action:active{transform:scale(.96)}
+@media(max-width:350px){#homeView .home-header{grid-template-columns:46px minmax(0,1fr) 46px!important;gap:5px!important}#homeView .home-header .dangollo-top-action{width:44px!important;height:44px!important;min-width:44px!important}#homeView .home-header>b{font-size:16px!important}}
