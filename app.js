@@ -5855,6 +5855,7 @@ function setSimulationSpeed(mult){
   updateSimulationControls();
 }
 function stopRouteSimulation({resumeGps=true}={}){
+  stopDangolloSimulationClock();
   // 1) 모의주행 프레임을 가장 먼저 즉시 중단
   if(state.simulationRaf)cancelAnimationFrame(state.simulationRaf);
   if(state.simulationFallbackTimer){clearTimeout(state.simulationFallbackTimer);state.simulationFallbackTimer=0}
@@ -5959,7 +5960,7 @@ function simulationTick(ts){
   if(!total)return stopRouteSimulation();
 
   const last=Number.isFinite(state.simulationLastAt)?state.simulationLastAt:ts;
-  const dt=Math.max(0,Math.min(.18,(ts-last)/1000));
+  const dt=Math.max(0,Math.min(.30,(ts-last)/1000));
   state.simulationLastAt=ts;
 
   const mult=Number(state.simulationSpeed)||1;
@@ -5993,6 +5994,7 @@ function simulationTick(ts){
     state.driveMarkerTargetAt=Date.now();
     ensureUserMarker();
     state.userMarker?.setLngLat([p.lng,p.lat]);
+    // Refresh the map even when guidance updating is disabled by the native host flag.
     updateDriving(false);
     state.userMarker?.setLngLat([p.lng,p.lat]);
   // 모의주행은 항상 캐릭터 중심으로 화면을 추종한다.
@@ -6019,29 +6021,34 @@ function simulationTick(ts){
     stopRouteSimulation({resumeGps:true});
     return;
   }
-  scheduleDangolloSimulationFrame();
+  // The 50ms simulation clock schedules the next frame.
+}
+function stopDangolloSimulationClock(){
+  if(state.simulationInterval){clearInterval(state.simulationInterval);state.simulationInterval=0}
+  if(state.simulationRaf){cancelAnimationFrame(state.simulationRaf);state.simulationRaf=0}
+  if(state.simulationFallbackTimer){clearTimeout(state.simulationFallbackTimer);state.simulationFallbackTimer=0}
 }
 function scheduleDangolloSimulationFrame(){
-  if(!state.simulationActive)return;
-  if(state.simulationRaf)cancelAnimationFrame(state.simulationRaf);
-  if(state.simulationFallbackTimer)clearTimeout(state.simulationFallbackTimer);
-  if(document.visibilityState==='hidden'){
-    // 백그라운드에서 requestAnimationFrame이 중단되는 브라우저/WebView 대응.
-    state.simulationFallbackTimer=setTimeout(()=>simulationTick(performance.now()),120);
-  }else{
-    state.simulationRaf=requestAnimationFrame(simulationTick);
-    // WebView RAF가 장시간 정지한 경우 한 프레임만 대체 실행.
-    state.simulationFallbackTimer=setTimeout(()=>{
-      if(!state.simulationActive)return;
-      if(state.simulationRaf){cancelAnimationFrame(state.simulationRaf);state.simulationRaf=0}
-      simulationTick(performance.now());
-    },400);
-  }
+  // Keep one clock only. WebView RAF may be throttled while its map is animating.
+  if(!state.simulationActive||state.simulationInterval)return;
+  state.simulationLastAt=performance.now();
+  state.simulationInterval=setInterval(()=>{
+    if(!state.simulationActive){stopDangolloSimulationClock();return}
+    try{simulationTick(performance.now())}
+    catch(error){console.error('[Dangollo simulation tick]',error);stopRouteSimulation({resumeGps:true});toast('모의주행 중 오류가 발생했습니다. 경로를 확인해 주세요.',3000)}
+  },50);
+  simulationTick(performance.now());
 }
+
 function startRouteSimulation(){
   if(!state.tripStartedAt||!state.route?.geometry?.length)return toast('길안내가 시작된 뒤 모의주행을 사용할 수 있습니다.');
   if(state.routeMode!=='car')return toast('모의주행은 자동차 경로에서 사용할 수 있습니다.');
   if(state.simulationActive){stopRouteSimulation({resumeGps:true});return}
+  if(!state.routeCumulative?.length || Number(state.routeCumulative.at(-1))<=0){
+    state.routeCumulative=buildCumulative(state.route);
+  }
+  if(!(Number(state.routeCumulative?.at(-1))>0))return toast('경로 거리 정보가 없어 모의주행을 시작할 수 없습니다.',3000);
+  stopDangolloSimulationClock();
 
   // 종료 즉시 되돌아올 실제 위치를 모의주행 전에 보존한다.
   state.preSimulationUser=state.user?{...state.user}:null;
