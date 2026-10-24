@@ -4145,22 +4145,39 @@ body:has(#driveView:not(.hidden)) .origin-pin{display:none!important;visibility:
   #driveView .drive-poi-panel-sheet{top:calc(var(--safeT) + 16px);right:146px;max-height:min(78vh,520px)}
 }
 
-/* Dangollo 7.6.16: two-pane fork/junction guidance, replaces occluding floating overlay */
+/* Dangollo 7.6.21: 교차로 차로 안내 = 첨부 시안의 남색 알약형 카드 (기존 녹색 좌측 박스 제거)
+   - 위치는 7.6.11 팝업 배치(상단, data-pop="lane")를 그대로 따르고, 여기서는 색/모양만 정한다. */
+#driveView.dangollo-in-junction #laneAssistLayer,
 #driveView.dangollo-in-junction #laneAssistLayer.dangollo-junction-split{
- position:absolute!important; z-index:79!important;left:10px!important;right:auto!important;
- bottom:calc(var(--safeB) + 85px)!important;top:auto!important;
- width:min(40vw,320px)!important;min-height:180px!important;
- border-radius:20px!important;padding:18px 12px!important;
- background:linear-gradient(180deg,rgba(10,50,37,.96),rgba(8,69,49,.94))!important;
- display:flex!important;flex-direction:column!important;align-items:center!important;
- color:white!important;box-shadow:0 12px 24px rgba(0,20,18,.22)!important;
+ display:grid!important;
+ grid-template-columns:auto auto minmax(0,1fr)!important;
+ align-items:center!important;
+ column-gap:calc(var(--u,.5px)*22)!important;
+ min-height:0!important;max-height:none!important;
+ border:0!important;
+ border-radius:calc(var(--u,.5px)*40)!important;
+ background:linear-gradient(180deg,#1a2338 0%,#131a2b 100%)!important;
+ color:#fff!important;
+ box-shadow:0 calc(var(--u,.5px)*12) calc(var(--u,.5px)*26) rgba(3,10,24,.34)!important;
+ backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
 }
-#driveView.dangollo-in-junction .lane-assist-icon{font-size:70px!important;line-height:1!important;color:#93f5b8!important}
-#driveView.dangollo-in-junction #laneAssistDistance{color:#fff!important;font-size:18px!important}
-#driveView.dangollo-in-junction #laneAssistTitle{color:#fff!important;font-size:22px!important;text-align:center!important}
-#driveView.dangollo-in-junction #laneAssistRoad{color:#c9ffdd!important;font-size:14px!important;text-align:center!important;max-width:100%!important}
+#driveView.dangollo-in-junction .lane-assist-icon{
+ display:grid!important;place-items:center!important;flex:none!important;
+ width:calc(var(--u,.5px)*88)!important;height:calc(var(--u,.5px)*88)!important;
+ border-radius:50%!important;
+ background:linear-gradient(180deg,#ffe45f,#ffc81c)!important;color:#171717!important;
+ font-size:calc(var(--u,.5px)*46)!important;line-height:1!important;font-weight:900!important;
+}
+#driveView.dangollo-in-junction .lane-assist-copy{display:flex!important;flex-direction:column!important;gap:calc(var(--u,.5px)*4)!important;min-width:0!important}
+#driveView.dangollo-in-junction #laneAssistDistance{color:rgba(255,255,255,.78)!important;font-size:calc(var(--u,.5px)*30)!important;font-weight:500!important;line-height:1.1!important;text-align:left!important}
+#driveView.dangollo-in-junction #laneAssistTitle{color:#fff!important;font-size:calc(var(--u,.5px)*44)!important;font-weight:800!important;line-height:1.1!important;text-align:left!important;white-space:nowrap!important}
+#driveView.dangollo-in-junction #laneAssistRoad{
+ color:rgba(255,255,255,.82)!important;font-size:calc(var(--u,.5px)*32)!important;font-weight:400!important;
+ text-align:left!important;max-width:100%!important;min-width:0!important;
+ padding-left:calc(var(--u,.5px)*22)!important;border-left:1px solid rgba(255,255,255,.18)!important;
+ white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
+}
 #driveView.dangollo-in-junction .drive-poi-stack{display:none!important}
-@media(orientation:landscape){#driveView.dangollo-in-junction #laneAssistLayer.dangollo-junction-split{left:10px!important;bottom:calc(var(--safeB) + 75px)!important;max-height:calc(100vh - 130px)!important;min-height:130px!important;width:min(31vw,340px)!important}}
 
 /* Dangollo 7.6.17.0 brand hero and crisp navigation POI icons */
 #homeView .dangollo-home-hero{width:100%;margin:0 0 14px;border-radius:18px;overflow:hidden;background:#045a42;box-shadow:0 10px 24px rgba(5,73,53,.15)}
@@ -4207,3 +4224,21 @@ html body #app #driveView .maneuver-next{background:#162b3e!important;color:#fff
 #routeView .planning-poi-entry strong{font-size:14px}
 #routeView .planning-poi-entry small{font-size:11px;color:#526961}
 #routeView .planning-poi-entry span{align-self:flex-end;color:#087b58;font-size:12px;font-weight:800}
+
+/* Dangollo 7.6.21 - 경로 계산 중 AI 경유 추천 */
+#routeView .planning-poi-suggestions{border-color:#c9d9ee;background:#f4f8fe}
+#routeView .planning-poi-suggestions header{color:#10294d}
+#routeView .planning-poi-suggestions header b{display:flex;align-items:center;gap:7px;font-size:15px}
+#routeView .planning-poi-suggestions header small{color:#5d6b82}
+#routeView .ai-badge{font-style:normal;font-size:10px;font-weight:800;letter-spacing:.02em;padding:3px 7px;border-radius:999px;color:#fff;background:linear-gradient(135deg,#2f6bff,#7a4dff)}
+#routeView .planning-poi-entry{border-color:#d7e3f5;position:relative}
+#routeView .planning-poi-entry .pp-top{display:flex;width:100%;align-items:center;justify-content:space-between;gap:8px}
+#routeView .planning-poi-entry .pp-top em{flex:none;font-style:normal;font-size:11px;font-weight:800;color:#2f6bff;background:#e8efff;border-radius:999px;padding:3px 8px}
+#routeView .planning-poi-entry.fuel .pp-top em{color:#d4561a;background:#ffeee5}
+#routeView .planning-poi-entry.local .pp-top em{color:#0a8a5d;background:#e2f6ee}
+#routeView .planning-poi-entry span{color:#2f6bff}
+#routeView .planning-poi-skeleton{display:flex;flex-direction:column;gap:8px}
+#routeView .planning-poi-skeleton i{display:block;height:58px;border-radius:12px;background:linear-gradient(90deg,#e6edf8 25%,#f3f7fd 50%,#e6edf8 75%);background-size:200% 100%;animation:planningShimmer 1.2s linear infinite}
+#routeView .planning-poi-note{font-size:11px;color:#6b7a92;text-align:center}
+@keyframes planningShimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){#routeView .planning-poi-skeleton i{animation:none}}
