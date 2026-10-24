@@ -4036,3 +4036,111 @@ body:has(#driveView:not(.hidden)) .origin-pin{display:none!important;visibility:
 /* Navigation marker stacking: cameras visibly above car, without blocking touch */
 #driveView .safety-map-marker.camera-pin{z-index:120!important;pointer-events:none!important}
 #driveView .character-car-marker{z-index:60!important;pointer-events:none!important}
+
+
+/* === build 7.6.14.0 drive POI rail / panel === */
+#driveView .drive-poi-stack{
+  position:absolute;
+  z-index:63;
+  right:80px;
+  top:calc(var(--safeT) + 190px);
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  width:min(310px,calc(100vw - 112px));
+}
+#driveView .drive-poi-stack.hidden{display:none!important}
+#driveView .drive-poi-card{
+  display:grid;
+  grid-template-columns:44px 1fr;
+  align-items:center;
+  gap:10px;
+  min-height:60px;
+  padding:10px 12px;
+  border:0;
+  border-radius:20px;
+  background:rgba(255,255,255,.96);
+  color:#10213d;
+  box-shadow:0 12px 26px rgba(12,24,46,.16);
+  text-align:left;
+}
+#driveView .drive-poi-card.hidden{display:none!important}
+#driveView .drive-poi-card .poi-icon{
+  width:44px;height:44px;border-radius:15px;display:grid;place-items:center;color:#fff;
+}
+#driveView .drive-poi-card .poi-icon svg{width:24px;height:24px}
+#driveView .drive-poi-card .poi-copy{display:flex;flex-direction:column;min-width:0}
+#driveView .drive-poi-card small{font-size:11px;font-weight:700;color:#5f6d80}
+#driveView .drive-poi-card b{font-size:19px;line-height:1.08;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#driveView .drive-poi-card em{font-style:normal;font-size:12px;color:#455164;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#driveView .drive-poi-card.fuel .poi-icon{background:linear-gradient(180deg,#ff7d33,#ff4a21)}
+#driveView .drive-poi-card.local .poi-icon{background:linear-gradient(180deg,#18b678,#0c9f66)}
+#driveView .drive-poi-card.onnuri .poi-icon{background:linear-gradient(180deg,#3d7eff,#285fe6)}
+
+#driveView .drive-poi-panel{
+  position:absolute;inset:0;z-index:84;background:rgba(4,13,27,.18);
+}
+#driveView .drive-poi-panel.hidden{display:none!important}
+#driveView .drive-poi-panel-sheet{
+  position:absolute;right:14px;top:calc(var(--safeT) + 140px);
+  width:min(390px,calc(100vw - 28px));max-height:min(58vh,560px);
+  background:rgba(255,255,255,.98);border-radius:28px;box-shadow:0 20px 38px rgba(10,18,36,.22);
+  padding:14px;display:flex;flex-direction:column;gap:12px;overflow:hidden;
+}
+#driveView .drive-poi-panel-sheet header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#driveView .drive-poi-panel-sheet header b{font-size:19px}
+#driveView .drive-poi-panel-sheet header small{display:block;margin-top:4px;color:#667487}
+#driveView .drive-poi-tabs{display:flex;gap:8px}
+#driveView .drive-poi-tabs button{flex:1;border:0;border-radius:14px;padding:11px 10px;background:#edf2f8;color:#4d5a6a;font-weight:800}
+#driveView .drive-poi-tabs button.active{background:#10213d;color:#fff}
+#driveView .drive-poi-panel-body{display:flex;flex-direction:column;gap:10px;overflow:auto;padding-right:2px}
+#driveView .drive-poi-empty{padding:28px 18px;border-radius:18px;background:#f5f7fb;color:#5f6d80;text-align:center;font-weight:700}
+#driveView .drive-poi-entry{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:0;border-radius:18px;background:#f6f8fb;color:#142238;text-align:left}
+#driveView .drive-poi-entry .entry-left{display:grid;grid-template-columns:40px 1fr;gap:10px;align-items:center;min-width:0;flex:1}
+#driveView .drive-poi-entry .entry-icon{width:40px;height:40px;border-radius:14px;display:grid;place-items:center;color:#fff;font-style:normal}
+#driveView .drive-poi-entry .entry-icon svg{width:22px;height:22px}
+#driveView .drive-poi-entry .entry-copy{display:flex;flex-direction:column;min-width:0}
+#driveView .drive-poi-entry .entry-copy small{font-size:11px;color:#657487;font-weight:700}
+#driveView .drive-poi-entry .entry-copy b{font-size:15px;line-height:1.28;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#driveView .drive-poi-entry .entry-copy em{font-size:12px;color:#556273;font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#driveView .drive-poi-entry .entry-right{display:flex;flex-direction:column;align-items:flex-end;gap:4px;min-width:68px}
+#driveView .drive-poi-entry .entry-right strong{font-size:15px;color:#10213d}
+#driveView .drive-poi-entry .entry-right small{font-size:10px;color:#637185;text-align:right}
+#driveView .drive-poi-entry.fuel .entry-icon{background:linear-gradient(180deg,#ff7d33,#ff4a21)}
+#driveView .drive-poi-entry.local .entry-icon{background:linear-gradient(180deg,#18b678,#0c9f66)}
+#driveView .drive-poi-entry.onnuri .entry-icon{background:linear-gradient(180deg,#3d7eff,#285fe6)}
+
+#driveView .drive-route-poi-marker{
+  border:0;border-radius:18px;padding:8px 10px;min-width:88px;max-width:150px;
+  background:rgba(255,255,255,.98);box-shadow:0 10px 22px rgba(11,26,53,.18);color:#10213d;text-align:center
+}
+#driveView .drive-route-poi-marker .marker-top{display:block;font-size:13px;font-weight:900;line-height:1.1}
+#driveView .drive-route-poi-marker .marker-bottom{display:block;margin-top:4px;font-size:11px;color:#4b5869;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#driveView .drive-route-poi-marker.fuel{border:2px solid #ff6b2b}
+#driveView .drive-route-poi-marker.local{border:2px solid #0ea36c}
+#driveView .drive-route-poi-marker.onnuri{border:2px solid #316fff}
+
+#driveView .speed-limit-marker{
+  width:50px;height:50px;display:grid;place-items:center;pointer-events:none;
+}
+#driveView .speed-limit-marker .speed-limit-ring{
+  width:50px;height:50px;border-radius:50%;background:#fff;border:5px solid #e93722;color:#111;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 8px 18px rgba(7,19,36,.18)
+}
+#driveView .speed-limit-marker small{font-size:7px;line-height:1;color:#555;font-weight:800}
+#driveView .speed-limit-marker strong{font-size:18px;line-height:1;font-weight:900}
+#driveView .speed-limit-marker .no-limit{background:linear-gradient(180deg,#fff7eb,#fff)}
+
+#driveView .drive-fuel-chip{display:none!important}
+
+@media (max-width: 640px){
+  #driveView .drive-poi-stack{right:74px;top:calc(var(--safeT) + 182px);width:min(248px,calc(100vw - 98px))}
+  #driveView .drive-poi-card{min-height:54px;padding:9px 10px}
+  #driveView .drive-poi-card b{font-size:16px}
+  #driveView .drive-poi-card em{font-size:11px}
+  #driveView .drive-poi-panel-sheet{right:10px;width:calc(100vw - 20px);top:calc(var(--safeT) + 124px);max-height:min(56vh,500px)}
+}
+@media (orientation: landscape){
+  #driveView .drive-poi-stack{top:calc(var(--safeT) + 84px);right:92px;width:300px}
+  #driveView .drive-poi-panel-sheet{top:calc(var(--safeT) + 16px);right:146px;max-height:min(78vh,520px)}
+}

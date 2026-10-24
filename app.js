@@ -23,6 +23,7 @@ const state = {
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,adminVerified:false,adminVerifiedEmail:'',loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,simulationActive:false,simulationSpeed:1,simulationDistance:null,simulationLastAt:0,simulationRaf:0,
   compassHeading:null,compassAt:0,compassReady:false,activeLaneGuideKey:'',nativeLocationAt:0,nativeLocationActive:false,imu:{at:0,yawRateDegS:0,accelMagnitude:0,headingDeg:null},mapMatch:{index:0,routeDistance:0,score:Infinity,confidence:0,at:0},offRouteHeadingHits:0,gpsFix:{lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false},
   whereToTab:'local',wakeLock:null,savedPlaceGroups:[],savedPlaceGroupMap:{},activeSavedGroup:'all',
+  drivePoiMarkers:[],drivePoiTab:'fuel',drivePoiData:{fuel:[],local:[],onnuri:[]},drivePoiFetchedAt:0,drivePoiFetchedRouteM:0,drivePoiFetchToken:0,drivePoiLoading:false,lastDrivePoiRenderAt:0,
   navigationStartAnchor:null,navigationStartReleased:false,navigationStartAt:0,navigationMoveConfirmHits:0,
   firebase:{configured:false,ready:false,user:null,auth:null,db:null,mods:null}
 };
@@ -128,7 +129,6 @@ window.JofamsWebNavigation={
   stop:()=>stopNavigation(),
   applyRoute(route){
     state.route=route;state.routeCumulative=buildCumulative(route);
-    dgRoutePoisRouteChanged();
     state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};
     // 이전 경로 기준 진행거리/정지 앵커를 버리고 새 경로에서 첫 유효 GPS 위치로 즉시 맞춘다.
     state.routeLockedDistance=undefined;state.stationaryGpsAnchor=null;state.lockBehindHits=0;state.lockAheadHits=0;state.resyncPending=true;
@@ -2461,28 +2461,8 @@ function drawRoute(route=state.route,{fit=true}={}){
     if(state.map.getLayer('route-direction-arrows'))state.map.moveLayer('route-direction-arrows');
   }catch(e){console.warn('route arrow layer order failed',e)}
   if(fit){const b=new maplibregl.LngLatBounds();route.geometry.forEach(p=>b.extend(p));state.map.fitBounds(b,{padding:{top:100,bottom:310,left:36,right:36},duration:650})}
-  dgRoutePoisDraw();
 }
 function clearRouteLayer(){['route-direction-arrows','route-traffic','route-main','route-shadow'].forEach(id=>{if(state.map?.getLayer(id))state.map.removeLayer(id)});['route-traffic','route'].forEach(id=>{if(state.map?.getSource(id))state.map.removeSource(id)})}
-
-
-/* -------- DANGOLLO: corridor payment discovery (independent of safety and TTS) -------- */
-const dgPois={markers:[],items:[],filter:'all',fetching:false,lastAt:0,lastAtM:-999999,lastRoute:null,requestId:0,watch:0,status:'경로를 검색하면 가맹점을 표시합니다.'};
-function dgRoutePoisRouteChanged(){dgPois.lastAt=0;dgPois.lastRoute=null;dgPois.items=[];dgRoutePoisClear();dgRoutePoisRefresh(true).catch(()=>{});}
-function dgRoutePoisStart(){dgRoutePoisMount();dgRoutePoisRefresh(true).catch(()=>{});clearInterval(dgPois.watch);dgPois.watch=setInterval(()=>dgRoutePoisRefresh(false).catch(()=>{}),30000);}
-function dgRoutePoisStop(){clearInterval(dgPois.watch);dgPois.watch=0;dgPois.requestId++;dgPois.items=[];dgRoutePoisClear();document.getElementById('dg-poi-detail')?.remove();}
-function dgRoutePoisView(view){dgRoutePoisMount();const bar=document.getElementById('dg-corridor');if(bar)bar.hidden=!(view==='drive'||view==='route');if(view==='drive'||view==='route')dgRoutePoisRefresh(false).catch(()=>{});else dgRoutePoisClear();}
-function dgRoutePoisMount(){if(document.getElementById('dg-corridor'))return;const parent=document.getElementById('driveView');if(!parent)return;const bar=document.createElement('section');bar.id='dg-corridor';bar.hidden=true;bar.className='dg-corridor';bar.setAttribute('aria-label','경로상 지역상생 가맹점');bar.innerHTML='<div class="dg-corridor-title"><strong>경로상 가맹점</strong><small id="dg-poi-count">검색 전</small></div><div class="dg-corridor-tabs"><button data-dg-poi="all" class="active">전체</button><button data-dg-poi="local">지역사랑</button><button data-dg-poi="onnuri">온누리</button><button data-dg-poi="fuel">주유소</button></div><p id="dg-poi-status" aria-live="polite">경로에서 가맹점을 찾습니다.</p>';parent.appendChild(bar);bar.querySelectorAll('[data-dg-poi]').forEach(b=>b.addEventListener('click',()=>{dgPois.filter=b.dataset.dgPoi;bar.querySelectorAll('[data-dg-poi]').forEach(x=>x.classList.toggle('active',x===b));dgRoutePoisDraw();}));}
-function dgRoutePoisClear(){for(const m of dgPois.markers)try{m.remove()}catch{}dgPois.markers=[];}
-function dgRoutePoisFormatDist(m){return m>=1000?(m/1000).toFixed(1)+'km':Math.round(m)+'m'}
-function dgRoutePoisProject(item){const g=state.route?.geometry;if(!g?.length)return null;const lng=Number(item.lng),lat=Number(item.lat);if(!Number.isFinite(lng)||!Number.isFinite(lat)||Math.abs(lat)>90||Math.abs(lng)>180)return null;const m=routePosOfPoint(lng,lat,g,null,1600);if(!m)return null;const cross=hav(lat,lng,Number(m.lat),Number(m.lng));if(!Number.isFinite(cross)||cross>1500)return null;const done=state.tripStartedAt?currentRouteDistanceAt(state.currentRouteIndex||0):0;const ahead=Number(m.routeDistance)-done;if(ahead<100||ahead>22000)return null;return {...item,ahead,offset:cross};}
-function dgRoutePoisNormal(item,type){const lng=Number(item.lng??item.lon??item.x),lat=Number(item.lat??item.y);return {type,lng,lat,name:String(item.name||item.shopName||item.bsshNm||'가맹점'),address:String(item.address||item.addr||''),price:Number(item.price)||0,approximate:Boolean(item.approximate||item.precision==='market-zone'||item.precision==='admin-zone'),source:item};}
-function dgRoutePoisUnique(rows){const seen=new Set();return rows.filter(x=>{const k=x.type+':'+(x.source.id||x.source.uni||x.name)+':'+x.lat.toFixed(5)+':'+x.lng.toFixed(5);if(seen.has(k))return false;seen.add(k);return true;});}
-async function dgRoutePoisQuery(type,pt,signal){const u=new URL(type==='local'?'/api/local-voucher':'/api/onnuri-voucher',location.origin);u.searchParams.set('lat',pt.lat);u.searchParams.set('lng',pt.lng);const d=.0135;u.searchParams.set('west',pt.lng-d);u.searchParams.set('east',pt.lng+d);u.searchParams.set('south',pt.lat-d);u.searchParams.set('north',pt.lat+d);const r=await fetch(u,{signal,headers:{accept:'application/json'}});if(!r.ok)throw new Error(type+' HTTP '+r.status);const data=await r.json();return (data.items||[]).map(x=>dgRoutePoisNormal(x,type));}
-async function dgRoutePoisRefresh(force=false){const route=state.route;if(!route?.geometry?.length||!state.map)return;dgRoutePoisMount();const now=Date.now(),done=state.tripStartedAt?currentRouteDistanceAt(state.currentRouteIndex||0):0;if(!force&&dgPois.lastRoute===route&&now-dgPois.lastAt<45000&&done-dgPois.lastAtM<2500){dgRoutePoisDraw();return;}if(dgPois.fetching)return;dgPois.fetching=true;const requestId=++dgPois.requestId;const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),12500);const status=document.getElementById('dg-poi-status');if(status)status.textContent='진행 방향 가맹점을 확인하고 있어요';try{const g=route.geometry,total=Number(state.routeCumulative?.at(-1))||Number(route.distance)||0;const points=[];for(let m=done+800;m<Math.min(total,done+20000)&&points.length<4;m+=4500){const pt=pointAtRouteDistance(m);if(pt&&Number.isFinite(pt.lat)&&Number.isFinite(pt.lng))points.push(pt)}if(!points.length&&g.length){const p=g[Math.min(g.length-1,Math.max(0,state.currentRouteIndex||0))];points.push({lng:p[0],lat:p[1]})}
-const tasks=points.flatMap(pt=>['local','onnuri'].map(t=>dgRoutePoisQuery(t,pt,ctrl.signal)));const results=await Promise.allSettled(tasks);if(requestId!==dgPois.requestId)return;const successes=results.filter(r=>r.status==='fulfilled');const voucherRows=dgRoutePoisUnique(successes.flatMap(r=>r.value).filter(x=>Number.isFinite(x.lng)&&Number.isFinite(x.lat))).map(dgRoutePoisProject).filter(Boolean);const fuelRows=(state.fuelData?.stations||[]).map(x=>dgRoutePoisNormal(x,'fuel')).map(dgRoutePoisProject).filter(Boolean);dgPois.items=dgRoutePoisUnique([...voucherRows,...fuelRows]).sort((a,b)=>a.ahead-b.ahead).slice(0,300);dgPois.lastAt=now;dgPois.lastAtM=done;dgPois.lastRoute=route;dgPois.status=successes.length===tasks.length?'':'일부 가맹점 데이터 연결을 확인해 주세요';if(!successes.length)dgPois.status='상품권 데이터를 불러오지 못했습니다. 다시 확인합니다.';dgRoutePoisDraw();}catch(e){dgPois.status='가맹점 조회에 실패했습니다. 연결 확인 중';dgRoutePoisDraw();console.warn('[Dangollo] corridor retrieval',e)}finally{clearTimeout(timer);dgPois.fetching=false}}
-function dgRoutePoisDraw(){dgRoutePoisClear();const count=document.getElementById('dg-poi-count'),status=document.getElementById('dg-poi-status');const items=dgPois.items.filter(x=>dgPois.filter==='all'||x.type===dgPois.filter);if(count)count.textContent=`${items.length}곳 · 경로 좌우 1.5km`;if(status)status.textContent=dgPois.status||'핀을 누르면 가맹점과 경로 이격거리를 확인할 수 있어요';if(!state.map||!state.mapReady||!state.route)return;const shown=items.slice(0,95);for(const x of shown){if(x.approximate)continue;const el=document.createElement('button');el.type='button';el.className='dg-corridor-pin dg-corridor-'+x.type;el.textContent=x.type==='local'?'지':x.type==='onnuri'?'온':'₩';el.title=x.name+' · 전방 '+dgRoutePoisFormatDist(x.ahead);el.setAttribute('aria-label',el.title);el.addEventListener('click',e=>{e.stopPropagation();dgRoutePoisDetails(x)});try{dgPois.markers.push(new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([x.lng,x.lat]).addTo(state.map))}catch{}}}
-function dgRoutePoisDetails(x){const old=document.getElementById('dg-poi-detail');if(old)old.remove();const d=document.createElement('div');d.id='dg-poi-detail';d.className='dg-poi-detail';const name=document.createElement('strong');name.textContent=x.name;const meta=document.createElement('p');meta.textContent=(x.type==='local'?'지역사랑상품권':x.type==='onnuri'?'온누리상품권':'주유소')+' · 전방 '+dgRoutePoisFormatDist(x.ahead)+' · 경로에서 '+dgRoutePoisFormatDist(x.offset)+(x.price?' · '+Math.round(x.price).toLocaleString('ko-KR')+'원/L':'');const address=document.createElement('small');address.textContent=x.address;const close=document.createElement('button');close.textContent='닫기';close.type='button';close.onclick=()=>d.remove();const action=document.createElement('button');action.type='button';action.className='dg-poi-action';action.textContent='경유지로 추가';action.onclick=async()=>{if(!window.confirm(x.name+'을(를) 경유지로 추가하고 경로를 다시 탐색할까요?'))return;action.disabled=true;action.textContent='경로를 계산하고 있어요';try{if(!state.route||!state.destination)throw Error('진행 중인 경로가 없습니다.');const candidate={name:x.name,address:x.address,lat:x.lat,lng:x.lng};const next=[...remainingWaypointsForReroute(),candidate];const spec=routePreferenceSpec();const updated=await routeRequest(spec.priority,spec.avoid,next,state.routeMode);if(!updated?.geometry?.length)throw Error('새 경로를 찾지 못했습니다.');state.waypoints=next;state.route={...updated,_character:state.character};state.routeCumulative=buildCumulative(state.route);state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};drawRoute(state.route,{fit:false});await loadSafetyEvents(state.route);updateDriving(true);d.remove();dgRoutePoisRouteChanged();toast('경유지를 추가하고 새로운 경로를 적용했습니다.')}catch(e){toast(e.message||'경로 변경에 실패했습니다.');action.disabled=false;action.textContent='경유지로 추가'}};d.append(name,meta,address,action,close);document.getElementById('driveView')?.appendChild(d);}
 
 /* ---------- LOCATION ---------- */
 async function locate(fly=true){
@@ -3223,19 +3203,12 @@ function renderFuelData(data){
   if($('fuelAreaLabel'))$('fuelAreaLabel').textContent=area;
   if($('fuelModalArea'))$('fuelModalArea').textContent=`${area} · ${FUEL_PRODUCT_NAMES[state.fuelProduct]||''}`;
   if($('fuelPriceSummary'))$('fuelPriceSummary').innerHTML=`<span>${escapeHtml(area)} ${escapeHtml(FUEL_PRODUCT_NAMES[state.fuelProduct]||'')}</span><b>${min?`최저 ${fuelWon(min)}`:'가격정보 없음'}${avg?` <small>평균 ${fuelWon(avg)}</small>`:''}</b>`;
-  if(state.route?.geometry?.length&&dgPois.items.length){const others=dgPois.items.filter(x=>x.type!=='fuel');dgPois.items=dgRoutePoisUnique([...others,...items.map(x=>dgRoutePoisNormal(x,'fuel')).map(dgRoutePoisProject).filter(Boolean)]).sort((a,b)=>a.ahead-b.ahead).slice(0,300);dgRoutePoisDraw();}
   const rows=fuelStationRows(data);
   if($('fuelStationList')){$('fuelStationList').innerHTML=rows;bindFuelStationRowClicks($('fuelStationList'),items)}
   if($('fuelModalList')){$('fuelModalList').innerHTML=rows;bindFuelStationRowClicks($('fuelModalList'),items)}
   const chip=$('driveFuelChip');
-  if(chip&&state.tripStartedAt&&items.length){
-    $('driveFuelPrice').textContent=fuelWon(items[0].price);
-    $('driveFuelName').textContent=String(items[0].name||'주유소').replace(/\(주\)/g,'㈜');
-    chip.classList.remove('hidden');
-  }else if(chip&&state.tripStartedAt&&!items.length){
-    // 달리는 경로 위에 주유소가 없으면 경로 밖 주유소를 보여주지 않는다.
-    chip.classList.add('hidden');
-  }
+  if(chip)chip.classList.add('hidden');
+  try{if(state.tripStartedAt)updateDrivePoiUI()}catch{}
 }
 function renderFuelLoading(){
   const msg='<div class="fuel-empty">오피넷 실시간 유가를 불러오는 중...</div>';
@@ -4211,7 +4184,7 @@ async function liveRouteRefresh(){
     const old=state.route,total=state.routeCumulative.at(-1)||old.distance||1,done=state.routeCumulative[state.currentRouteIndex]||0,remainingRatio=Math.max(0,Math.min(1,(total-done)/total)),oldRemain=Number(old.duration||0)*remainingRatio,newEta=Number(r.duration||0);
     mergeFreshTraffic(old,r);drawRoute(old,{fit:false});renderTrafficRouteRail(state.currentRouteIndex);updateTrafficStatus((old.roadSegments||[]).find(x=>state.currentRouteIndex>=x.startIndex&&state.currentRouteIndex<=x.endIndex));
     const improvement=oldRemain-newEta,relative=oldRemain>0?improvement/oldRemain:0;
-    if(improvement>=120||relative>=.10&&improvement>=60){state.route={...r,_label:'실시간 경로',_character:state.character};state.routeCumulative=buildCumulative(state.route);state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};drawRoute(state.route,{fit:false});await loadSafetyEvents(state.route);updateDriving(true);toast('실시간 교통을 반영해 더 빠른 경로로 변경했습니다.')}
+    if(improvement>=120||relative>=.10&&improvement>=60){state.route={...r,_label:'실시간 경로',_character:state.character};state.routeCumulative=buildCumulative(state.route);invalidateDrivePoiRoute();state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};drawRoute(state.route,{fit:false});await loadSafetyEvents(state.route);updateDriving(true);toast('실시간 교통을 반영해 더 빠른 경로로 변경했습니다.')}
   }catch(e){console.warn('live route refresh failed',e)}
 }
 function startLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.lastLiveRouteAt=0;setTimeout(liveRouteRefresh,12000);state.liveRouteTimer=setInterval(liveRouteRefresh,75000)}
@@ -4250,7 +4223,6 @@ function maybeRestoreDriveMap(){
 }
 function setView(view){
   $('homeView').classList.toggle('hidden',view!=='home');$('routeView').classList.toggle('hidden',view!=='route');$('driveView').classList.toggle('hidden',view!=='drive');
-  dgRoutePoisView(view);
   setTimeout(tryLandscapeFullscreen,60); // 화면 전환/최초 진입 시에도 현재 가로/세로 상태에 맞게 전체화면 여부를 갱신
   $('bottomNav').classList.toggle('hidden',view==='drive'||state.arRunning);
   if(view==='home'){
@@ -4330,8 +4302,7 @@ function startNavigation(opts={}){
   try{if(state.destMarker){state.destMarker.remove();state.destMarker=null}}catch{state.destMarker=null}
   document.querySelectorAll('.maplibregl-user-location-dot,.maplibregl-user-location-accuracy-circle,.maplibregl-user-location-dot-stale,.destination-pin,.origin-pin').forEach(el=>{try{el.style.display='none'}catch{}});
   if((state.waypoints||[]).filter(pointValid).length)saveCurrentWaypointCourse();if(!state.route||!state.destination)return;cancelAutoStart();state.preTripAnchor=null;state.tripStartedAt=Date.now();
-  state.navigationStartAt=state.tripStartedAt;
-  dgRoutePoisStart();
+  state.navigationStartAt=state.tripStartedAt;invalidateDrivePoiRoute();
   state.driveMarkerRenderedDistance=0;state.driveMarkerTargetDistance=0;state.driveMarkerTargetAt=Date.now();state.driveMarkerFrameAt=0;
   if(state.driveMarkerRaf){cancelAnimationFrame(state.driveMarkerRaf);state.driveMarkerRaf=0}
   if(state.userMarker&&state.route?.geometry?.length){const start=pointAtRouteDistance(0);if(start)state.userMarker.setLngLat([start.lng,start.lat])}
@@ -4377,7 +4348,7 @@ function startNavigation(opts={}){
   }
   applyNightMode();setTimeout(tryLandscapeFullscreen,100);}
 function stopNavigation(){
-  stopRouteSimulation({resumeGps:false});if($('laneAssistLayer'))$('laneAssistLayer').classList.add('hidden');
+  stopRouteSimulation({resumeGps:false});if($('laneAssistLayer'))$('laneAssistLayer').classList.add('hidden');try{closeDrivePoiPanel();clearDrivePoiMarkers();$('drivePoiStack')?.classList.add('hidden')}catch{}
   // 길안내 종료 시 가상 라디오도 함께 자동 종료한다.
   try{
     const rp=radioPlayer();
@@ -4388,7 +4359,6 @@ function stopNavigation(){
   // 안내 종료는 어떤 부가기능 오류가 발생해도 반드시 홈 화면까지 복귀해야 한다.
   try{if(state.tripStartedAt)logTrip('finish')}catch(e){console.warn('finish log failed',e)}
   try{if(state.tripStartedAt)addTripHistory({destination:state.destination?.name||'목적지',date:new Date().toLocaleString('ko-KR'),distance:state.route?.distance||0,duration:Math.round((Date.now()-state.tripStartedAt)/1000),character:state.character})}catch(e){console.warn('trip history finish failed',e)}
-  dgRoutePoisStop();
   state.tripStartedAt=0;state.preTripAnchor=null;state.preTripMoveHits=0;
   state.navigationStartAnchor=null;state.navigationStartReleased=false;state.navigationStartAt=0;
   state.stationaryActive=false;state.stationaryGpsAnchor=null;
@@ -4932,7 +4902,7 @@ function updateProgressUI(idx){
     $('nextManeuverText').textContent=guidePanelText(second);
   }else $('nextManeuver').classList.add('hidden');
 
-  updateSafetyUI(idx,safetyCandidates);updateSectionAverageSpeed(idx);updateLaneGuide(idx);updateVms(idx);
+  updateSafetyUI(idx,safetyCandidates);updateSectionAverageSpeed(idx);updateLaneGuide(idx);updateVms(idx);updateDrivePoiUI(force);
   checkArrival(remain);
   fitManeuverDistanceText();
 }
@@ -5447,9 +5417,11 @@ function renderCameraClusterMarkers(items){
     // 단독 1개는 클러스터가 아니라 기존 CCTV 아이콘을 그대로 표시
     if(c.count===1){
       const e=c.items[0],limit=Number(e.maxspeed)||0,el=document.createElement('div');
-      el.className=`safety-map-marker camera camera-pin camera-${e.type}${e.type==='mobile_camera'?' mobile':''}`;
-      el.title=e.type==='signal_speed_camera'?'신호·과속 단속카메라':e.type==='signal_camera'?'신호 단속카메라':e.type==='speed_camera'?'과속 단속카메라':'단속 카메라';
-      el.innerHTML=`<span class="camera-pin-icon">${cctvMarkerSvg()}</span>${limit>0?`<small class="camera-pin-speed">${Math.round(limit)}</small>`:''}`;
+      el.className=`safety-map-marker speed-limit-marker camera-${e.type}${e.type==='mobile_camera'?' mobile':''}`;
+      el.title=e.type==='signal_speed_camera'?'신호·과속 단속':e.type==='signal_camera'?'신호 단속':e.type==='speed_camera'?'과속 단속':'단속 안내';
+      el.innerHTML=limit>0
+        ?`<span class="speed-limit-ring"><small>제한</small><strong>${Math.round(limit)}</strong></span>`
+        :`<span class="speed-limit-ring no-limit"><small>단속</small><strong>!</strong></span>`;
       try{
         const marker=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map);
         const markerEl=marker.getElement?.();
@@ -6109,16 +6081,230 @@ async function applyDrivePlaceChoice(mode){
   if(mode==='waypoint'){
     state.waypoints=[...(state.waypoints||[]),p].slice(0,5);closeDriveSearch();toast(`${p.name}을 경유지로 추가합니다.`);speak('경유지를 추가했습니다. 새로운 경로를 탐색합니다.');
     state.origin={...state.user,name:'내 위치',address:'현재 GPS 위치'};state.originMode='current';state.lastRerouteAt=Date.now();
-    try{const spec=routePreferenceSpec(),nr=await routeRequest(spec.priority,spec.avoid);state.route={...nr,_label:`경유지 추가 · ${spec.label}`,_character:state.character};state.routeOptions=[state.route];state.routeCumulative=buildCumulative(state.route);state.currentRouteIndex=0;drawRoute(state.route,{fit:false});await loadSafetyEvents(state.route);renderTrafficRouteRail(0);updateDriving(true)}catch(e){toast('경유지 경로를 가져오지 못했습니다.',3000)}
+    try{const spec=routePreferenceSpec(),nr=await routeRequest(spec.priority,spec.avoid);state.route={...nr,_label:`경유지 추가 · ${spec.label}`,_character:state.character};state.routeOptions=[state.route];state.routeCumulative=buildCumulative(state.route);invalidateDrivePoiRoute();state.currentRouteIndex=0;drawRoute(state.route,{fit:false});await loadSafetyEvents(state.route);renderTrafficRouteRail(0);updateDriving(true)}catch(e){toast('경유지 경로를 가져오지 못했습니다.',3000)}
   }else{
     state.waypoints=[];await changeDestinationWhileDriving(p);
   }
 }
+
 async function changeDestinationWhileDriving(item){
   if(!state.user)return toast('현재 위치를 확인할 수 없습니다.');
   closeDriveSearch();state.destination=normalizedPlace(item);setDestinationMarker();toast(`${state.destination.name}(으)로 목적지를 변경합니다.`);
   state.origin={...state.user,name:'내 위치',address:'현재 GPS 위치'};state.originMode='current';state.lastRerouteAt=Date.now();
-  try{const spec=routePreferenceSpec(),r=await routeRequest(spec.priority,spec.avoid);state.route={...r,_label:`재탐색 · ${spec.label}`,_character:state.character};state.routeOptions=[state.route];state.routeCumulative=buildCumulative(state.route);state.currentRouteIndex=0;drawRoute(state.route,{fit:false});await loadSafetyEvents(state.route);renderTrafficRouteRail(0);updateDriving(true)}catch(e){toast('새 목적지 경로를 가져오지 못했습니다.',3000)}
+  try{const spec=routePreferenceSpec(),r=await routeRequest(spec.priority,spec.avoid);state.route={...r,_label:`재탐색 · ${spec.label}`,_character:state.character};state.routeOptions=[state.route];state.routeCumulative=buildCumulative(state.route);invalidateDrivePoiRoute();state.currentRouteIndex=0;drawRoute(state.route,{fit:false});await loadSafetyEvents(state.route);renderTrafficRouteRail(0);updateDriving(true)}catch(e){toast('새 목적지 경로를 가져오지 못했습니다.',3000)}
+}
+
+/* ---------- DRIVE ROUTE POI / RECOMMENDATION ---------- */
+function clearDrivePoiMarkers(){for(const m of state.drivePoiMarkers||[])try{m.remove()}catch{}state.drivePoiMarkers=[]}
+function drivePoiTabSpec(tab='fuel'){
+  return ({
+    fuel:{label:'주유소',summary:'최저가',empty:'경로상 주유소 정보가 없습니다.',theme:'fuel'},
+    local:{label:'지역사랑',summary:'가맹점',empty:'경로상 지역사랑상품권 가맹점이 없습니다.',theme:'local'},
+    onnuri:{label:'온누리',summary:'가맹점',empty:'경로상 온누리상품권 가맹점이 없습니다.',theme:'onnuri'}
+  })[tab]||{label:'추천',summary:'추천',empty:'표시할 정보가 없습니다.',theme:'fuel'};
+}
+function drivePoiIconSvg(tab='fuel'){
+  if(tab==='fuel')return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 21V6a2 2 0 0 1 2-2h6v17"/><path d="M7 8h8"/><path d="M15 7l3 3v7a2 2 0 0 0 4 0v-4"/></svg>`;
+  if(tab==='onnuri')return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10 5.5 5h13L20 10"/><path d="M4 10h16v2a3 3 0 0 1-3 3 3 3 0 0 1-2.5-1.3A3 3 0 0 1 12 15a3 3 0 0 1-2.5-1.3A3 3 0 0 1 7 15a3 3 0 0 1-3-3v-2Z"/><path d="M6 15v4h12v-4"/><circle cx="18" cy="6" r="2" fill="currentColor" stroke="none"/></svg>`;
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10 5.5 5h13L20 10"/><path d="M4 10h16v2a3 3 0 0 1-3 3 3 3 0 0 1-2.5-1.3A3 3 0 0 1 12 15a3 3 0 0 1-2.5-1.3A3 3 0 0 1 7 15a3 3 0 0 1-3-3v-2Z"/><path d="M6 15v4h12v-4"/></svg>`;
+}
+function drivePoiDistanceLabel(m){const v=Number(m);return Number.isFinite(v)?km(v):'경로상'}
+function drivePoiItemTitle(tab,item){
+  if(tab==='fuel')return fuelWon(item?.price);
+  return item?.name||item?.market||'가맹점';
+}
+function drivePoiItemSubtitle(tab,item){
+  if(tab==='fuel')return `${item?.brandName||''} ${String(item?.name||'주유소').trim()}`.trim();
+  if(tab==='onnuri')return [item?.market||'', item?.matchedAddress||item?.address||''].filter(Boolean).join(' · ');
+  return item?.address||'주소 정보 없음';
+}
+function routeScopedMerchants(items,{maxOffset=180,minAhead=80,maxAhead=16000,includeApprox=true}={}){
+  const g=state.route?.geometry;if(!state.tripStartedAt||!g?.length)return [];
+  const cur=currentRouteDistanceAt(state.currentRouteIndex||0),out=[];
+  const seen=new Set();
+  for(const item of items||[]){
+    const lng=Number(item?.lng),lat=Number(item?.lat);
+    if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;
+    if(includeApprox===false&&(item?.approximate||item?.precision==='market-zone'||item?.precision==='admin-zone'))continue;
+    const m=routePosOfPoint(lng,lat,g,null,maxOffset+40);
+    if(!m||Number(m.distance)>maxOffset)continue;
+    const ahead=Number(m.routeDistance)-cur;
+    if(ahead<minAhead||ahead>maxAhead)continue;
+    const key=`${Math.round(lat*10000)}:${Math.round(lng*10000)}:${item?.name||item?.market||''}`;
+    if(seen.has(key))continue;seen.add(key);
+    out.push({...item,__aheadM:ahead,__routeDistance:Number(m.routeDistance),__offsetM:Number(m.distance),__snapLng:Number(m.lng),__snapLat:Number(m.lat)});
+  }
+  out.sort((a,b)=>Number(a.__aheadM)-Number(b.__aheadM));
+  return out;
+}
+function buildDrivePoiData(){
+  const fuel=scopeFuelToRoute(state.fuelData?.stations||[]).slice(0,8).map(x=>({...x,brandName:fuelBrandName(x?.pollDivCo||x?.brand||x?.brandCode||'')}));
+  const local=routeScopedMerchants(state.localVoucherData?.items||[],{maxOffset:150,minAhead:80,maxAhead:12000,includeApprox:true}).slice(0,8);
+  const onnuri=routeScopedMerchants(state.onnuriData?.items||[],{maxOffset:200,minAhead:80,maxAhead:12000,includeApprox:true}).slice(0,8);
+  state.drivePoiData={fuel,local,onnuri};
+  return state.drivePoiData;
+}
+function renderDrivePoiStack(){
+  const root=$('drivePoiStack');if(!root)return;
+  const driving=Boolean(state.tripStartedAt&&state.route?.geometry?.length&&$('driveView')&&!$('driveView').classList.contains('hidden')&&state.routeMode==='car');
+  if(!driving){root.classList.add('hidden');return}
+  const data=state.drivePoiData||buildDrivePoiData();
+  const tabs=['fuel','local','onnuri'];
+  let visible=0;
+  for(const tab of tabs){
+    const el=$(`drivePoi${tab[0].toUpperCase()+tab.slice(1)}Card`);if(!el)continue;
+    const first=(data[tab]||[])[0];
+    if(!first){el.classList.add('hidden');continue}
+    visible++;
+    el.classList.remove('hidden');
+    const spec=drivePoiTabSpec(tab);
+    const headline=tab==='fuel'?fuelWon(first.price):drivePoiItemTitle(tab,first);
+    const sub=tab==='fuel'?drivePoiItemSubtitle(tab,first):drivePoiItemSubtitle(tab,first);
+    el.className=`drive-poi-card ${spec.theme}`;
+    el.innerHTML=`<span class="poi-icon">${drivePoiIconSvg(tab)}</span><span class="poi-copy"><small>${spec.label} · ${drivePoiDistanceLabel(first.__aheadM)}</small><b>${escapeHtml(headline)}</b><em>${escapeHtml(sub)}</em></span>`;
+  }
+  const junctionActive=!$('laneAssistLayer')?.classList.contains('hidden');
+  const safetyActive=!$('safetyAlert')?.classList.contains('hidden')||!$('sectionSpeedPanel')?.classList.contains('hidden');
+  root.classList.toggle('hidden',visible===0||junctionActive||safetyActive);
+}
+function drivePoiEntryButtonHtml(tab,item,index){
+  const spec=drivePoiTabSpec(tab);
+  const title=tab==='fuel'?`${fuelWon(item?.price)} · ${escapeHtml(String(item?.name||'주유소'))}`:escapeHtml(item?.name||item?.market||'가맹점');
+  const meta=[];
+  if(tab==='fuel'){if(item?.brandName)meta.push(escapeHtml(item.brandName));if(item?.distance)meta.push(escapeHtml(km(Number(item.distance))));}
+  else if(tab==='onnuri'){const use=onnuriUseFlags(item).join(' · ');if(use)meta.push(escapeHtml(use));if(item?.market)meta.push(escapeHtml(item.market));}
+  else {const use=voucherUseFlags(item).join(' · ');if(use)meta.push(escapeHtml(use));}
+  return `<button type="button" class="drive-poi-entry ${spec.theme}" data-drive-poi-item="${tab}:${index}">
+    <span class="entry-left"><i class="entry-icon">${drivePoiIconSvg(tab)}</i><span class="entry-copy"><small>${spec.label} · ${escapeHtml(drivePoiDistanceLabel(item.__aheadM))}</small><b>${title}</b><em>${escapeHtml(drivePoiItemSubtitle(tab,item))}</em></span></span>
+    <span class="entry-right"><strong>${escapeHtml(drivePoiDistanceLabel(item.__aheadM))}</strong>${meta.length?`<small>${meta.join(' · ')}</small>`:''}</span>
+  </button>`;
+}
+function renderDrivePoiPanel(){
+  const panel=$('drivePoiPanel'),body=$('drivePoiPanelBody');if(!panel||!body||panel.classList.contains('hidden'))return;
+  document.querySelectorAll('[data-drive-poi-tab]').forEach(btn=>btn.classList.toggle('active',btn.dataset.drivePoiTab===state.drivePoiTab));
+  const items=(state.drivePoiData?.[state.drivePoiTab]||[]);
+  if(!items.length){body.innerHTML=`<div class="drive-poi-empty">${escapeHtml(drivePoiTabSpec(state.drivePoiTab).empty)}</div>`;return}
+  body.innerHTML=items.map((item,i)=>drivePoiEntryButtonHtml(state.drivePoiTab,item,i)).join('');
+  body.querySelectorAll('[data-drive-poi-item]').forEach(btn=>btn.onclick=()=>{
+    const [tab,idx]=String(btn.dataset.drivePoiItem||'').split(':');
+    const item=(state.drivePoiData?.[tab]||[])[Number(idx)];
+    if(!item)return;
+    const place=tab==='fuel'
+      ?normalizedPlace({name:item.name||'주유소',address:item.addr||item.address||'',lng:Number(item.lng),lat:Number(item.lat)})
+      :normalizedPlace({name:item.name||item.market||'가맹점',address:item.matchedAddress||item.address||item.market||'',lng:Number(item.lng),lat:Number(item.lat)});
+    openDrivePlaceChoice(place);
+  });
+}
+function openDrivePoiPanel(tab=state.drivePoiTab||'fuel'){state.drivePoiTab=tab;$('drivePoiPanel')?.classList.remove('hidden');renderDrivePoiPanel()}
+function closeDrivePoiPanel(){$('drivePoiPanel')?.classList.add('hidden')}
+/* 경로를 따라 고정 거리의 표본점들을 조회. 화면 경계만 이용할 경우 지도 뒤쪽이나 다음 도시의 가맹점을 놓친다. */
+function drivePoiProbePoints(){
+  const cur=currentRouteDistanceAt(state.currentRouteIndex||0);
+  const end=Number(state.routeCumulative?.at(-1))||cur;
+  const probes=[];
+  for(const offset of [2000,6000,10000,14000]){
+    const pt=pointAtRouteDistance(Math.min(end,cur+offset));
+    if(pt&&Number.isFinite(Number(pt.lat))&&Number.isFinite(Number(pt.lng)))probes.push(pt);
+  }
+  return probes.filter((x,i,a)=>a.findIndex(y=>hav(Number(x.lat),Number(x.lng),Number(y.lat),Number(y.lng))<1800)===i).slice(0,4);
+}
+function drivePoiRegionBox(pt,radiusKm=2.3){
+  const lat=Number(pt.lat),lng=Number(pt.lng);
+  const dy=radiusKm/111.2,dx=radiusKm/Math.max(30,111.2*Math.cos(lat*Math.PI/180));
+  return {west:lng-dx,east:lng+dx,south:lat-dy,north:lat+dy};
+}
+function mergeDrivePoiMerchantRows(rows){
+  const seen=new Set(),out=[];
+  for(const row of rows){
+    const lat=Number(row?.lat),lng=Number(row?.lng);
+    if(!Number.isFinite(lat)||!Number.isFinite(lng))continue;
+    const key=String(row?.id||row?.poi_id||`${row?.name||row?.market||''}|${row?.address||row?.matchedAddress||''}|${lat.toFixed(5)}|${lng.toFixed(5)}`);
+    if(seen.has(key))continue;
+    seen.add(key);out.push(row);
+  }
+  return out;
+}
+async function fetchDrivePoiBatch(type,probes,token){
+  const endpoint=type==='local'?'/api/local-voucher':'/api/onnuri-voucher';
+  const results=await Promise.allSettled(probes.map(async pt=>{
+    const u=new URL(endpoint,location.origin),box=drivePoiRegionBox(pt);
+    u.searchParams.set('lat',pt.lat);u.searchParams.set('lng',pt.lng);
+    for(const [k,v] of Object.entries(box))u.searchParams.set(k,v);
+    const ctrl=new AbortController(),timeout=setTimeout(()=>ctrl.abort(),11500);
+    try{
+      const res=await fetch(u,{headers:{accept:'application/json'},cache:'no-store',signal:ctrl.signal});
+      if(!res.ok)throw Error(`${type} HTTP ${res.status}`);
+      const json=await res.json();return Array.isArray(json.items)?json.items:[];
+    }finally{clearTimeout(timeout)}
+  }));
+  if(token!==state.drivePoiFetchToken||!state.tripStartedAt)return null;
+  const fulfilled=results.filter(x=>x.status==='fulfilled');
+  if(!fulfilled.length)return null; // 전부 실패한 경우 이전 정상 데이터를 유지한다.
+  return mergeDrivePoiMerchantRows(fulfilled.flatMap(x=>x.value)).slice(0,5000);
+}
+function invalidateDrivePoiRoute(){
+  state.drivePoiFetchToken=(state.drivePoiFetchToken||0)+1;
+  state.drivePoiFetchedAt=0;state.drivePoiFetchedRouteM=0;
+  state.drivePoiData={fuel:[],local:[],onnuri:[]};state.drivePoiLoading=false;
+  clearDrivePoiMarkers();
+}
+function ensureDrivePoiData(){
+  if(!state.tripStartedAt||!state.route?.geometry?.length||!pointValid(state.user)||state.drivePoiLoading)return;
+  const now=Date.now(),cur=currentRouteDistanceAt(state.currentRouteIndex||0);
+  if(now-Number(state.drivePoiFetchedAt||0)<60000&&Math.abs(cur-Number(state.drivePoiFetchedRouteM||0))<2200)return;
+  const probes=drivePoiProbePoints();if(!probes.length)return;
+  state.drivePoiFetchedAt=now;state.drivePoiFetchedRouteM=cur;state.drivePoiLoading=true;
+  const token=++state.drivePoiFetchToken;
+  if(!state.fuelLoading)loadFuelPrices(state.fuelProduct,{force:true}).catch(()=>{});
+  Promise.allSettled([
+    fetchDrivePoiBatch('local',probes,token),
+    fetchDrivePoiBatch('onnuri',probes,token)
+  ]).then(results=>{
+    if(token!==state.drivePoiFetchToken||!state.tripStartedAt)return;
+    const local=results[0].status==='fulfilled'?results[0].value:null;
+    const onnuri=results[1].status==='fulfilled'?results[1].value:null;
+    // 빈 정상 응답도 반영하여 이전 도시의 유령 가맹점이 남지 않도록 한다.
+    if(local!==null)state.localVoucherData={items:local};
+    if(onnuri!==null)state.onnuriData={items:onnuri};
+    buildDrivePoiData();renderDrivePoiStack();renderDrivePoiPanel();renderDrivePoiMarkers();
+  }).finally(()=>{if(token===state.drivePoiFetchToken)state.drivePoiLoading=false});
+}
+
+function drivePoiMarkerHtml(tab,item){
+  const spec=drivePoiTabSpec(tab);
+  const title=tab==='fuel'?fuelWon(item?.price):(tab==='onnuri'?'온누리':'지역사랑');
+  const sub=tab==='fuel'?String(item?.name||'주유소'):(item?.name||item?.market||'가맹점');
+  return `<button type="button" class="drive-route-poi-marker ${spec.theme}" data-drive-poi-marker="${tab}"><span class="marker-top">${escapeHtml(title)}</span><span class="marker-bottom">${escapeHtml(sub)}</span></button>`;
+}
+function renderDrivePoiMarkers(){
+  clearDrivePoiMarkers();
+  if(!state.map||!state.tripStartedAt||!state.route?.geometry?.length||state.routeMode!=='car')return;
+  const data=state.drivePoiData||buildDrivePoiData();
+  for(const tab of ['fuel','local','onnuri']){
+    const item=(data[tab]||[])[0];
+    if(!item)continue;
+    const lng=Number(item.lng),lat=Number(item.lat);
+    if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;
+    const wrap=document.createElement('div');
+    wrap.innerHTML=drivePoiMarkerHtml(tab,item);
+    const el=wrap.firstElementChild;
+    el.onclick=e=>{e.stopPropagation();openDrivePoiPanel(tab)};
+    try{state.drivePoiMarkers.push(new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([lng,lat]).addTo(state.map))}catch{}
+  }
+}
+function updateDrivePoiUI(force=false){
+  const driving=Boolean(state.tripStartedAt&&state.route?.geometry?.length&&$('driveView')&&!$('driveView').classList.contains('hidden')&&state.routeMode==='car');
+  if(!driving){$('drivePoiStack')?.classList.add('hidden');closeDrivePoiPanel();clearDrivePoiMarkers();return}
+  const now=Date.now();
+  if(!force&&now-Number(state.lastDrivePoiRenderAt||0)<1200)return;
+  state.lastDrivePoiRenderAt=now;
+  if(!state.localVoucherData){const cached=readVoucherStaleCache();if(cached?.items?.length)state.localVoucherData=cached}
+  if(!state.onnuriData){const cached=readOnnuriStaleCache();if(cached?.items?.length)state.onnuriData=cached}
+  buildDrivePoiData();
+  renderDrivePoiStack();
+  renderDrivePoiPanel();
+  if(force||now-Number(state.lastDrivePoiMarkerAt||0)>2500){state.lastDrivePoiMarkerAt=now;renderDrivePoiMarkers()}
+  ensureDrivePoiData();
 }
 
 /* ---------- SPEECH ---------- */
@@ -7418,6 +7604,11 @@ function bindUI(){
     document.querySelectorAll('[data-fuel-product]').forEach(b=>b.onclick=()=>loadFuelPrices(b.dataset.fuelProduct,{force:true}));
     document.querySelectorAll('[data-fuel-modal-product]').forEach(b=>b.onclick=()=>loadFuelPrices(b.dataset.fuelModalProduct,{force:true,modal:true}));
     if($('driveFuelChip'))$('driveFuelChip').onclick=openFuelModal;
+    if($('driveRecommendBtn'))$('driveRecommendBtn').onclick=()=>openDrivePoiPanel(state.drivePoiTab||'fuel');
+    if($('drivePoiPanelClose'))$('drivePoiPanelClose').onclick=closeDrivePoiPanel;
+    if($('drivePoiPanel'))$('drivePoiPanel').addEventListener('click',e=>{if(e.target===$('drivePoiPanel'))closeDrivePoiPanel()});
+    document.querySelectorAll('[data-drive-poi-tab]').forEach(btn=>btn.onclick=()=>{state.drivePoiTab=btn.dataset.drivePoiTab;renderDrivePoiPanel()});
+    document.querySelectorAll('[data-drive-poi-card]').forEach(btn=>btn.onclick=()=>openDrivePoiPanel(btn.dataset.drivePoiCard));
     if($('fuelModalClose'))$('fuelModalClose').onclick=closeFuelModal;
     if($('fuelModal'))$('fuelModal').addEventListener('click',e=>{if(e.target===$('fuelModal'))closeFuelModal()});
   }catch(e){console.warn('fuel UI bind failed',e)}
@@ -7541,3 +7732,6 @@ function arbitrateDrivePopups(){
 // build 7.6.11.9: fix invalid RegExp (template-literal escapes) in cameraDirectionHint that threw inside loadStaticCameraEvents and removed every official route camera; isolate per-row / post-merge errors; alert criteria aligned with map pins; Hoedeok fallback camera now actually added.
 // build 7.6.12.0: onnuri map markers no longer overlap (screen-space layout with leader lines, count bubbles, compact zone pins), zone marker opens full shop list, where-to list rows get a 'show on map' focus button.
 // build 7.6.13.3: dropped unused Cloudflare D1/Worker fetch path (kept open-data static bundles only); added general name-based stale-duplicate camera suppression (fixes 구즉세종로 남행 구간단속 종료 후 상서삼거리 중복 카메라, and similar patterns anywhere on the map, not just near section ends).
+// build 7.6.14.0: drive UI TMAP-style recommendation rail + route-aligned fuel/local/onnuri panel; map camera pins simplified to speed-limit markers.
+
+// build 7.6.15.0: corridor probe queries, real POI marker coordinates, stale-response protection, safety-priority compact cards.

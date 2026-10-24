@@ -6,7 +6,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
-  <meta name="theme-color" content="#087a60" />
+  <meta name="theme-color" content="#ffffff" />
   <meta name="description" content="다임·순식·훈민과 함께하는 조팸스 내비" />
 
 
@@ -18,7 +18,7 @@
 
 
 
-<title>단골로 | 조팸스와 함께하는 지역상생 내비게이션</title>
+<title>조팸스 내비</title>
   <link rel="canonical" href="https://jofams-smartdrive.pages.dev/" />
   <link rel="image_src" href="https://jofams-smartdrive.pages.dev/jofams-kakao-share-7669.jpg" />
   <meta name="robots" content="index,follow,max-image-preview:large" />
@@ -58,7 +58,6 @@
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
   <link rel="stylesheet" href="/styles.css?v=7.6.13.3" />
-<link rel="stylesheet" href="/dangollo-theme.css?v=2" />
 </head>
 <body>
   <main id="app">
@@ -68,7 +67,7 @@
     <section id="homeView" class="screen home-view">
       <header class="home-header">
         <button id="menuBtn" class="circle-btn" aria-label="메뉴"><span data-icon="menu"></span></button>
-        <b class="dg-brand"><span class="dg-brand-mark">단골로</span><small>조팸스 스마트 내비</small></b>
+        <b>조팸스 내비</b>
         <button id="myBtn" class="circle-btn" aria-label="마이페이지"><span data-icon="user"></span></button>
       </header>
 
@@ -76,15 +75,10 @@
         <button id="homeSheetToggle" class="home-sheet-toggle" type="button" aria-label="홈 메뉴 내리기" aria-expanded="true">
           <span aria-hidden="true">−</span>
         </button>
-        <section class="dg-welcome" aria-label="단골로 서비스 소개">
- <div class="dg-welcome-copy"><span class="dg-eyebrow"><span class="dg-live-dot"></span> 지역을 잇는 스마트 드라이브</span><h2>가는 길에 발견하는<br><em>우리 동네 좋은 선택</em></h2><p>안전한 길안내부터 가까운 가맹점과 유가 정보까지.</p><div class="dg-hero-pills"><span>◉ 경로 중심 탐색</span><span>◈ 지역상생</span><span>✦ 조팸스 동행</span></div></div>
- <div class="dg-hero-characters" aria-label="조팸스 안내 캐릭터"><img src="/assets/daim.png" alt="다임"><img src="/assets/sunsik.png" alt="순식"><img src="/assets/hunmin.png" alt="훈민"></div>
-</section>
-<div class="dg-search-heading"><span>목적지 검색</span><small>오늘도 안전하고 알뜰하게</small></div>
-<h1 class="dg-screenreader">어디로 이동할까요?</h1>
+        <h1>어디로 이동할까요?</h1>
         <div class="search-box">
           <span class="search-icon" data-icon="search"></span>
-          <input id="destinationInput" autocomplete="off" placeholder="어디로 가시나요? 장소 · 주소 검색" />
+          <input id="destinationInput" autocomplete="off" placeholder="장소, 주소 검색" />
           <button id="searchBtn" aria-label="검색"><span data-icon="arrow-right"></span></button>
         </div>
         <div id="searchResults" class="search-results hidden"></div>
@@ -147,7 +141,7 @@
         </section>
 
         <section class="home-block guide-block">
-          <div class="block-title"><b>함께할 조팸스 가이드</b><span>선택한 가이드가 차량으로 길을 안내해요</span></div>
+          <div class="block-title"><b>조팸스 가이드 선택</b><span>선택한 가이드가 차량으로 길을 안내해요</span></div>
           <div class="guide-grid">
             <button class="guide-card active" data-character="daim"><img src="/assets/daim_car.png" alt="다임 자동차"><span><b>다임</b><small>정확하고 차분하게</small></span></button>
             <button class="guide-card" data-character="sunsik"><img src="/assets/sunsik_car.png" alt="순식 자동차"><span><b>순식</b><small>교통 흐름을 빠르게</small></span></button>
@@ -282,6 +276,7 @@
       </aside>
 
       <div class="drive-side-actions" aria-label="주행 중 빠른 기능">
+        <button id="driveRecommendBtn" type="button" aria-label="경로상 추천"><span data-icon="list"></span><b>추천</b></button>
         <button id="routeInfoBtn" type="button" aria-label="경로정보"><span data-icon="routes"></span><b>경로</b></button>
         <button id="driveSearchBtn" type="button" aria-label="목적지 검색"><span data-icon="search"></span><b>검색</b></button>
       </div>
@@ -294,6 +289,26 @@
         <button id="mapZoomOutBtn" type="button" aria-label="지도 축소">−</button>
       </div>
 
+      <div id="drivePoiStack" class="drive-poi-stack hidden" aria-label="경로상 추천 정보">
+        <button id="drivePoiFuelCard" class="drive-poi-card fuel hidden" data-drive-poi-card="fuel" type="button"></button>
+        <button id="drivePoiLocalCard" class="drive-poi-card local hidden" data-drive-poi-card="local" type="button"></button>
+        <button id="drivePoiOnnuriCard" class="drive-poi-card onnuri hidden" data-drive-poi-card="onnuri" type="button"></button>
+      </div>
+
+      <section id="drivePoiPanel" class="drive-poi-panel hidden" aria-label="경로상 추천 목록">
+        <div class="drive-poi-panel-sheet">
+          <header>
+            <div><b>경로상 추천</b><small>주유소 · 지역사랑 · 온누리</small></div>
+            <button id="drivePoiPanelClose" type="button" class="circle-btn"><span data-icon="close"></span></button>
+          </header>
+          <div class="drive-poi-tabs" role="tablist" aria-label="경로상 추천 분류">
+            <button type="button" data-drive-poi-tab="fuel" class="active">주유소</button>
+            <button type="button" data-drive-poi-tab="local">지역사랑</button>
+            <button type="button" data-drive-poi-tab="onnuri">온누리</button>
+          </div>
+          <div id="drivePoiPanelBody" class="drive-poi-panel-body"></div>
+        </div>
+      </section>
 
       
       <button id="driveFuelChip" class="drive-fuel-chip hidden" type="button" aria-label="주변 유가 보기">
@@ -803,8 +818,8 @@
     <div id="toast" class="toast hidden"></div>
   </main>
 
-  <script>window.__JOFAMS_BUILD__="7.6.13.3";</script>
+  <script>window.__JOFAMS_BUILD__="7.6.15.0";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.13.3"></script>
+  <script type="module" src="/app.js?v=7.6.15.0"></script>
 </body>
 </html>
