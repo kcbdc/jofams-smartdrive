@@ -249,7 +249,7 @@ function routeDistanceFromMatch(m,geometry){
 }
 function routePosOfPoint(lng,lat,geometry,heading=null,maxDistance=250){
   if(!geometry||geometry.length<2)return null;
-  const h=Number(heading);
+  const h=heading==null?NaN:Number(heading);
   const m=Number.isFinite(h)?directionAwareNearestPointOnRoute(lng,lat,h,10,geometry,maxDistance):nearestPointOnRoute(lng,lat,geometry);
   if(!m||!Number.isFinite(Number(m.index)))return null;
   const i=Math.max(1,Math.min(geometry.length-1,Number(m.index)));
@@ -1558,7 +1558,7 @@ function renderWhereToList(){
   });
 }
 function focusOnnuriItem(item){
-  const lng=Number(item?.lng),lat=Number(item?.lat);
+  const lng=Number(item?.lng??item?.lon??item?.longitude??item?.x),lat=Number(item?.lat??item?.latitude??item?.y);
   if(!state.map||!Number.isFinite(lng)||!Number.isFinite(lat))return;
   state.onnuriFocus={key:onnuriFocusKeyOf(item),at:Date.now()};
   closeWhereTo();
@@ -1573,7 +1573,7 @@ function focusOnnuriItem(item){
   setTimeout(finish,1100);
 }
 function focusVoucherItem(item){
-  const lng=Number(item?.lng),lat=Number(item?.lat);
+  const lng=Number(item?.lng??item?.lon??item?.longitude??item?.x),lat=Number(item?.lat??item?.latitude??item?.y);
   if(!state.map||!Number.isFinite(lng)||!Number.isFinite(lat))return;
   state.localVoucherFocus={key:voucherFocusKeyOf(item),at:Date.now()};
   closeWhereTo();
@@ -2379,7 +2379,7 @@ function ensureUserMarker(){
     state.userMarker=makeCarMarker().setLngLat(initial?[initial.lng,initial.lat]:[state.user.lng,state.user.lat]).addTo(state.map);
     {const rd0=finiteOrNull(state.user.routeDistance);if(rd0!=null&&!state.tripStartedAt)state.driveMarkerRenderedDistance=rd0;}
   }
-  if(state.tripStartedAt&&state.route?.geometry?.length&&finiteOrNull(state.user.routeDistance)!=null){
+  if(state.tripStartedAt&&state.route?.geometry?.length&&finiteOrNull(state.user.routeDistance)!=null&&state.navigationStartReleased){
     const incomingRouteDistance=finiteOrNull(state.user?.routeDistance);
   const realSpeed=Math.max(0,Number(state.user?.speed)||0);
   if(state.tripStartedAt&&!state.simulationActive&&(state.stationaryActive||realSpeed<=0.05)&&Number.isFinite(Number(state.driveMarkerRenderedDistance))){
@@ -2391,6 +2391,9 @@ function ensureUserMarker(){
   }
     if(!Number.isFinite(Number(state.driveMarkerRenderedDistance)))state.driveMarkerRenderedDistance=incomingRouteDistance;
     scheduleSmoothDriveMarker();
+  }else if(state.tripStartedAt&&state.route?.geometry?.length){
+    const start=pointAtRouteDistance(Math.max(0,Number(state.driveMarkerRenderedDistance)||0));
+    if(start)state.userMarker.setLngLat([start.lng,start.lat]);
   }else state.userMarker.setLngLat([state.user.lng,state.user.lat]);
   updateUserMarkerMotion();
 }
@@ -3105,9 +3108,9 @@ function scopeFuelToRoute(stations){
     const lng=Number(x.lng??x.lon??x.x),lat=Number(x.lat??x.y);
     if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;
     const m=routePosOfPoint(lng,lat,g,null,200);
-    if(!m||Number(m.distance)>120)continue;
+    if(!m||Number(m.distance)>420)continue;
     const ahead=Number(m.routeDistance)-cur;
-    if(ahead<50||ahead>20000)continue;
+    if(ahead<0||ahead>25000)continue;
     out.push({...x,__aheadM:ahead});
   }
   return out.sort((a,b)=>Number(a.price)-Number(b.price));
@@ -4443,14 +4446,15 @@ function startNavigation(opts={}){
   state.navigationStartAt=state.tripStartedAt;invalidateDrivePoiRoute();
   // 경로 API가 실제 시작점을 약간 옮겨도 현재 GPS에 투영한 출발 지점에서 출발한다.
   const startMatch=pointValid(state.user)?routePosOfPoint(Number(state.user.lng),Number(state.user.lat),state.route.geometry||[],null,120):null;
-  const startM=startMatch&&Number(startMatch.distance)<=80?Math.max(0,Number(startMatch.routeDistance)||0):0;
+  const startM=0; // 출발 프레임은 반드시 경로의 첫 번째 좌표에서 시작
   state.driveMarkerRenderedDistance=startM;state.driveMarkerTargetDistance=startM;state.driveMarkerTargetAt=Date.now();state.driveMarkerFrameAt=0;
   if(state.driveMarkerRaf){cancelAnimationFrame(state.driveMarkerRaf);state.driveMarkerRaf=0}
   if(state.route?.geometry?.length){
     const start=pointAtRouteDistance(startM);
     if(start){
-      if(!state.userMarker&&state.map&&pointValid(state.user))state.userMarker=makeCarMarker().setLngLat([start.lng,start.lat]).addTo(state.map);
-      else state.userMarker?.setLngLat([start.lng,start.lat]);
+      // 재사용 마커는 이전 GPS 위치가 한 프레임 비칠 수 있어 경로 시작점에 먼저 동기화한다.
+      if(state.userMarker)state.userMarker.setLngLat([start.lng,start.lat]);
+      else if(state.map)state.userMarker=makeCarMarker().setLngLat([start.lng,start.lat]).addTo(state.map);
     }
   }
   state.navigationStartAnchor=pointValid(state.user)?{lat:Number(state.user.lat),lng:Number(state.user.lng),routeDistance:Number(state.user.routeDistance)}:null;
@@ -4464,7 +4468,11 @@ function startNavigation(opts={}){
   if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 바로 요청해야 브라우저가 확실히 허용한다.
   initializeDriveSummary();
   // Render an already loaded character at the departure point before requesting a new GPS frame.
-  preloadDangolloDriveCharacters();ensureUserMarker();updateCarMarkerImage();
+  preloadDangolloDriveCharacters();
+  // 상태 전환과 GPS watch 전에 출발점을 먼저 그려 초기 순간이동을 막는다.
+  ensureUserMarker();updateCarMarkerImage();
+  const departure=pointAtRouteDistance(0);
+  if(departure&&state.userMarker)state.userMarker.setLngLat([departure.lng,departure.lat]);
   const openingMarker=state.userMarker?.getElement?.();
   if(openingMarker){openingMarker.style.display='block';openingMarker.style.visibility='visible';openingMarker.style.opacity='1';}
   startWatch();drawRoute(state.route,{fit:false});updateDriving(true);
@@ -6319,7 +6327,7 @@ function routeScopedMerchants(items,{maxOffset=180,minAhead=80,maxAhead=16000,in
   const cur=currentRouteDistanceAt(state.currentRouteIndex||0),out=[];
   const seen=new Set();
   for(const item of items||[]){
-    const lng=Number(item?.lng),lat=Number(item?.lat);
+    const lng=Number(item?.lng??item?.lon??item?.longitude??item?.x),lat=Number(item?.lat??item?.latitude??item?.y);
     if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;
     if(includeApprox===false&&(item?.approximate||item?.precision==='market-zone'||item?.precision==='admin-zone'))continue;
     const m=routePosOfPoint(lng,lat,g,null,maxOffset+40);
@@ -6334,9 +6342,9 @@ function routeScopedMerchants(items,{maxOffset=180,minAhead=80,maxAhead=16000,in
   return out;
 }
 function buildDrivePoiData(){
-  const fuel=scopeFuelToRoute(state.fuelData?.stations||[]).slice(0,8).map(x=>({...x,brandName:fuelBrandName(x?.pollDivCo||x?.brand||x?.brandCode||'')}));
-  const local=routeScopedMerchants(state.localVoucherData?.items||[],{maxOffset:150,minAhead:80,maxAhead:12000,includeApprox:true}).slice(0,8);
-  const onnuri=routeScopedMerchants(state.onnuriData?.items||[],{maxOffset:200,minAhead:80,maxAhead:12000,includeApprox:true}).slice(0,8);
+  const fuel=scopeFuelToRoute(state.fuelData?.stations||[]).slice(0,12).map(x=>({...x,brandName:fuelBrandName(x?.pollDivCo||x?.brand||x?.brandCode||'')}));
+  const local=routeScopedMerchants([...(state.drivePoiMerchants?.local||[]),...(state.localVoucherData?.items||[])],{maxOffset:420,minAhead:0,maxAhead:25000,includeApprox:true}).slice(0,12);
+  const onnuri=routeScopedMerchants([...(state.drivePoiMerchants?.onnuri||[]),...(state.onnuriData?.items||[])],{maxOffset:500,minAhead:0,maxAhead:25000,includeApprox:true}).slice(0,12);
   state.drivePoiData={fuel,local,onnuri};
   return state.drivePoiData;
 }
@@ -6380,7 +6388,7 @@ function renderDrivePoiPanel(){
   const panel=$('drivePoiPanel'),body=$('drivePoiPanelBody');if(!panel||!body||panel.classList.contains('hidden'))return;
   document.querySelectorAll('[data-drive-poi-tab]').forEach(btn=>btn.classList.toggle('active',btn.dataset.drivePoiTab===state.drivePoiTab));
   const items=(state.drivePoiData?.[state.drivePoiTab]||[]);
-  if(!items.length){body.innerHTML=`<div class="drive-poi-empty">${escapeHtml(drivePoiTabSpec(state.drivePoiTab).empty)}</div>`;return}
+  if(!items.length){body.innerHTML=`<div class="drive-poi-empty">${state.drivePoiLoading?'경로 주변 가맹점을 찾고 있습니다…':escapeHtml(drivePoiTabSpec(state.drivePoiTab).empty)}</div>`;return}
   body.innerHTML=items.map((item,i)=>drivePoiEntryButtonHtml(state.drivePoiTab,item,i)).join('');
   body.querySelectorAll('[data-drive-poi-item]').forEach(btn=>btn.onclick=()=>{
     const [tab,idx]=String(btn.dataset.drivePoiItem||'').split(':');
@@ -6432,7 +6440,8 @@ function layoutDrivePoiPanel(){
 }
 function openDrivePoiPanel(tab=state.drivePoiTab||'fuel'){
   state.drivePoiTab=tab;$('drivePoiPanel')?.classList.remove('hidden');
-  renderDrivePoiPanel();layoutDrivePoiPanel();requestAnimationFrame(layoutDrivePoiPanel);
+  buildDrivePoiData();renderDrivePoiPanel();layoutDrivePoiPanel();requestAnimationFrame(layoutDrivePoiPanel);
+  ensureDrivePoiData();
 }
 function closeDrivePoiPanel(){$('drivePoiPanel')?.classList.add('hidden')}
 window.addEventListener('resize',()=>{if(!$('drivePoiPanel')?.classList.contains('hidden'))layoutDrivePoiPanel()},{passive:true});
@@ -6442,13 +6451,13 @@ function drivePoiProbePoints(){
   const cur=currentRouteDistanceAt(state.currentRouteIndex||0);
   const end=Number(state.routeCumulative?.at(-1))||cur;
   const probes=[];
-  for(const offset of [2000,6000,10000,14000]){
+  for(const offset of [400,1800,4000,7000,11000,16000,23000]){
     const pt=pointAtRouteDistance(Math.min(end,cur+offset));
     if(pt&&Number.isFinite(Number(pt.lat))&&Number.isFinite(Number(pt.lng)))probes.push(pt);
   }
-  return probes.filter((x,i,a)=>a.findIndex(y=>hav(Number(x.lat),Number(x.lng),Number(y.lat),Number(y.lng))<1800)===i).slice(0,4);
+  return probes.filter((x,i,a)=>a.findIndex(y=>hav(Number(x.lat),Number(x.lng),Number(y.lat),Number(y.lng))<950)===i).slice(0,7);
 }
-function drivePoiRegionBox(pt,radiusKm=2.3){
+function drivePoiRegionBox(pt,radiusKm=2.8){
   const lat=Number(pt.lat),lng=Number(pt.lng);
   const dy=radiusKm/111.2,dx=radiusKm/Math.max(30,111.2*Math.cos(lat*Math.PI/180));
   return {west:lng-dx,east:lng+dx,south:lat-dy,north:lat+dy};
@@ -6485,7 +6494,7 @@ async function fetchDrivePoiBatch(type,probes,token){
 function invalidateDrivePoiRoute(){
   state.drivePoiFetchToken=(state.drivePoiFetchToken||0)+1;
   state.drivePoiFetchedAt=0;state.drivePoiFetchedRouteM=0;
-  state.drivePoiData={fuel:[],local:[],onnuri:[]};state.drivePoiLoading=false;
+  state.drivePoiData={fuel:[],local:[],onnuri:[]};state.drivePoiMerchants={local:[],onnuri:[]};state.drivePoiLoading=false;
   clearDrivePoiMarkers();
 }
 function ensureDrivePoiData(){
@@ -6504,8 +6513,8 @@ function ensureDrivePoiData(){
     const local=results[0].status==='fulfilled'?results[0].value:null;
     const onnuri=results[1].status==='fulfilled'?results[1].value:null;
     // 빈 정상 응답도 반영하여 이전 도시의 유령 가맹점이 남지 않도록 한다.
-    if(local!==null)state.localVoucherData={items:local};
-    if(onnuri!==null)state.onnuriData={items:onnuri};
+    if(local!==null)state.drivePoiMerchants.local=local;
+    if(onnuri!==null)state.drivePoiMerchants.onnuri=onnuri;
     buildDrivePoiData();renderDrivePoiStack();renderDrivePoiPanel();renderDrivePoiMarkers();
   }).finally(()=>{if(token===state.drivePoiFetchToken)state.drivePoiLoading=false});
 }
