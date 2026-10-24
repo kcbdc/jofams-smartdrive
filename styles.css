@@ -4144,3 +4144,20 @@ body:has(#driveView:not(.hidden)) .origin-pin{display:none!important;visibility:
   #driveView .drive-poi-stack{top:calc(var(--safeT) + 84px);right:92px;width:300px}
   #driveView .drive-poi-panel-sheet{top:calc(var(--safeT) + 16px);right:146px;max-height:min(78vh,520px)}
 }
+
+/* Dangollo 7.6.16: two-pane fork/junction guidance, replaces occluding floating overlay */
+#driveView.dangollo-in-junction #laneAssistLayer.dangollo-junction-split{
+ position:absolute!important; z-index:79!important;left:10px!important;right:auto!important;
+ bottom:calc(var(--safeB) + 85px)!important;top:auto!important;
+ width:min(40vw,320px)!important;min-height:180px!important;
+ border-radius:20px!important;padding:18px 12px!important;
+ background:linear-gradient(180deg,rgba(10,50,37,.96),rgba(8,69,49,.94))!important;
+ display:flex!important;flex-direction:column!important;align-items:center!important;
+ color:white!important;box-shadow:0 12px 24px rgba(0,20,18,.22)!important;
+}
+#driveView.dangollo-in-junction .lane-assist-icon{font-size:70px!important;line-height:1!important;color:#93f5b8!important}
+#driveView.dangollo-in-junction #laneAssistDistance{color:#fff!important;font-size:18px!important}
+#driveView.dangollo-in-junction #laneAssistTitle{color:#fff!important;font-size:22px!important;text-align:center!important}
+#driveView.dangollo-in-junction #laneAssistRoad{color:#c9ffdd!important;font-size:14px!important;text-align:center!important;max-width:100%!important}
+#driveView.dangollo-in-junction .drive-poi-stack{display:none!important}
+@media(orientation:landscape){#driveView.dangollo-in-junction #laneAssistLayer.dangollo-junction-split{left:10px!important;bottom:calc(var(--safeB) + 75px)!important;max-height:calc(100vh - 130px)!important;min-height:130px!important;width:min(31vw,340px)!important}}
