@@ -5857,6 +5857,7 @@ function setSimulationSpeed(mult){
 function stopRouteSimulation({resumeGps=true}={}){
   // 1) 모의주행 프레임을 가장 먼저 즉시 중단
   if(state.simulationRaf)cancelAnimationFrame(state.simulationRaf);
+  if(state.simulationFallbackTimer){clearTimeout(state.simulationFallbackTimer);state.simulationFallbackTimer=0}
   state.simulationRaf=0;
   const wasActive=Boolean(state.simulationActive);
   state.simulationActive=false;
@@ -5951,13 +5952,14 @@ function stopRouteSimulation({resumeGps=true}={}){
 }
 function simulationTick(ts){
   state.simulationRaf=0;
+  if(state.simulationFallbackTimer){clearTimeout(state.simulationFallbackTimer);state.simulationFallbackTimer=0}
   if(!state.simulationActive||!state.tripStartedAt||!state.route?.geometry?.length||!state.routeCumulative?.length)return;
   const total=Number(state.routeCumulative.at(-1))||0;
   const duration=Math.max(1,Number(state.route.duration)||1);
   if(!total)return stopRouteSimulation();
 
   const last=Number.isFinite(state.simulationLastAt)?state.simulationLastAt:ts;
-  const dt=Math.max(0,Math.min(.12,(ts-last)/1000));
+  const dt=Math.max(0,Math.min(.18,(ts-last)/1000));
   state.simulationLastAt=ts;
 
   const mult=Number(state.simulationSpeed)||1;
@@ -6017,7 +6019,24 @@ function simulationTick(ts){
     stopRouteSimulation({resumeGps:true});
     return;
   }
-  state.simulationRaf=requestAnimationFrame(simulationTick);
+  scheduleDangolloSimulationFrame();
+}
+function scheduleDangolloSimulationFrame(){
+  if(!state.simulationActive)return;
+  if(state.simulationRaf)cancelAnimationFrame(state.simulationRaf);
+  if(state.simulationFallbackTimer)clearTimeout(state.simulationFallbackTimer);
+  if(document.visibilityState==='hidden'){
+    // 백그라운드에서 requestAnimationFrame이 중단되는 브라우저/WebView 대응.
+    state.simulationFallbackTimer=setTimeout(()=>simulationTick(performance.now()),120);
+  }else{
+    state.simulationRaf=requestAnimationFrame(simulationTick);
+    // WebView RAF가 장시간 정지한 경우 한 프레임만 대체 실행.
+    state.simulationFallbackTimer=setTimeout(()=>{
+      if(!state.simulationActive)return;
+      if(state.simulationRaf){cancelAnimationFrame(state.simulationRaf);state.simulationRaf=0}
+      simulationTick(performance.now());
+    },400);
+  }
 }
 function startRouteSimulation(){
   if(!state.tripStartedAt||!state.route?.geometry?.length)return toast('길안내가 시작된 뒤 모의주행을 사용할 수 있습니다.');
@@ -6036,6 +6055,9 @@ function startRouteSimulation(){
   stopWatch();
   stopDeadReckoning();
   state.simulationActive=true;
+  state.offRouteHits=0;
+  state.offRouteHeadingHits=0;
+  state.arrivalCandidateSince=0;
   state.userMapInteracting=false;
   state.lastUserMapInteractionAt=0;
   state.lastSimulationCameraAt=0;
@@ -6056,7 +6078,7 @@ function startRouteSimulation(){
   updateSimulationControls();
   closeRouteInfo();
   toast(`모의주행 ${state.simulationSpeed}×를 시작합니다.`,1500);
-  state.simulationRaf=requestAnimationFrame(simulationTick);
+  scheduleDangolloSimulationFrame();
 }
 
 function closeRouteInfo(){ $('routeInfoModal')?.classList.add('hidden') }
@@ -6191,7 +6213,8 @@ function renderDrivePoiStack(){
   }
   const junctionActive=!$('laneAssistLayer')?.classList.contains('hidden');
   const safetyActive=!$('safetyAlert')?.classList.contains('hidden')||!$('sectionSpeedPanel')?.classList.contains('hidden');
-  root.classList.toggle('hidden',visible===0||junctionActive||safetyActive);
+  // 주행 중에는 카드 3개가 지도를 가리지 않게 항상 접어 둔다. 추천 버튼/지도 핀으로만 진입.
+  root.classList.add('hidden');
 }
 function drivePoiEntryButtonHtml(tab,item,index){
   const spec=drivePoiTabSpec(tab);
@@ -7772,3 +7795,10 @@ else bindDangolloSimulationControls();
 // build 7.6.15.0: corridor probe queries, real POI marker coordinates, stale-response protection, safety-priority compact cards.
 
 // Dangollo 7.6.16.0: origin lock, monotonic marker, heading-up camera, conservative rerouting, split guide, DR IMU safety.
+
+// Dangollo v7.6.18: resume simulator smoothly when the app returns to foreground.
+document.addEventListener('visibilitychange',()=>{
+  if(!state.simulationActive)return;
+  state.simulationLastAt=performance.now();
+  scheduleDangolloSimulationFrame();
+});

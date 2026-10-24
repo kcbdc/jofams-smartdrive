@@ -4169,3 +4169,17 @@ body:has(#driveView:not(.hidden)) .origin-pin{display:none!important;visibility:
 #driveView .drive-poi-card.local .poi-icon,#driveView .drive-poi-entry.local .entry-icon{background:linear-gradient(145deg,#19bd83,#087a57)!important}
 #driveView .drive-poi-card.onnuri .poi-icon,#driveView .drive-poi-entry.onnuri .entry-icon{background:linear-gradient(145deg,#327ff5,#214ec3)!important}
 #driveView .drive-poi-card.fuel .poi-icon,#driveView .drive-poi-entry.fuel .entry-icon{background:linear-gradient(145deg,#fa8736,#d64820)!important}
+
+/* Dangollo v7.6.18: 운전 중 추천 3종 오버레이 제거, 실제 SVG 아이콘 복구 */
+html body #app #driveView #drivePoiStack{display:none!important;visibility:hidden!important;pointer-events:none!important}
+html body #app #driveView #driveRecommendBtn{background:#fff!important;color:#087b5d!important}
+html body #app #driveView #driveRecommendBtn>.dangollo-recommend-symbol{
+ display:grid!important;place-items:center!important;width:30px!important;height:30px!important;
+ background:transparent!important;-webkit-mask:none!important;mask:none!important;
+ -webkit-mask-image:none!important;mask-image:none!important;
+}
+html body #app #driveView #driveRecommendBtn>.dangollo-recommend-symbol>svg{
+ display:block!important;width:30px!important;height:30px!important;color:#087b5d!important;
+ fill:none!important;visibility:visible!important;opacity:1!important;
+}
+html body #app #driveView #driveRecommendBtn>b{display:block!important;margin-top:1px!important;font-size:10px!important;line-height:1!important;color:#087b5d!important}
