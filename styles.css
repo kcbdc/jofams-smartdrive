@@ -4194,3 +4194,16 @@ html body #app #driveView #driveRecommendBtn>.dangollo-recommend-symbol,
 html body #app #driveView #driveRecommendBtn>.dangollo-recommend-symbol>svg{color:#171c23!important;width:24px!important;height:24px!important}
 html body #app #driveView #driveRecommendBtn svg *{stroke:#171c23!important}
 html body #app #driveView #driveRecommendBtn>b{color:#171c23!important}
+
+/* Dangollo 7.6.20 - guidance card aligned to navy reference */
+html body #app #driveView .maneuver-main{background:linear-gradient(150deg,#123c70 0%,#102c4d 60%,#081e33 100%)!important;border:2px solid #188fed!important;border-radius:26px!important;box-shadow:0 12px 24px rgba(7,24,44,.28)!important;color:#fff!important}
+html body #app #driveView .maneuver-next{background:#162b3e!important;color:#fff!important;border-radius:0 0 18px 18px!important;border:0!important}
+#routeView .planning-poi-suggestions{display:flex;flex-direction:column;gap:8px;padding:12px;margin:10px 0;border:1px solid #b4dcca;border-radius:18px;background:#f5fcf8}
+#routeView .planning-poi-suggestions.hidden{display:none!important}
+#routeView .planning-poi-suggestions header{display:flex;flex-direction:column;gap:4px;color:#075f47}
+#routeView .planning-poi-suggestions header b{font-size:16px}
+#routeView .planning-poi-suggestions header small{font-size:11px;color:#5b6c64}
+#routeView .planning-poi-entry{display:flex;flex-direction:column;align-items:flex-start;gap:4px;background:white;border:1px solid #d9eae2;border-radius:12px;padding:12px;text-align:left;color:#152c27}
+#routeView .planning-poi-entry strong{font-size:14px}
+#routeView .planning-poi-entry small{font-size:11px;color:#526961}
+#routeView .planning-poi-entry span{align-self:flex-end;color:#087b58;font-size:12px;font-weight:800}

@@ -2466,6 +2466,7 @@ function clearRouteLayer(){['route-direction-arrows','route-traffic','route-main
 
 /* ---------- LOCATION ---------- */
 async function locate(fly=true){
+  if(pointValid(state.user)&&Date.now()-Number(state.lastRealGpsAt||state.nativeLocationAt||0)<18000)return state.user;
   if(state.permissionPrefs?.location===false){
     toast('MY에서 위치정보 조회 동의를 켜 주세요.');
     return null;
@@ -2475,7 +2476,7 @@ async function locate(fly=true){
   if(nativeBridgeAvailable()){
     nativePost('requestLocation',{highAccuracy:true});
     const started=Date.now();
-    while(Date.now()-started<2200){
+    while(Date.now()-started<850){
       if(pointValid(state.user)&&Date.now()-Number(state.nativeLocationAt||0)<5000){
         if(fly&&state.map)state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:16,duration:350});
         return state.user;
@@ -2498,7 +2499,7 @@ async function locate(fly=true){
         toast('현재 위치를 확인할 수 없습니다. 휴대폰 위치 권한과 GPS를 확인해 주세요.');
         resolve(null);
       },
-      {enableHighAccuracy:true,timeout:6500,maximumAge:5000}
+      {enableHighAccuracy:true,timeout:3800,maximumAge:12000}
     );
   });
 }
@@ -3660,7 +3661,7 @@ async function selectTravelMode(mode){
   selectRoute(state.selectedRoute,true);renderRouteCards();renderRouteModeSwitch();scheduleAutoStart();
 }
 async function loadRouteOptions(){
-  cancelAutoStart();$('routeCards').innerHTML='<div class="auto-start-hint">자동차·도보 경로를 계산하고 있습니다...</div>';renderRouteModeSwitch();
+  cancelAutoStart();$('routeCards').innerHTML='<div class="auto-start-hint">자동차·도보 경로를 계산하고 있습니다...</div>';renderRouteModeSwitch();renderPlanningPoiSuggestions();
   try{
     const results=await Promise.allSettled([routeRequest('RECOMMEND',null,null,'car'),routeRequest('TIME',null,null,'car'),routeRequest('RECOMMEND','toll',null,'car'),routeRequest('RECOMMEND',null,null,'walk')]);
     const specs=[['추천','daim',''],['빠른길','sunsik','fast'],['무료도로','hunmin','free']];state.carRouteOptions=[];
@@ -3672,8 +3673,44 @@ async function loadRouteOptions(){
     }else{
       if(!state.carRouteOptions.length)throw new Error('자동차 경로가 없습니다.');state.routeOptions=state.carRouteOptions;const pref=state.routePreference;const p=state.routeOptions.findIndex(x=>(pref==='fast'&&x._class==='fast')||(pref==='free'&&x._class==='free')||(pref==='recommend'&&!x._class));state.selectedRoute=p>=0?p:0;
     }
-    selectRoute(state.selectedRoute,false);renderRouteCards();renderRouteModeSwitch();scheduleAutoStart();
+    selectRoute(state.selectedRoute,false);renderRouteCards();renderRouteModeSwitch();renderPlanningPoiSuggestions();scheduleAutoStart();
   }catch(e){$('routeCards').innerHTML='<div class="auto-start-hint">경로를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>';toast(e.message,3000)}
+}
+function renderPlanningPoiSuggestions(){
+  const root=$('planningPoiSuggestions');if(!root)return;
+  if(state.tripStartedAt){root.classList.add('hidden');return}
+  const route=state.route?.geometry?.length?state.route:null;
+  const rows=[];
+  if(route){
+    const sources=[['local',state.localVoucherData?.items||[],'지역사랑'],['onnuri',state.onnuriData?.items||[],'온누리']];
+    for(const [kind,items,label] of sources){
+      const candidates=[];
+      for(const item of items.slice(0,1800)){
+        const lat=Number(item.lat),lng=Number(item.lng);
+        if(!Number.isFinite(lat)||!Number.isFinite(lng))continue;
+        const hit=routePosOfPoint(lng,lat,route.geometry,null,1500);
+        if(!hit||Number(hit.distance)>600||Number(hit.routeDistance)<400)continue;
+        candidates.push({...item,kind,label,offset:Number(hit.distance),ahead:Number(hit.routeDistance)});
+      }
+      candidates.sort((x,y)=>x.offset-y.offset||x.ahead-y.ahead);
+      if(candidates[0])rows.push(candidates[0]);
+    }
+    const fuel=(state.fuelData?.stations||[]).filter(x=>Number(x.price)>0).map(x=>{
+      const hit=routePosOfPoint(Number(x.lng),Number(x.lat),route.geometry,null,1500);
+      return hit&&Number(hit.distance)<=600?{...x,kind:'fuel',label:'주유소',offset:Number(hit.distance),ahead:Number(hit.routeDistance)}:null;
+    }).filter(Boolean).sort((x,y)=>x.price-y.price);
+    if(fuel[0])rows.push(fuel[0]);
+  }
+  if(!rows.length){root.classList.add('hidden');return}
+  root.classList.remove('hidden');
+  root.innerHTML='<header><b>가는 길에 들르기 좋은 곳</b><small>현재 확보된 가맹점·유가 데이터 기준 · 경유시간은 재탐색 후 확인</small></header>'+rows.slice(0,3).map((x,i)=>`<button type="button" class="planning-poi-entry" data-planning-poi="${i}"><strong>${escapeHtml(x.name||x.market||x.label)}</strong><small>${escapeHtml(x.label)} · 경로에서 약 ${Math.round(x.offset)}m ${x.kind==='fuel'?` · ${fuelWon(x.price)}`:''}</small><span>경유지로 선택 →</span></button>`).join('');
+  root.querySelectorAll('[data-planning-poi]').forEach(b=>b.onclick=()=>{
+    const x=rows[Number(b.dataset.planningPoi)];if(!x)return;
+    const pt=normalizedPlace({name:x.name||x.market||x.label,address:x.address||x.matchedAddress||'',lat:x.lat,lng:x.lng});
+    if(!pointValid(pt))return;
+    state.waypoints=[...(state.waypoints||[]),pt].slice(0,5);
+    loadRouteOptions();
+  });
 }
 function renderRouteCards(){
   const box=$('routeCards');box.innerHTML='';
@@ -4408,7 +4445,7 @@ function driveCameraPadding(){
   return{top:Math.round(h*.48),bottom:76,left:0,right:0};
 }
 function updateDriving(force=false){
-  if(window.__JOFAMS_NATIVE_DRIVE_ACTIVE__)return;
+  if(window.__JOFAMS_NATIVE_DRIVE_ACTIVE__&&!state.simulationActive)return;
   refreshVslSpeedLimit();
   if(!state.user||!state.route?.geometry?.length)return;
   const g=state.route.geometry;
@@ -4429,7 +4466,7 @@ function updateDriving(force=false){
 
   // 사용자가 지도 조작 중이면 카메라 자동 이동을 완전히 중지한다.
   // 마지막 사용자 입력 후 10초 동안 조작이 없을 때만 현재 위치로 복귀한다.
-  if(maybeRestoreDriveMap()){
+  if(!state.simulationActive&&maybeRestoreDriveMap()){
     const now=Date.now();
     if(force||now-Number(state.lastDriveCameraAt||0)>=280){
       state.lastDriveCameraAt=now;
@@ -5960,7 +5997,7 @@ function simulationTick(ts){
   if(!total)return stopRouteSimulation();
 
   const last=Number.isFinite(state.simulationLastAt)?state.simulationLastAt:ts;
-  const dt=Math.max(0,Math.min(.30,(ts-last)/1000));
+  const dt=Math.max(.05,Math.min(.30,(ts-last)/1000));
   state.simulationLastAt=ts;
 
   const mult=Number(state.simulationSpeed)||1;
@@ -6062,6 +6099,7 @@ function startRouteSimulation(){
   stopWatch();
   stopDeadReckoning();
   state.simulationActive=true;
+  window.__DANGOLLO_SIMULATION_ACTIVE__=true;
   state.offRouteHits=0;
   state.offRouteHeadingHits=0;
   state.arrivalCandidateSince=0;
