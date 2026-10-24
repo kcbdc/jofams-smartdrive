@@ -4242,3 +4242,29 @@ html body #app #driveView .maneuver-next{background:#162b3e!important;color:#fff
 #routeView .planning-poi-note{font-size:11px;color:#6b7a92;text-align:center}
 @keyframes planningShimmer{from{background-position:200% 0}to{background-position:-200% 0}}
 @media (prefers-reduced-motion:reduce){#routeView .planning-poi-skeleton i{animation:none}}
+
+
+/* 7.6.21.1 Responsive recommendation panel: inline screen-space placement via app.js. */
+html body #app #driveView #drivePoiPanel{position:absolute!important;inset:0!important;z-index:102!important;pointer-events:auto!important;background:rgba(6,17,30,.14)!important}
+html body #app #driveView #drivePoiPanel.hidden{display:none!important}
+html body #app #driveView #drivePoiPanel .drive-poi-panel-sheet{
+  position:absolute!important;bottom:auto!important;transform:none!important;
+  margin:0!important;box-sizing:border-box!important;min-width:0!important;
+  overflow:hidden!important;display:flex!important;flex-direction:column!important;
+  gap:8px!important;padding:12px!important;border-radius:20px!important;
+}
+html body #app #driveView #drivePoiPanel .drive-poi-panel-sheet header{min-height:36px!important;flex:0 0 auto!important}
+html body #app #driveView #drivePoiPanel .drive-poi-tabs{gap:6px!important;flex:0 0 auto!important}
+html body #app #driveView #drivePoiPanel .drive-poi-tabs button{padding:8px 6px!important;min-width:0!important;font-size:13px!important}
+html body #app #driveView #drivePoiPanel .drive-poi-panel-body{min-height:0!important;overflow-y:auto!important;overscroll-behavior:contain!important;flex:1 1 auto!important}
+html body #app #driveView #drivePoiPanel .drive-poi-entry{padding:9px!important;gap:6px!important}
+@media (orientation:landscape){
+ html body #app #driveView #drivePoiPanel .drive-poi-panel-sheet{padding:8px!important;gap:5px!important;border-radius:16px!important}
+ html body #app #driveView #drivePoiPanel .drive-poi-panel-sheet header{min-height:27px!important}
+ html body #app #driveView #drivePoiPanel .drive-poi-panel-sheet header b{font-size:15px!important}
+ html body #app #driveView #drivePoiPanel .drive-poi-panel-sheet header small{display:none!important}
+ html body #app #driveView #drivePoiPanel .drive-poi-tabs button{padding:5px 3px!important;font-size:11px!important}
+ html body #app #driveView #drivePoiPanel .drive-poi-entry{padding:6px!important}
+ html body #app #driveView #drivePoiPanel .drive-poi-entry .entry-icon{width:30px!important;height:30px!important}
+ html body #app #driveView #drivePoiPanel .drive-poi-entry .entry-left{grid-template-columns:30px 1fr!important}
+}

@@ -5048,6 +5048,7 @@ function updateProgressUI(idx,force=false){
   }else $('nextManeuver').classList.add('hidden');
 
   updateSafetyUI(idx,safetyCandidates);updateSectionAverageSpeed(idx);updateLaneGuide(idx);updateVms(idx);updateDrivePoiUI(force);
+  if(!$('drivePoiPanel')?.classList.contains('hidden'))layoutDrivePoiPanel();
   checkArrival(remain);
   fitManeuverDistanceText();
 }
@@ -6388,8 +6389,51 @@ function renderDrivePoiPanel(){
     openDrivePlaceChoice(place);
   });
 }
-function openDrivePoiPanel(tab=state.drivePoiTab||'fuel'){state.drivePoiTab=tab;$('drivePoiPanel')?.classList.remove('hidden');renderDrivePoiPanel()}
+/* Screen-space placement: reserve maneuver, lane and bottom HUD before showing suggestions. */
+function layoutDrivePoiPanel(){
+  const panel=$('drivePoiPanel'),sheet=panel?.querySelector('.drive-poi-panel-sheet'),drive=$('driveView');
+  if(!panel||!sheet||!drive||panel.classList.contains('hidden'))return;
+  const root=drive.getBoundingClientRect();
+  const width=root.width,height=root.height;
+  if(width<100||height<150)return;
+  const landscape=width>height*1.16;
+  const safe=12;
+  const rects=id=>{
+    const el=$(id);if(!el||el.classList.contains('hidden'))return null;
+    const st=getComputedStyle(el);if(st.display==='none'||st.visibility==='hidden')return null;
+    const r=el.getBoundingClientRect();return r.width>0&&r.height>0?r:null;
+  };
+  const bottom=rects('driveBottomNormal')||rects('driveBottomDestination');
+  const bottomCard=rects('driveMenuBtn')?.closest('.drive-bottom-card')?.getBoundingClientRect()||drive.querySelector('.drive-bottom-card')?.getBoundingClientRect();
+  const bottomY=Math.min(height-safe,(bottomCard?.top??(root.bottom-115))-root.top-safe);
+  const fixed=['maneuverDistance','nextManeuver','laneAssistLayer','safetyAlert','sectionSpeedPanel','vmsBanner'];
+  let top=safe+68;
+  for(const id of fixed){const r=rects(id);if(r)top=Math.max(top,r.bottom-root.top+safe)}
+  // In landscape, the left guidance area is reserved horizontally, rather than stacking vertically.
+  if(landscape){
+    const left=rects('maneuverDistance')?.closest('.maneuver-stack')?.getBoundingClientRect()||drive.querySelector('.maneuver-stack')?.getBoundingClientRect();
+    let leftBound=Math.max(width*.48,(left?.right??root.left)-root.left+12);
+    leftBound=Math.min(width-205,leftBound);
+    sheet.style.left=`${Math.round(leftBound)}px`;
+    sheet.style.right='auto';
+    sheet.style.width=`${Math.max(190,Math.min(350,width-leftBound-72))}px`;
+    sheet.style.top=`${Math.round(Math.max(12,Math.min(top,Math.max(12,bottomY-175))))}px`;
+    sheet.style.maxHeight=`${Math.max(120,Math.round(bottomY-parseFloat(sheet.style.top)-8))}px`;
+  }else{
+    // Place under the visible navigation/branch HUD and keep a scrollable window above the ETA bar.
+    const usableTop=Math.min(Math.max(top,150),bottomY-110);
+    sheet.style.left='12px';sheet.style.right='12px';sheet.style.width='auto';
+    sheet.style.top=`${Math.max(12,Math.round(usableTop))}px`;
+    sheet.style.maxHeight=`${Math.max(100,Math.round(bottomY-usableTop))}px`;
+  }
+}
+function openDrivePoiPanel(tab=state.drivePoiTab||'fuel'){
+  state.drivePoiTab=tab;$('drivePoiPanel')?.classList.remove('hidden');
+  renderDrivePoiPanel();layoutDrivePoiPanel();requestAnimationFrame(layoutDrivePoiPanel);
+}
 function closeDrivePoiPanel(){$('drivePoiPanel')?.classList.add('hidden')}
+window.addEventListener('resize',()=>{if(!$('drivePoiPanel')?.classList.contains('hidden'))layoutDrivePoiPanel()},{passive:true});
+window.addEventListener('orientationchange',()=>{requestAnimationFrame(layoutDrivePoiPanel)},{passive:true});
 /* 경로를 따라 고정 거리의 표본점들을 조회. 화면 경계만 이용할 경우 지도 뒤쪽이나 다음 도시의 가맹점을 놓친다. */
 function drivePoiProbePoints(){
   const cur=currentRouteDistanceAt(state.currentRouteIndex||0);
