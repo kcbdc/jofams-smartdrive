@@ -4231,8 +4231,8 @@ async function tryLandscapeFullscreen(){
   document.body.classList.toggle('landscape-full',landscape);
   // 주행/AR 화면은 기존처럼 전용 레이아웃(계기판 배치 등)까지 추가로 적용한다.
   document.body.classList.toggle('landscape-drive',landscape&&inDriveOrAR);
-  if(landscape&&inDriveOrAR)await enterAppFullscreen();
-  else if(!landscape||!inDriveOrAR)exitAppFullscreen();
+  if(landscape)await enterAppFullscreen();
+  else exitAppFullscreen();
   setTimeout(()=>state.map?.resize(),120);
 }
 // 시스템 뒤로가기/제스처 등으로 브라우저가 전체화면을 강제 종료했을 때도 레이아웃 상태를 맞춰준다.
@@ -4520,12 +4520,8 @@ function startNavigation(opts={}){
   applyNightMode();setTimeout(tryLandscapeFullscreen,100);}
 function stopNavigation(){
   stopRouteSimulation({resumeGps:false});if($('laneAssistLayer'))$('laneAssistLayer').classList.add('hidden');try{closeDrivePoiPanel();clearDrivePoiMarkers();$('drivePoiStack')?.classList.add('hidden')}catch{}
-  // 길안내 종료 시 가상 라디오도 함께 자동 종료한다.
-  try{
-    const rp=radioPlayer();
-    if(rp&&!rp.paused)rp.pause();
-    state.radioPlaying=false;updateRadioUI();
-  }catch(e){console.warn('drive radio stop failed',e)}
+  // 종료 중 비동기 라디오 로딩/다음 곡 재시작도 차단한다.
+  stopNavigationRadioImmediately();
   const finishedDestination=state.destination?{...state.destination}:null;
   // 안내 종료는 어떤 부가기능 오류가 발생해도 반드시 홈 화면까지 복귀해야 한다.
   try{if(state.tripStartedAt)logTrip('finish')}catch(e){console.warn('finish log failed',e)}
@@ -6733,6 +6729,16 @@ function radioToggleMarkup(isOn){
   </svg>`;
 }
 
+function stopNavigationRadioImmediately(){
+  state.radioStopEpoch=(Number(state.radioStopEpoch)||0)+1;
+  state.radioPlaying=false;
+  state.radioDucked=false;
+  try{
+    const el=radioPlayer();
+    if(el){el.pause();el.autoplay=false;el.currentTime=0;}
+  }catch(e){console.warn('radio immediate stop failed',e)}
+  try{updateRadioUI()}catch{}
+}
 function updateRadioUI(){
   const btn=$('driveRadioBtn');if(!btn)return;
   const on=Boolean(state.radioPlaying);
@@ -6744,8 +6750,10 @@ function updateRadioUI(){
   if(icon)icon.innerHTML=radioToggleMarkup(on);
 }
 async function radioLoadIndex(index,autoplay=false){
+  const stopEpoch=Number(state.radioStopEpoch)||0;
   const el=radioPlayer();if(!el){console.warn('radio player element missing');return false}
   if(!state.radioSchedule?.length)await loadRadioSchedule();
+  if(stopEpoch!==(Number(state.radioStopEpoch)||0))return false;
   // schedule.json 로딩이 늦어도 기본 음원으로 즉시 재생 가능하게 한다.
   if(!state.radioSchedule?.length){
     state.radioSchedule=[{id:'radio-1',name:'가상 라디오',src:'/assets/radio/radio_1.mp3'}];
@@ -6761,7 +6769,10 @@ async function radioLoadIndex(index,autoplay=false){
   if(autoplay){
     try{
       await ensureRadioLoudnessNormalizer();
-      await el.play();state.radioPlaying=true;updateRadioUI();return true;
+      if(stopEpoch!==(Number(state.radioStopEpoch)||0))return false;
+      await el.play();
+      if(stopEpoch!==(Number(state.radioStopEpoch)||0)){el.pause();return false}
+      state.radioPlaying=true;updateRadioUI();return true;
     }catch(e){
       console.warn('radio autoplay blocked',e);state.radioPlaying=false;updateRadioUI();return false;
     }
@@ -6802,7 +6813,7 @@ async function initVirtualRadio(){
   await radioLoadIndex(state.radioIndex,false);
   setRadioVolume(state.radioVolume,false);setNavVolume(state.voiceVolume,false);updateRadioUI();
   const el=radioPlayer();if(el){
-    el.onended=()=>radioLoadIndex(state.radioIndex+1,true);
+    el.onended=()=>{if(state.tripStartedAt&&state.radioPlaying)radioLoadIndex(state.radioIndex+1,true)};
     el.onplay=()=>{state.radioPlaying=true;updateRadioUI()};
     el.onpause=()=>{state.radioPlaying=false;updateRadioUI()};
   }

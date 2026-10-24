@@ -4293,3 +4293,8 @@ html body #app #driveView .character-car-marker img{
   animation-delay:0s!important;
   transition-delay:0s!important;
 }
+
+/* v7.6.21.4: 추천 상점 아이콘을 경로·검색 버튼과 같은 검정색 선형 SVG로 통일 */
+html body #app #driveView #driveRecommendBtn .dangollo-recommend-symbol,
+html body #app #driveView #driveRecommendBtn .dangollo-recommend-symbol svg{display:grid!important;place-items:center!important;color:#171c23!important;background:transparent!important;width:28px!important;height:28px!important;filter:none!important;-webkit-mask:none!important;mask:none!important}
+html body #app #driveView #driveRecommendBtn .dangollo-recommend-symbol svg path{stroke:currentColor!important}
