@@ -1,11 +1,11 @@
 {
-  "name": "조팸스 내비 MVP 7.5",
-  "short_name": "조팸스 Drive",
+  "name": "단골로 | 조팸스 스마트 내비게이션",
+  "short_name": "단골로",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#f6f8fb",
-  "theme_color": "#ffffff",
+  "background_color": "#f4f8f6",
+  "theme_color": "#087a60",
   "lang": "ko-KR",
-  "description": "다임·순식·훈민 캐릭터와 함께하는 스마트 드라이브 내비게이션"
+  "description": "조팸스와 함께하는 지역상생 스마트 내비게이션"
 }
