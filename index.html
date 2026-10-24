@@ -57,7 +57,7 @@
 <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.13.3" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.17.0" />
 </head>
 <body>
   <main id="app">
@@ -67,7 +67,7 @@
     <section id="homeView" class="screen home-view">
       <header class="home-header">
         <button id="menuBtn" class="circle-btn" aria-label="메뉴"><span data-icon="menu"></span></button>
-        <b>조팸스 내비</b>
+        <b>단골로 내비</b>
         <button id="myBtn" class="circle-btn" aria-label="마이페이지"><span data-icon="user"></span></button>
       </header>
 
@@ -75,6 +75,9 @@
         <button id="homeSheetToggle" class="home-sheet-toggle" type="button" aria-label="홈 메뉴 내리기" aria-expanded="true">
           <span aria-hidden="true">−</span>
         </button>
+        <div class="dangollo-home-hero" aria-label="단골로, 가는 길이 단골이 되는 로컬 혜택 내비">
+          <img src="/assets/dangollo-home-banner.png" alt="단골로 내비. 가는 길이 단골이 되는 로컬 혜택 내비. 길안내, 경로상 가맹점, 실시간 유가" loading="eager" decoding="async" />
+        </div>
         <h1>어디로 이동할까요?</h1>
         <div class="search-box">
           <span class="search-icon" data-icon="search"></span>
@@ -820,6 +823,6 @@
 
   <script>window.__JOFAMS_BUILD__="7.6.15.0";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.15.0"></script>
+  <script type="module" src="/app.js?v=7.6.17.0"></script>
 </body>
 </html>

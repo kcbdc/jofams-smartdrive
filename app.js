@@ -5956,8 +5956,8 @@ function simulationTick(ts){
   const duration=Math.max(1,Number(state.route.duration)||1);
   if(!total)return stopRouteSimulation();
 
-  const last=Number(state.simulationLastAt)||ts;
-  const dt=Math.max(0,Math.min(.15,(ts-last)/1000));
+  const last=Number.isFinite(state.simulationLastAt)?state.simulationLastAt:ts;
+  const dt=Math.max(0,Math.min(.12,(ts-last)/1000));
   state.simulationLastAt=ts;
 
   const mult=Number(state.simulationSpeed)||1;
@@ -5983,8 +5983,16 @@ function simulationTick(ts){
       estimated:false,
       simulation:true
     };
+    // In simulated travel the route sample itself is authoritative.
+    // Avoid a second delayed interpolator chasing the sample and appearing motionless.
+    if(state.driveMarkerRaf){cancelAnimationFrame(state.driveMarkerRaf);state.driveMarkerRaf=0}
+    state.driveMarkerRenderedDistance=dist;
+    state.driveMarkerTargetDistance=dist;
+    state.driveMarkerTargetAt=Date.now();
     ensureUserMarker();
+    state.userMarker?.setLngLat([p.lng,p.lat]);
     updateDriving(false);
+    state.userMarker?.setLngLat([p.lng,p.lat]);
   // 모의주행은 항상 캐릭터 중심으로 화면을 추종한다.
   if(state.map&&state.simulationActive){
     state.userMapInteracting=false;
@@ -6041,6 +6049,10 @@ function startRouteSimulation(){
   if(!Number.isFinite(current)||current>=total-5)current=0;
   state.simulationDistance=Math.max(0,current);
   state.simulationLastAt=performance.now();
+  state.navigationStartReleased=true;
+  state.stationaryActive=false;
+  state.lastSimulationCameraAt=0;
+  if(state.driveMarkerRaf){cancelAnimationFrame(state.driveMarkerRaf);state.driveMarkerRaf=0}
   updateSimulationControls();
   closeRouteInfo();
   toast(`모의주행 ${state.simulationSpeed}×를 시작합니다.`,1500);
@@ -6116,10 +6128,12 @@ function drivePoiTabSpec(tab='fuel'){
   })[tab]||{label:'추천',summary:'추천',empty:'표시할 정보가 없습니다.',theme:'fuel'};
 }
 function drivePoiIconSvg(tab='fuel'){
-  if(tab==='fuel')return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 21V6a2 2 0 0 1 2-2h6v17"/><path d="M7 8h8"/><path d="M15 7l3 3v7a2 2 0 0 0 4 0v-4"/></svg>`;
-  if(tab==='onnuri')return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10 5.5 5h13L20 10"/><path d="M4 10h16v2a3 3 0 0 1-3 3 3 3 0 0 1-2.5-1.3A3 3 0 0 1 12 15a3 3 0 0 1-2.5-1.3A3 3 0 0 1 7 15a3 3 0 0 1-3-3v-2Z"/><path d="M6 15v4h12v-4"/><circle cx="18" cy="6" r="2" fill="currentColor" stroke="none"/></svg>`;
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10 5.5 5h13L20 10"/><path d="M4 10h16v2a3 3 0 0 1-3 3 3 3 0 0 1-2.5-1.3A3 3 0 0 1 12 15a3 3 0 0 1-2.5-1.3A3 3 0 0 1 7 15a3 3 0 0 1-3-3v-2Z"/><path d="M6 15v4h12v-4"/></svg>`;
+  const common='viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+  if(tab==='fuel')return `<svg ${common}><path d="M4 21V5.2A2.2 2.2 0 0 1 6.2 3h8.1A2.2 2.2 0 0 1 16.5 5.2V21"/><rect x="6.8" y="6.2" width="6.9" height="5.3" rx=".6"/><path d="M3 21h15M16.5 7.5l2.2 2.2V17a2 2 0 0 0 4 0v-4.6l-1.9-1.9"/></svg>`;
+  if(tab==='onnuri')return `<svg ${common}><path d="M3.5 10 5 4.8h14l1.5 5.2M3.5 10h17v2.5a2.5 2.5 0 0 1-4.5 1.5 2.5 2.5 0 0 1-4 0 2.5 2.5 0 0 1-4 0 2.5 2.5 0 0 1-4.5-1.5V10Z"/><path d="M5.5 15.2V21h13v-5.8M9.2 21v-4h5.6v4"/><path d="M16.3 5.2l1.2 1.2 2.2-2.2" stroke-width="1.65"/></svg>`;
+  return `<svg ${common}><rect x="3.5" y="4.5" width="17" height="15.5" rx="3"/><path d="M3.5 9.2h17M7 13.3h5.6M7 16.6h3.4"/><circle cx="16.2" cy="14.8" r="2.2"/><path d="M16.2 13.5v2.7M14.9 14.8h2.6" stroke-width="1.6"/></svg>`;
 }
+
 function drivePoiDistanceLabel(m){const v=Number(m);return Number.isFinite(v)?km(v):'경로상'}
 function drivePoiItemTitle(tab,item){
   if(tab==='fuel')return fuelWon(item?.price);
@@ -7744,6 +7758,15 @@ function arbitrateDrivePopups(){
 // build 7.6.11.9: fix invalid RegExp (template-literal escapes) in cameraDirectionHint that threw inside loadStaticCameraEvents and removed every official route camera; isolate per-row / post-merge errors; alert criteria aligned with map pins; Hoedeok fallback camera now actually added.
 // build 7.6.12.0: onnuri map markers no longer overlap (screen-space layout with leader lines, count bubbles, compact zone pins), zone marker opens full shop list, where-to list rows get a 'show on map' focus button.
 // build 7.6.13.3: dropped unused Cloudflare D1/Worker fetch path (kept open-data static bundles only); added general name-based stale-duplicate camera suppression (fixes 구즉세종로 남행 구간단속 종료 후 상서삼거리 중복 카메라, and similar patterns anywhere on the map, not just near section ends).
+// Independent bindings: do not let unrelated settings controls disable simulation actions.
+function bindDangolloSimulationControls(){
+  const btn=$('simulationStartBtn');
+  if(btn)btn.onclick=()=>{try{startRouteSimulation()}catch(err){console.error('[Dangollo simulation]',err);toast('모의주행을 시작하지 못했습니다. 경로를 다시 확인해 주세요.',2500)}};
+  document.querySelectorAll('[data-simulation-speed]').forEach(b=>b.onclick=()=>setSimulationSpeed(b.dataset.simulationSpeed));
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bindDangolloSimulationControls,{once:true});
+else bindDangolloSimulationControls();
+
 // build 7.6.14.0: drive UI TMAP-style recommendation rail + route-aligned fuel/local/onnuri panel; map camera pins simplified to speed-limit markers.
 
 // build 7.6.15.0: corridor probe queries, real POI marker coordinates, stale-response protection, safety-priority compact cards.
