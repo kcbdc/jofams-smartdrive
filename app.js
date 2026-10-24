@@ -2311,7 +2311,7 @@ function makeCarMarker(){
 function updateCarMarkerImage(){
   const el=state.userMarker?.getElement();if(!el)return;
   el.classList.toggle('walking-character-marker',isWalkingGuide());
-  const img=el.querySelector('img');if(img)img.src=characterGuideImage('rear');
+  const img=el.querySelector('img');if(img){const src=characterGuideImage('rear');if(!img.getAttribute('src')?.endsWith(src))img.src=src;}
 }
 function makeDestMarker(){const el=document.createElement('div');el.className='destination-pin';return new maplibregl.Marker({element:el,anchor:'bottom'})}
 function updateUserMarkerMotion(){
@@ -2325,66 +2325,41 @@ function updateUserMarkerMotion(){
   const ar=$('driveArCharacter');if(ar)ar.classList.toggle('moving',moving&&state.arCameraMode);const arMarker=$('arCharacterMarker');if(arMarker)arMarker.classList.toggle('moving',moving&&state.arRunning);
   const img=$('driveArCharacterImg');if(img)img.src=characterGuideImage('rear');
 }
+/* 단골로: 목표 GPS는 계단식으로 갱신되지만, 표시 좌표는 매 프레임 경로 위에서 이동한다. */
 function scheduleSmoothDriveMarker(){
-  if(state.driveMarkerRaf)return;
-  const frame=(ts)=>{
+  if(state.driveMarkerRaf||!state.tripStartedAt)return;
+  const frame=ts=>{
     state.driveMarkerRaf=0;
     if(!state.tripStartedAt||!state.userMarker||!state.route?.geometry?.length)return;
-    const currentSpeed=Math.max(0,Number(state.user?.speed)||0);
-    const target=Number(state.driveMarkerTargetDistance);
-    if(!Number.isFinite(target))return;
-    let rendered=Number(state.driveMarkerRenderedDistance);
-    if(!Number.isFinite(rendered))rendered=target;
-    if(!state.simulationActive&&(state.stationaryActive||currentSpeed<=0.05)){
-      // 실제 속도가 0이면 목표 거리로 끌어가지 않고 현재 렌더링 위치에 완전히 고정한다.
-      if(!Number.isFinite(rendered))rendered=Number(state.routeLockedDistance)||target;
-      state.driveMarkerRenderedDistance=rendered;
-      state.driveMarkerTargetDistance=rendered;
-      const stopped=pointAtRouteDistance(rendered);
-      if(stopped)state.userMarker.setLngLat([stopped.lng,stopped.lat]);
-      return;
-    }
-    const last=Number(state.driveMarkerFrameAt)||ts;
-    const rawDt=(ts-last)/1000;
-    const dt=Math.max(.008,Math.min(.08,rawDt));
+    const previous=Number(state.driveMarkerFrameAt)||ts;
+    const dt=Math.max(0,Math.min(.065,(ts-previous)/1000));
     state.driveMarkerFrameAt=ts;
-
-    // Exponential easing along route distance; never interpolate straight across a curve.
-    const tau=state.gpsEstimated?.34:.22;
-    const alpha=1-Math.exp(-dt/tau);
-    // GPS는 1초에 한 번 계단식으로 들어온다. 목표를 그대로 따라가면 매초 '쑥 가다가 멈추는'
-    // 움직임이 되어 달리는 중에 멈춘 것처럼 보인다. 마지막 수신 후 경과 시간만큼 현재 속도로
-    // 목표를 앞으로 연장(최대 1.6초)해서 끊김 없이 미끄러지게 한다.
-    const ageSec=Math.min(.85,Math.max(0,(Date.now()-Number(state.driveMarkerTargetAt||0))/1000));
-    const lead=(!state.simulationActive&&!state.stationaryActive&&currentSpeed>0.5&&state.driveMarkerTargetAt)?currentSpeed*ageSec:0;
-    const goal=target+lead;
-    const speed=Math.max(1.5,Number(state.user?.speed)||0);
-    let next;
-    if(rawDt>0.4){
-      // 백그라운드 복귀·터널 복귀·재탐색처럼 위치가 크게 어긋난 경우에는 밀린 구간을 몰아서 채우거나
-      // 뒤로 기어가지 않고, 실제 위치(목표)로 바로 옮긴다.
-      next=rendered; // 프레임 중단/복귀 시 순간이동 금지
-    }else{
-      next=rendered+(goal-rendered)*alpha;
-      // Forward movement is monotonic.
-      const maxStep=Math.max(.10,speed*dt*1.12+.12);
-      next=Math.min(next,rendered+maxStep);
-      // 속도 보간 때문에 실제 위치보다 조금 앞서 있을 때는 뒤로 되돌리지 않고 멈춰 기다린다(30m 이내).
-      if(goal<rendered)next=rendered;
+    const rendered=Number.isFinite(Number(state.driveMarkerRenderedDistance))?Number(state.driveMarkerRenderedDistance):0;
+    const total=Number(state.routeCumulative?.at(-1))||Infinity;
+    const target=Number.isFinite(Number(state.driveMarkerTargetDistance))?Number(state.driveMarkerTargetDistance):rendered;
+    const speed=Math.max(0,Number(state.user?.speed)||0);
+    const stationary=!state.simulationActive&&(state.stationaryActive||!state.navigationStartReleased||speed<=.2);
+    let next=rendered;
+    if(state.simulationActive){
+      // 모의주행 위치는 모의주행 루프에서 확정한다. 여기서는 움직임을 덮어쓰지 않는다.
+      next=Math.max(rendered,Math.min(total,target));
+    }else if(!stationary&&dt>0){
+      const age=Math.max(0,(Date.now()-Number(state.driveMarkerTargetAt||0))/1000);
+      // 센서/GPS 공백에서는 1.2초 이상 장기 외삽하지 않는다.
+      const predicted=Math.max(target,target+speed*Math.min(1.2,age));
+      const gap=Math.max(0,predicted-rendered);
+      // 초당 GPS 보정 목표로 끌려가는 급가속/급정지를 완화한다.
+      const travelSpeed=Math.min(speed*1.16+1.0,Math.max(speed*.70,gap*1.8));
+      next=Math.min(total,rendered+Math.min(gap,travelSpeed*dt));
     }
-
-    const p=pointAtRouteDistance(next);
-    if(p){
-      state.driveMarkerRenderedDistance=next;
-      state.userMarker.setLngLat([p.lng,p.lat]);
+    if(next>=rendered){
+      const pos=pointAtRouteDistance(next);
+      if(pos){state.driveMarkerRenderedDistance=next;state.userMarker.setLngLat([pos.lng,pos.lat]);}
     }
-    if(Math.abs(goal-next)>.12||lead>0){
-      state.driveMarkerRaf=requestAnimationFrame(frame);
-    }else{
-      state.driveMarkerRenderedDistance=next;
-      const q=pointAtRouteDistance(next);if(q)state.userMarker.setLngLat([q.lng,q.lat]);
-    }
+    // 주행 중에는 다음 GPS 프레임까지 계속 갱신한다. 정차 시에는 프레임을 중단해 전진 드리프트 방지.
+    if(state.simulationActive||(!stationary&&speed>.2))state.driveMarkerRaf=requestAnimationFrame(frame);
   };
+  state.driveMarkerFrameAt=0;
   state.driveMarkerRaf=requestAnimationFrame(frame);
 }
 function ensureUserMarker(){
@@ -4179,7 +4154,7 @@ function openTripHistory(){
 function deleteTripHistoryAt(index){if(!Number.isInteger(index)||index<0||index>=state.tripHistory.length)return;state.tripHistory.splice(index,1);saveTripHistory();updateTripHistorySummary();openTripHistory();toast('주행기록을 삭제했습니다.')}
 function clearTripHistory(){if(!(state.tripHistory||[]).length)return;if(!confirm('저장된 주행기록을 모두 삭제할까요?'))return;state.tripHistory=[];saveTripHistory();updateTripHistorySummary();openTripHistory();toast('주행기록을 모두 삭제했습니다.')}
 
-function openAppInfo(){openInfoModal('앱정보','<div class="info-card"><h3>조팸스 내비</h3><p><b>버전</b> 7.5.7.7</p><p>2D 컬러 지도, 실시간 교통상태, AR 안내, 단속카메라·스쿨존·사고·공사 안내, 다른시간 출발 AI 소요시간 예측과 다임·순식·훈민 캐릭터 음성 안내를 제공합니다.</p></div>')}
+function openAppInfo(){openInfoModal('앱정보','<div class="info-card"><h3>단골로 내비</h3><p><b>버전</b> 7.5.7.7</p><p>2D 컬러 지도, 실시간 교통상태, AR 안내, 단속카메라·스쿨존·사고·공사 안내, 다른시간 출발 AI 소요시간 예측과 다임·순식·훈민 캐릭터 음성 안내를 제공합니다.</p></div>')}
 async function openPrivacy(){const c=await loadPublicContent();openInfoModal('개인정보처리방침',`<div class="info-card privacy-copy">${escapeHtml(c.privacy||'개인정보처리방침이 준비 중입니다.').replace(/\n/g,'<br>')}</div>`)}
 async function logTrip(event){try{await fetch('/api/trip',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({event,destination:state.destination?.name||null,distance:state.route?.distance||null,duration:state.tripStartedAt?Math.round((Date.now()-state.tripStartedAt)/1000):null,character:state.character,provider:state.route?.provider||null,guideType:null})})}catch{}}
 const NOTICE_ITEMS=[
@@ -4471,7 +4446,13 @@ function startNavigation(opts={}){
   const startM=startMatch&&Number(startMatch.distance)<=80?Math.max(0,Number(startMatch.routeDistance)||0):0;
   state.driveMarkerRenderedDistance=startM;state.driveMarkerTargetDistance=startM;state.driveMarkerTargetAt=Date.now();state.driveMarkerFrameAt=0;
   if(state.driveMarkerRaf){cancelAnimationFrame(state.driveMarkerRaf);state.driveMarkerRaf=0}
-  if(state.userMarker&&state.route?.geometry?.length){const start=pointAtRouteDistance(startM);if(start)state.userMarker.setLngLat([start.lng,start.lat])}
+  if(state.route?.geometry?.length){
+    const start=pointAtRouteDistance(startM);
+    if(start){
+      if(!state.userMarker&&state.map&&pointValid(state.user))state.userMarker=makeCarMarker().setLngLat([start.lng,start.lat]).addTo(state.map);
+      else state.userMarker?.setLngLat([start.lng,start.lat]);
+    }
+  }
   state.navigationStartAnchor=pointValid(state.user)?{lat:Number(state.user.lat),lng:Number(state.user.lng),routeDistance:Number(state.user.routeDistance)}:null;
   state.navigationStartReleased=false;state.navigationMoveConfirmHits=0;state.navigationStartFixed=false;state.departSpeedSince=0;state.departMoveSince=0;
   state.stationaryActive=true;
@@ -7240,7 +7221,7 @@ function renderProfile(){
     if(photo)photo.src=u.photoURL||characterDefs[state.character].avatar;
     wrap?.classList.toggle('google-photo',Boolean(u.photoURL));
   }else{
-    if(name)name.textContent='조팸스 드라이버';
+    if(name)name.textContent='단골로 드라이버';
     if(email)email.textContent='Google 로그인으로 동기화할 수 있어요.';
     if(photo)photo.src=characterDefs[state.character].avatar;
     wrap?.classList.remove('google-photo');
@@ -7790,13 +7771,13 @@ function openWaypointSaved(){
     e.stopPropagation();deleteSavedWaypointCourse(b.dataset.menuCourseDelete);openWaypointSaved();
   });
 }
-async function openAppPrivacy(){const c=await loadPublicContent();openInfoModal('앱정보 / 개인정보처리방침',`<div class="info-card privacy-copy"><h3>조팸스 내비</h3><p>${escapeHtml(c.appInfo||'앱정보가 준비 중입니다.').replace(/\n/g,'<br>')}</p><hr><p>${escapeHtml(c.privacy||'개인정보처리방침이 준비 중입니다.').replace(/\n/g,'<br>')}</p></div>`)}
+async function openAppPrivacy(){const c=await loadPublicContent();openInfoModal('앱정보 / 개인정보처리방침',`<div class="info-card privacy-copy"><h3>단골로 내비</h3><p>${escapeHtml(c.appInfo||'앱정보가 준비 중입니다.').replace(/\n/g,'<br>')}</p><hr><p>${escapeHtml(c.privacy||'개인정보처리방침이 준비 중입니다.').replace(/\n/g,'<br>')}</p></div>`)}
 function openDriveMenu(){$('driveMenu').classList.remove('hidden')}
 function closeDriveMenu(){$('driveMenu').classList.add('hidden')}
 function openMy(){closeBottomPanels('my');$('myModal').classList.remove('hidden');renderProfile();syncCharacterUI();updateVolumeUI();updateTripHistorySummary()}
 function closeMy(){$('myModal').classList.add('hidden')}
 function toggleSettingPanel(buttonId,panelId){const btn=$(buttonId),panel=$(panelId),open=panel.classList.contains('hidden');panel.classList.toggle('hidden',!open);btn.setAttribute('aria-expanded',String(open));if(open)setTimeout(()=>panel.scrollIntoView({behavior:'smooth',block:'nearest'}),50)}
-async function shareArrival(){if(!state.destination)return;const text=`'${state.destination.name}' 이동 중입니다. 예상 도착 ${$('arrivalTime').textContent.replace('도착 ','')}`;try{if(navigator.share)await navigator.share({title:'조팸스 내비',text});else await navigator.clipboard.writeText(text),toast('도착 정보를 복사했습니다.')}catch{}}
+async function shareArrival(){if(!state.destination)return;const text=`'${state.destination.name}' 이동 중입니다. 예상 도착 ${$('arrivalTime').textContent.replace('도착 ','')}`;try{if(navigator.share)await navigator.share({title:'단골로 내비',text});else await navigator.clipboard.writeText(text),toast('도착 정보를 복사했습니다.')}catch{}}
 
 let criticalUiBound=false;
 function bindCriticalUI(){

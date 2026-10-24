@@ -7,7 +7,7 @@
   <meta http-equiv="Expires" content="0" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
   <meta name="theme-color" content="#ffffff" />
-  <meta name="description" content="다임·순식·훈민과 함께하는 조팸스 내비" />
+  <meta name="description" content="단골로: 길안내와 경로상 지역사랑·온누리 가맹점, 실시간 유가를 함께" />
 
 
 
@@ -18,14 +18,14 @@
 
 
 
-<title>조팸스 내비</title>
+<title>단골로 | 가는 길이 단골이 되는 내비</title>
   <link rel="canonical" href="https://jofams-smartdrive.pages.dev/" />
   <link rel="image_src" href="https://jofams-smartdrive.pages.dev/jofams-kakao-share-7669.jpg" />
   <meta name="robots" content="index,follow,max-image-preview:large" />
   <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="조팸스 내비" />
+  <meta property="og:site_name" content="단골로 내비" />
   <meta property="og:url" content="https://jofams-smartdrive.pages.dev/" />
-  <meta property="og:title" content="조팸스 내비 | 빠르고 똑똑한 스마트 길안내" />
+  <meta property="og:title" content="단골로 | 가는 길이 단골이 되는 로컬 혜택 내비" />
   <meta property="og:description" content="정확한 길안내·안전운전·실시간 지역정보를 한 번에" />
   <meta property="og:image" content="https://jofams-smartdrive.pages.dev/jofams-kakao-share-7669.jpg" />
   <meta property="og:image:url" content="https://jofams-smartdrive.pages.dev/jofams-kakao-share-7669.jpg" />
@@ -33,10 +33,10 @@
   <meta property="og:image:type" content="image/jpeg" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="조팸스 내비 스마트 길안내" />
+  <meta property="og:image:alt" content="단골로 지역상생 길안내" />
   <meta itemprop="image" content="https://jofams-smartdrive.pages.dev/jofams-kakao-share-7669.jpg" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="조팸스 내비" />
+  <meta name="twitter:title" content="단골로 내비" />
   <meta name="twitter:description" content="빠르고 똑똑한 스마트 길안내" />
   <meta name="twitter:image" content="https://jofams-smartdrive.pages.dev/jofams-kakao-share-7669.jpg" />
 
@@ -57,7 +57,7 @@
 <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.21.4" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.21.5" />
 </head>
 <body>
   <main id="app">
@@ -78,10 +78,10 @@
         <div class="dangollo-home-hero" aria-label="단골로, 가는 길이 단골이 되는 로컬 혜택 내비">
           <img src="/assets/dangollo-home-banner.png" alt="단골로 내비. 가는 길이 단골이 되는 로컬 혜택 내비. 길안내, 경로상 가맹점, 실시간 유가" loading="eager" decoding="async" />
         </div>
-        <h1>어디로 이동할까요?</h1>
+        <h1>가는 길에, 우리 동네 혜택까지</h1>
         <div class="search-box">
           <span class="search-icon" data-icon="search"></span>
-          <input id="destinationInput" autocomplete="off" placeholder="장소, 주소 검색" />
+          <input id="destinationInput" autocomplete="off" placeholder="목적지를 검색하고 경로상 혜택도 찾아보세요" />
           <button id="searchBtn" aria-label="검색"><span data-icon="arrow-right"></span></button>
         </div>
         <div id="searchResults" class="search-results hidden"></div>
@@ -105,7 +105,7 @@
           <div id="komscoShortsScroll" class="komsco-shorts-scroll"></div>
         </section>
         <section class="home-block home-facility-block">
-          <div class="block-title"><b>생활편의시설</b><span>현재 위치에서 가까운 순</span></div>
+          <div class="block-title"><b>내 주변 편의시설</b><span>길안내와 함께 필요한 곳을 찾아요</span></div>
           <div class="home-facility-tabs" role="tablist" aria-label="생활편의시설">
             <button type="button" class="active" data-home-facility="주유소">주유소</button>
             <button type="button" data-home-facility="마트">마트</button>
@@ -144,7 +144,7 @@
         </section>
 
         <section class="home-block guide-block">
-          <div class="block-title"><b>조팸스 가이드 선택</b><span>선택한 가이드가 차량으로 길을 안내해요</span></div>
+          <div class="block-title"><b>단골로 주행 파트너</b><span>다임·순식·훈민과 함께하는 길안내</span></div>
           <div class="guide-grid">
             <button class="guide-card active" data-character="daim"><img src="/assets/daim_car.png" alt="다임 자동차"><span><b>다임</b><small>정확하고 차분하게</small></span></button>
             <button class="guide-card" data-character="sunsik"><img src="/assets/sunsik_car.png" alt="순식 자동차"><span><b>순식</b><small>교통 흐름을 빠르게</small></span></button>
@@ -458,7 +458,7 @@
         </header>
         <div class="profile-card">
           <div class="profile-photo"><img id="profilePhoto" src="/assets/daim.png" alt="프로필"></div>
-          <div><b id="profileName">조팸스 드라이버</b><small id="profileEmail">Google 로그인으로 동기화할 수 있어요.</small></div>
+          <div><b id="profileName">단골로 드라이버</b><small id="profileEmail">Google 로그인으로 동기화할 수 있어요.</small></div>
           <button id="googleLoginBtn">Google 로그인</button>
           <button id="logoutBtn" class="hidden">로그아웃</button>
         </div>
@@ -795,7 +795,7 @@
     <div id="permissionGate" class="permission-gate hidden" role="dialog" aria-modal="true" aria-labelledby="permissionTitle">
       <section class="permission-card">
         <div class="permission-logo"><span data-icon="car"></span></div>
-        <h2 id="permissionTitle">조팸스 내비 권한 설정</h2>
+        <h2 id="permissionTitle">단골로 위치·카메라 권한 설정</h2>
         <p>정확한 길안내와 AR 안내를 위해 위치와 카메라 권한이 필요합니다.</p>
         <div class="permission-actions">
           <button id="allowLocationBtn" type="button"><span data-icon="location"></span><span><b>위치 허용</b><small id="locationPermissionState">현재 위치를 길찾기에 사용합니다.</small></span></button>
@@ -824,6 +824,6 @@
 
   <script>window.__JOFAMS_BUILD__="7.6.15.0";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.21.4"></script>
+  <script type="module" src="/app.js?v=7.6.21.5"></script>
 </body>
 </html>

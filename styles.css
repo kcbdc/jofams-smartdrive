@@ -4298,3 +4298,17 @@ html body #app #driveView .character-car-marker img{
 html body #app #driveView #driveRecommendBtn .dangollo-recommend-symbol,
 html body #app #driveView #driveRecommendBtn .dangollo-recommend-symbol svg{display:grid!important;place-items:center!important;color:#171c23!important;background:transparent!important;width:28px!important;height:28px!important;filter:none!important;-webkit-mask:none!important;mask:none!important}
 html body #app #driveView #driveRecommendBtn .dangollo-recommend-symbol svg path{stroke:currentColor!important}
+
+/* 단골로 7.6.21.5 — 지역상생 내비 공통 브랜드 컬러 */
+:root{--dangollo-green:#087b60;--dangollo-mint:#d7f8e8;--dangollo-deep:#0d2534}
+#homeView .home-header{background:linear-gradient(120deg,rgba(4,82,68,.98),rgba(5,123,94,.96))!important;color:#fff!important}
+#homeView .home-header>b{letter-spacing:-.045em;font-weight:900!important}
+#homeView .home-header button{color:inherit!important}
+#homeView .home-sheet h1{color:#064d42;font-weight:900;letter-spacing:-.05em}
+#homeView .search-box:focus-within{border-color:#0a9b76!important;box-shadow:0 0 0 3px rgba(10,155,118,.13)!important}
+#homeView .block-title b{color:#086e58}
+#homeView .guide-card.active{border-color:#10a37d!important;box-shadow:0 0 0 2px rgba(16,163,125,.13)!important}
+#routeView .route-start-actions .primary-btn,#routeView .route-start-actions button.primary{background:#087b60!important}
+#driveView .drive-poi-tabs button.active{background:#087b60!important}
+#driveView .drive-poi-card.local .poi-icon{background:#087b60!important}
+@media(prefers-reduced-motion:reduce){#homeView .guide-card{transition:none!important}}
