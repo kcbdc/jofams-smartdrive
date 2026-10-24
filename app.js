@@ -110,14 +110,14 @@ function buildCumulative(route){const g=route?.geometry||[],arr=new Array(g.leng
 /* 가장 최근에 수신한 원시 위치(캐릭터 표시용 state.user는 출발 전 흔들림 방지로 갱신이 지연될 수 있다). */
 function currentOriginPoint(){
   const u=pointValid(state.user)?state.user:null,r=state.lastRawFix;
-  const rawFresh=r&&pointValid(r)&&Date.now()-Number(r.at||0)<=15000&&(Number(r.accuracy)||0)<=120;
+  const rawFresh=r&&pointValid(r)&&Date.now()-Number(r.at||0)<=30000&&Number.isFinite(Number(r.accuracy))&&Number(r.accuracy)>0&&Number(r.accuracy)<=60;
   if(rawFresh&&(!u||Number(r.at)>=Number(state.lastGpsTickAt||0)-50))return{...(u||{}),lat:Number(r.lat),lng:Number(r.lng),accuracy:r.accuracy,heading:u?.heading};
   return u;
 }
-async function refreshCurrentLocation({maxAgeMs=6000,timeoutMs=2200}={}){
+async function refreshCurrentLocation({maxAgeMs=30000,timeoutMs=2200}={}){
   // 7.6.21: 네이티브/브라우저 위치 요청을 동시에 보내 가장 먼저 도착한 값을 쓴다(기존: 순차 대기로 최대 6초+).
-  // 최근 15초 이내·정확도 60m 이하 위치가 이미 있으면 기다리지 않는다.
-  const freshEnough=()=>{const r=state.lastRawFix;return r&&pointValid(r)&&Date.now()-Number(r.at||0)<=maxAgeMs&&(Number(r.accuracy)||0)<=60};
+  // 최근 30초 이내·정확도 60m 이하 원시 GPS가 있으면 새로운 위치 요청 없이 바로 사용한다.
+  const freshEnough=()=>{const r=state.lastRawFix;return r&&pointValid(r)&&Date.now()-Number(r.at||0)<=maxAgeMs&&Number.isFinite(Number(r.accuracy))&&Number(r.accuracy)>0&&Number(r.accuracy)<=60};
   if(freshEnough())return currentOriginPoint();
   const t0=Date.now(),tasks=[];
   if(nativeBridgeAvailable()){
@@ -4435,7 +4435,7 @@ async function refreshOriginThenStart(){
   if(state.startingFresh)return;state.startingFresh=true;cancelAutoStart();
   try{
     toast('현재 위치를 확인하는 중...',1200);
-    await refreshCurrentLocation({maxAgeMs:5000,timeoutMs:2200});
+    await refreshCurrentLocation({maxAgeMs:30000,timeoutMs:2200});
     const u=currentOriginPoint(),ro=state.routeOriginUsed;
     if(u&&(!ro||hav(ro.lat,ro.lng,u.lat,u.lng)>80)){
       state.origin={...u,name:'내 위치',address:'현재 GPS 위치'};state.originMode='current';updateOriginUI();
@@ -4449,7 +4449,7 @@ function startNavigation(opts={}){
   // 출발 지점이 오래된 위치(즐겨찾기 선택 당시 등)였다면 지금 위치로 경로를 다시 계산한 뒤 시작한다.
   if(!opts?.fresh&&!state.tripStartedAt&&state.originMode==='current'&&state.route&&state.destination){
     const ro=state.routeOriginUsed,u=currentOriginPoint();
-    const stale=!u||Date.now()-Number(state.lastRawFix?.at||0)>20000;
+    const raw=state.lastRawFix;const stale=!u||!pointValid(raw)||Date.now()-Number(raw.at||0)>30000||!(Number(raw.accuracy)>0&&Number(raw.accuracy)<=60);
     const far=ro&&u&&hav(ro.lat,ro.lng,u.lat,u.lng)>80;
     if(stale||far){
       // 전체화면/센서 권한은 사용자 제스처 안에서만 요청할 수 있으므로 비동기 작업 전에 먼저 요청한다.
