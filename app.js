@@ -2318,24 +2318,24 @@ function scheduleSmoothDriveMarker(){
     state.driveMarkerFrameAt=ts;
 
     // Exponential easing along route distance; never interpolate straight across a curve.
-    const tau=state.gpsEstimated?.75:.55;
+    const tau=state.gpsEstimated?.34:.22;
     const alpha=1-Math.exp(-dt/tau);
     // GPS는 1초에 한 번 계단식으로 들어온다. 목표를 그대로 따라가면 매초 '쑥 가다가 멈추는'
     // 움직임이 되어 달리는 중에 멈춘 것처럼 보인다. 마지막 수신 후 경과 시간만큼 현재 속도로
     // 목표를 앞으로 연장(최대 1.6초)해서 끊김 없이 미끄러지게 한다.
-    const ageSec=Math.min(.55,Math.max(0,(Date.now()-Number(state.driveMarkerTargetAt||0))/1000));
+    const ageSec=Math.min(1.6,Math.max(0,(Date.now()-Number(state.driveMarkerTargetAt||0))/1000));
     const lead=(!state.simulationActive&&!state.stationaryActive&&currentSpeed>0.5&&state.driveMarkerTargetAt)?currentSpeed*ageSec:0;
     const goal=target+lead;
     const speed=Math.max(1.5,Number(state.user?.speed)||0);
     let next;
-    if(rawDt>2.5 && Math.abs(goal-rendered)>120){
+    if(rawDt>0.4){
       // 백그라운드 복귀·터널 복귀·재탐색처럼 위치가 크게 어긋난 경우에는 밀린 구간을 몰아서 채우거나
       // 뒤로 기어가지 않고, 실제 위치(목표)로 바로 옮긴다.
-      next=target;
+      next=rendered; // 프레임 중단/복귀 시 순간이동 금지
     }else{
       next=rendered+(goal-rendered)*alpha;
       // Forward movement is monotonic.
-      const maxStep=Math.max(.20,speed*dt*1.22+.12);
+      const maxStep=Math.max(.20,speed*dt*1.25+.35);
       next=Math.min(next,rendered+maxStep);
       // 속도 보간 때문에 실제 위치보다 조금 앞서 있을 때는 뒤로 되돌리지 않고 멈춰 기다린다(30m 이내).
       if(goal<rendered)next=rendered;
@@ -2368,7 +2368,8 @@ function ensureUserMarker(){
     }
   }
   if(!state.userMarker){
-    state.userMarker=makeCarMarker().setLngLat([state.user.lng,state.user.lat]).addTo(state.map);
+    const initial=state.tripStartedAt&&state.route?.geometry?.length?pointAtRouteDistance(Number(state.driveMarkerRenderedDistance)||0):null;
+    state.userMarker=makeCarMarker().setLngLat(initial?[initial.lng,initial.lat]:[state.user.lng,state.user.lat]).addTo(state.map);
     {const rd0=finiteOrNull(state.user.routeDistance);if(rd0!=null)state.driveMarkerRenderedDistance=rd0;}
   }
   if(state.tripStartedAt&&state.route?.geometry?.length&&finiteOrNull(state.user.routeDistance)!=null){
@@ -4307,17 +4308,9 @@ function startNavigation(opts={}){
   document.querySelectorAll('.maplibregl-user-location-dot,.maplibregl-user-location-accuracy-circle,.maplibregl-user-location-dot-stale,.destination-pin,.origin-pin').forEach(el=>{try{el.style.display='none'}catch{}});
   if((state.waypoints||[]).filter(pointValid).length)saveCurrentWaypointCourse();if(!state.route||!state.destination)return;cancelAutoStart();state.preTripAnchor=null;state.tripStartedAt=Date.now();
   state.navigationStartAt=state.tripStartedAt;
-  // Navigation entry: put the marker at the actual route origin before any GPS animation.
-  const routeStart=state.route?.geometry?.[0];
-  if(routeStart&&Number.isFinite(Number(routeStart[0]))&&Number.isFinite(Number(routeStart[1]))){
-    if(!state.user)state.user={};
-    state.user.lng=Number(routeStart[0]);state.user.lat=Number(routeStart[1]);
-    state.user.routeDistance=0;state.user.routeIndex=0;state.user.speed=0;
-    state.driveMarkerRenderedDistance=0;state.driveMarkerTargetDistance=0;
-    state.driveMarkerTargetAt=Date.now();state.driveMarkerFrameAt=0;
-    if(state.driveMarkerRaf){cancelAnimationFrame(state.driveMarkerRaf);state.driveMarkerRaf=0}
-    if(state.userMarker)state.userMarker.setLngLat([state.user.lng,state.user.lat]);
-  }
+  state.driveMarkerRenderedDistance=0;state.driveMarkerTargetDistance=0;state.driveMarkerTargetAt=Date.now();state.driveMarkerFrameAt=0;
+  if(state.driveMarkerRaf){cancelAnimationFrame(state.driveMarkerRaf);state.driveMarkerRaf=0}
+  if(state.userMarker&&state.route?.geometry?.length){const start=pointAtRouteDistance(0);if(start)state.userMarker.setLngLat([start.lng,start.lat])}
   state.navigationStartAnchor=pointValid(state.user)?{lat:Number(state.user.lat),lng:Number(state.user.lng),routeDistance:Number(state.user.routeDistance)}:null;
   state.navigationStartReleased=false;state.navigationMoveConfirmHits=0;state.navigationStartFixed=false;state.departSpeedSince=0;state.departMoveSince=0;
   state.stationaryActive=true;
@@ -5436,7 +5429,7 @@ function renderCameraClusterMarkers(items){
         const marker=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map);
         const markerEl=marker.getElement?.();
         if(markerEl){
-          markerEl.style.zIndex='3';
+          markerEl.style.zIndex='120';
           markerEl.style.visibility='visible';
           markerEl.style.opacity='1';
           markerEl.style.pointerEvents='none';
@@ -5472,7 +5465,7 @@ function routeSnappedCameraItems(items){
     let idx=Number(e.routeIndex),srcDist=Number(e.routeMatchDistance)||0,exact=null;
     // 1순위: 이미 공식 카메라 로딩 단계에서 확정한 경로 투영값을 그대로 사용한다.
     // 다시 60m 필터를 걸면 실제 카메라가 전부 사라질 수 있다.
-    if(e.snapLng!=null&&e.snapLat!=null&&Number.isFinite(Number(e.snapLng))&&Number.isFinite(Number(e.snapLat))&&Number.isFinite(Number(e.routeDistance))){
+    if(e.snapLng!=null&&e.snapLat!=null&&e.routeDistance!=null&&Number.isFinite(Number(e.snapLng))&&Number.isFinite(Number(e.snapLat))&&Number.isFinite(Number(e.routeDistance))){
       exact={lng:Number(e.snapLng),lat:Number(e.snapLat),m:Number(e.routeDistance)};
     }else if(e.routeDistance!=null&&Number.isFinite(Number(e.routeDistance))&&Number.isFinite(idx)){
       const p=pointAtRouteDistance(Number(e.routeDistance));
@@ -5484,7 +5477,7 @@ function routeSnappedCameraItems(items){
         idx=Number(rematch.index);srcDist=Number(rematch.distance)||0;exact={lng:rematch.lng,lat:rematch.lat,m:Number(rematch.routeDistance)};
       }
     }
-    if(exact&&Number.isFinite(exact.m)){
+    if(!Number.isFinite(idx)&&exact&&Number.isFinite(exact.m)){
       const p=pointAtRouteDistance(exact.m);if(p)idx=Number(p.index);
     }
     if(!Number.isFinite(idx))continue;
@@ -5553,12 +5546,13 @@ function renderSafetyMarkers(){
         const marker=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map);
         const markerEl=marker.getElement?.();
         if(markerEl){
-          markerEl.style.zIndex='3';
+          markerEl.style.zIndex='120';
           markerEl.style.visibility='visible';
           markerEl.style.opacity='1';
           markerEl.style.pointerEvents='none';
         }
         marker.__rd=Number(e.__routeM);
+        marker.getElement()?.style.setProperty('z-index','120','important');
         state.safetyMarkers.push(marker);
       }catch{}
     }
