@@ -57,7 +57,7 @@
 <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.25.5" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.25.6" />
 </head>
 <body>
   <main id="app">
@@ -215,6 +215,10 @@
         <div id="routePlanEta" class="route-plan-eta"></div>
         <div id="savedWaypointCourses" class="saved-waypoint-courses hidden"></div>
         <div id="routeCards" class="route-cards"></div>
+        <section id="routeAiCompareBox" class="route-ai-compare" aria-label="AI 경로 비교">
+          <div class="route-ai-actions"><label for="routeAiModel">AI 경로 비교</label><select id="routeAiModel" aria-label="경로 비교 모델"><option value="llama">Llama</option><option value="gemma">Gemma</option></select><button id="routeAiCompareBtn" type="button">세 경로 AI 비교</button></div>
+          <p id="routeAiCompareResult" class="route-ai-answer" role="status" aria-live="polite" hidden></p>
+        </section>
         <section id="planningPoiSuggestions" class="planning-poi-suggestions hidden" aria-label="가는 길에 들를 가맹점"></section>
       </div>
       <div class="route-start-dock" aria-label="길안내 시작 영역">
@@ -314,6 +318,13 @@
             <button type="button" data-drive-poi-tab="onnuri">온누리</button>
             <button type="button" data-drive-poi-tab="fuel">주유소</button>
           </div>
+          <section id="driveAiRecommendBox" class="drive-ai-recommend-box" aria-label="Cloudflare 무료 AI 추천 설명">
+            <div class="drive-ai-controls"><label for="driveAiModel">추천 설명 모델</label>
+              <select id="driveAiModel" aria-label="AI 모델 선택"><option value="llama">Llama 3.1 8B</option><option value="gemma">Gemma 4 26B</option></select>
+              <button id="driveAiExplainBtn" type="button">AI 추천 설명</button></div>
+            <p class="drive-ai-note">Cloudflare Workers AI · 실제 조회한 후보만 설명 · 사용량 한도 내 무료</p>
+            <div id="driveAiResult" class="drive-ai-result" aria-live="polite" hidden></div>
+          </section>
           <div id="drivePoiPanelBody" class="drive-poi-panel-body"></div>
         </div>
       </section>
@@ -828,6 +839,6 @@
 
   <script>window.__JOFAMS_BUILD__="7.6.23.8";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.25.5"></script>
+  <script type="module" src="/app.js?v=7.6.25.6"></script>
 </body>
 </html>

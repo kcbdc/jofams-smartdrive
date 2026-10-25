@@ -3992,32 +3992,6 @@ function planningReason(x,prelim){
   if(x.kind==='fuel')return `${x.saving>0?`주변보다 L당 약 ${x.saving}원 저렴 · `:'후보 중 가격 우수 · '}${fuelWon(x.price)} · ${tail}`;
   return `${x.label}상품권 사용 가능 · ${tail}`;
 }
-// LLM is advisory only. Numeric scoring and routing remain deterministic.
-const dangolloAiNarrations=new Map();
-async function fetchDangolloAiNarration(facts, fallback){
-  const key=JSON.stringify(facts);
-  if(dangolloAiNarrations.has(key))return dangolloAiNarrations.get(key);
-  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),4500);
-  try{
-    const model=localStorage.getItem('dangollo_ai_model')==='gemma'?'gemma':'llama';
-    const response=await fetch('/api/ai/narrate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model,facts}),signal:controller.signal});
-    if(!response.ok)throw new Error('AI unavailable');
-    const data=await response.json();
-    if(!data.ok||!data.text)throw new Error('AI empty');
-    dangolloAiNarrations.set(key,data.text);return data.text;
-  }catch{return fallback}finally{clearTimeout(timeout)}
-}
-function enhancePlanningAiNarrations(rows){
-  const root=$('planningPoiSuggestions');if(!root||!rows?.length)return;
-  rows.slice(0,3).forEach((x,i)=>{
-    const facts={kind:x.kind,label:x.label,name:x.name||x.market||'',distanceM:Math.round(Number(x.offset)||0),detourMin:Math.max(1,Math.round((Number(x.offset)||0)*2/8/60)),price:Number(x.price)||0,savingPerLiter:Number(x.saving)||0};
-    const fallback=planningReason(x,false);
-    fetchDangolloAiNarration(facts,fallback).then(text=>{
-      const node=root.querySelector(`[data-planning-poi="${i}"] small`);
-      if(node && node.closest('button')?.querySelector('strong')?.textContent===(x.name||x.market||x.label))node.textContent=text;
-    });
-  });
-}
 function renderPlanningPoiSuggestions(){
   const root=$('planningPoiSuggestions');if(!root)return;
   if(state.tripStartedAt||state.routeMode==='walk'){root.classList.add('hidden');return}
@@ -4036,7 +4010,6 @@ function renderPlanningPoiSuggestions(){
   const head=`<header><b><i class="ai-badge">AI 추천</i> 가는 길에 들르기 좋은 곳</b><small>${sub}</small></header>`;
   if(!rows.length){root.innerHTML=head+'<div class="planning-poi-skeleton"><i></i><i></i><i></i></div>';return}
   root.innerHTML=head+rows.map((x,i)=>`<button type="button" class="planning-poi-entry ${x.kind}" data-planning-poi="${i}"><div class="pp-top"><strong>${escapeHtml(x.name||x.market||x.label)}</strong><em>적합도 ${x.score}</em></div><small>${escapeHtml(planningReason(x,!useRoute))}</small><span>경유지로 추가 →</span></button>`).join('');
-  enhancePlanningAiNarrations(rows);
   root.querySelectorAll('[data-planning-poi]').forEach(b=>b.onclick=()=>{
     const x=rows[Number(b.dataset.planningPoi)];if(!x)return;
     const pt=normalizedPlace({name:x.name||x.market||x.label,address:x.address||x.matchedAddress||'',lat:x.lat,lng:x.lng});
@@ -6668,6 +6641,42 @@ function drivePoiEntryButtonHtml(tab,item,index){
     <span class="entry-right"><strong>${escapeHtml(drivePoiDistanceLabel(item.__aheadM,item))}</strong>${meta.length?`<small>${meta.join(' · ')}</small>`:''}</span>
   </button>`;
 }
+/* Cloudflare Workers AI: opt-in explanation only; route calculation and merchant ranking remain deterministic. */
+let driveAiInFlight=false;
+function initDriveAiRecommendation(){
+  const model=$('driveAiModel'),button=$('driveAiExplainBtn');
+  if(!model||!button)return;
+  try{const saved=localStorage.getItem('dangollo.workerAiModel');if(['llama','gemma'].includes(saved))model.value=saved}catch{}
+  model.addEventListener('change',()=>{try{localStorage.setItem('dangollo.workerAiModel',model.value)}catch{}});
+  document.querySelectorAll('[data-drive-poi-tab]').forEach(tab=>tab.addEventListener('click',()=>{const result=$('driveAiResult');if(result){result.hidden=true;result.textContent=''}}));
+  button.addEventListener('click',runDriveAiExplanation);
+}
+async function runDriveAiExplanation(){
+  if(driveAiInFlight)return;
+  const output=$('driveAiResult'),button=$('driveAiExplainBtn');if(!output||!button)return;
+  const category=state.drivePoiTab||'local';
+  const candidates=(state.drivePoiData?.[category]||[]).slice(0,6).map(x=>({
+    name:String(x.name||x.market||'가맹점').slice(0,72),
+    category:category==='fuel'?'주유소':category==='onnuri'?'온누리':'지역사랑',
+    distanceLabel:String(drivePoiDistanceLabel(x.__aheadM,x)).slice(0,48),
+    priceLabel:category==='fuel'?String(fuelWon(x.price)):'',
+    description:String(drivePoiItemSubtitle(category,x)).slice(0,120)
+  }));
+  output.hidden=false;output.textContent='';
+  if(!candidates.length){output.textContent='추천 후보를 먼저 조회해 주세요.';return}
+  driveAiInFlight=true;button.disabled=true;button.textContent='AI 설명 생성 중';
+  try{
+    const ctrl=new AbortController();const timeout=setTimeout(()=>ctrl.abort(),18000);
+    let res,body;
+    try{
+      res=await fetch('/api/ai-recommend',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:$('driveAiModel')?.value||'llama',category,destination:String(state.destination?.name||'').slice(0,100),candidates}),signal:ctrl.signal});
+      body=await res.json();
+    }finally{clearTimeout(timeout)}
+    if(!res.ok||!body?.ok)throw new Error(body?.message||'Cloudflare AI 연결을 확인해 주세요.');
+    output.textContent=String(body.answer||''); // no untrusted HTML rendering
+  }catch(err){output.textContent=err?.name==='AbortError'?'AI 응답 시간이 초과됐습니다. 잠시 후 다시 시도해 주세요.':String(err.message||'AI 추천 설명을 불러오지 못했습니다.');}
+  finally{driveAiInFlight=false;button.disabled=false;button.textContent='AI 추천 설명'}
+}
 function renderDrivePoiPanel(){
   const panel=$('drivePoiPanel'),body=$('drivePoiPanelBody');if(!panel||!body||panel.classList.contains('hidden'))return;
   document.querySelectorAll('[data-drive-poi-tab]').forEach(btn=>btn.classList.toggle('active',btn.dataset.drivePoiTab===state.drivePoiTab));
@@ -7669,6 +7678,45 @@ async function runVoiceMerchantRecommendation(text){
     cancelAutoStart();showVoiceRecommendations(voiceMealIntent(text),voiceRecommendedRows(voiceMealIntent(text)));
   }catch(e){state.voiceRecommendationPending=false;cancelAutoStart();toast(e.message||'음성 추천을 준비하지 못했습니다.',3500)}
 }
+/* Workers AI optional assistance: voice intent extraction and grounded route comparison.
+   Never delegate route calculations, camera guidance or route switching to a model. */
+function selectedAiModel(){const value=$('routeAiModel')?.value||$('driveAiModel')?.value;return ['llama','gemma'].includes(value)?value:'llama'}
+async function callWorkerAiAssist(task,payload,timeoutMs=9000){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const res=await fetch('/api/ai-assist',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({task,model:selectedAiModel(),...payload}),signal:controller.signal});
+    const body=await res.json();if(!res.ok||!body?.ok)throw Error(body?.message||'AI 처리 실패');return body;
+  }finally{clearTimeout(timer)}
+}
+function routeCompareRows(){
+  return(state.carRouteOptions||[]).filter(r=>r?.geometry?.length).map(r=>({
+    kind:r._class==='fast'?'fast':r._class==='free'?'free':'recommend',
+    label:r._label||'경로',durationMinutes:Math.round((Number(r.duration)||0)/60),
+    distanceKm:Math.round((Number(r.distance)||0)/100)/10,
+    tollWon:Math.max(0,Math.round(Number(r.fare?.toll)||0))
+  }));
+}
+let routeAiComparePending=false;
+async function explainRoutesWithAi(){
+  const output=$('routeAiCompareResult'),button=$('routeAiCompareBtn');if(!output||!button||routeAiComparePending)return;
+  const rows=routeCompareRows();output.hidden=false;
+  if(rows.length<2){output.textContent='비교할 경로가 2개 이상 준비되면 사용할 수 있습니다.';return}
+  routeAiComparePending=true;button.disabled=true;output.textContent='AI가 표시된 경로 정보를 비교하고 있습니다…';
+  try{const r=await callWorkerAiAssist('route_compare',{destination:String(state.destination?.name||'').slice(0,80),routes:rows},14000);output.textContent=r.answer||'분석 결과가 없습니다.'}
+  catch(e){const shortest=[...rows].sort((a,b)=>a.durationMinutes-b.durationMinutes)[0];const free=[...rows].sort((a,b)=>a.tollWon-b.tollWon||a.durationMinutes-b.durationMinutes)[0];output.textContent=`AI 연결 없이 비교한 결과: 빠른 경로는 ${shortest.label} (${shortest.durationMinutes}분), 통행료가 적은 경로는 ${free.label} (${free.tollWon.toLocaleString()}원)입니다. 화면의 경로를 직접 선택해 주세요.`}
+  finally{routeAiComparePending=false;button.disabled=false}
+}
+function initRouteAiCompare(){
+  const button=$('routeAiCompareBtn'),select=$('routeAiModel');if(!button||!select)return;
+  const drive=$('driveAiModel');select.value=selectedAiModel();
+  select.addEventListener('change',()=>{if(drive)drive.value=select.value;try{localStorage.setItem('dangollo.workerAiModel',select.value)}catch{}});
+  if(drive)drive.addEventListener('change',()=>{select.value=drive.value});
+  try{const saved=localStorage.getItem('dangollo.workerAiModel');if(['llama','gemma'].includes(saved))select.value=saved}catch{}
+  button.addEventListener('click',explainRoutesWithAi);
+}
+async function parseVoiceIntentWithAi(text){
+  try{return(await callWorkerAiAssist('voice_parse',{text:text.slice(0,240)},6500)).intent||null}catch{return null}
+}
 async function handleVoiceCommandText(raw){
   const text=String(raw||'').trim();if(!text)return toast('명령을 다시 말씀해 주세요.');
   if(text.includes('재탐색'))return reroute();
@@ -7676,7 +7724,27 @@ async function handleVoiceCommandText(raw){
   if(text.includes('다임'))return setCharacter('daim');
   if(text.includes('순식'))return setCharacter('sunsik');
   if(text.includes('훈민'))return setCharacter('hunmin');
+  if(/경로\s*(비교|차이|설명)|추천길.*빠른길|무료도로.*비교/.test(text)){
+    if(state.carRouteOptions?.length<2)return toast('비교할 경로가 2개 이상 준비되어야 합니다.');
+    if(!$('routeAiCompareResult'))return toast('경로 화면에서 AI 비교 기능을 이용해 주세요.');
+    setView('route');return explainRoutesWithAi();
+  }
   if(voiceRecommendationRequested(text))return runVoiceMerchantRecommendation(text);
+  // Complex spoken phrases are resolved via AI only when the simple parser cannot classify them.
+  // Failure or timeout falls through to existing deterministic destination search.
+  if(/가는\s*길에|근처에서|주변에|상품권|온누리|지역사랑|잠깐\s*들|들렀다/.test(text)){
+    const intent=await parseVoiceIntentWithAi(text);
+    if(intent?.type==='merchant_recommend'){
+      const categoryHint=intent.category==='cafe'?'카페':intent.category==='dessert'?'디저트':intent.category==='meal'?'맛집':'';
+      return runVoiceMerchantRecommendation(`${categoryHint} 추천 ${intent.destination?`${intent.destination} 가는 길`:''}`.trim());
+    }
+    if(intent?.type==='route_compare'){setView('route');return explainRoutesWithAi()}
+    if(intent?.type==='destination'&&intent.destination){
+      const proposed=String(intent.destination).slice(0,80);
+      if(state.tripStartedAt&&!window.confirm(`목적지를 “${proposed}”로 변경하시겠습니까?`))return;
+      return handleVoiceCommandText(proposed);
+    }
+  }
   const q=normalizeVoiceDestination(text);if(!q)return toast('목적지를 다시 말씀해 주세요.');
   toast(`“${q}” 목적지를 찾고 있습니다...`,2200);
   try{
@@ -8317,6 +8385,8 @@ if('serviceWorker' in navigator)window.addEventListener('load',async()=>{
 });
 function bootstrapApp(){
   try{applyIcons()}catch(e){console.warn('applyIcons failed',e)}
+  try{initRouteAiCompare()}catch(e){console.warn('AI route compare init failed',e)}
+  try{initDriveAiRecommendation()}catch(e){console.warn('Workers AI UI init failed',e)}
   try{loadLocal();loadPermissionPrefs()}catch(e){console.warn('loadLocal failed',e)}
   try{bindCriticalUI()}catch(e){console.warn('critical UI bind failed',e)}
   try{bindHomeCriticalUI()}catch(e){console.warn('home critical UI bind failed',e)}

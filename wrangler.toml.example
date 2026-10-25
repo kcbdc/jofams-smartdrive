@@ -1,0 +1,7 @@
+# Cloudflare Pages project: configure the Workers AI binding in Dashboard.
+# Workers & Pages → your Pages project → Settings → Bindings → Add → Workers AI
+# Variable name: AI
+# This project uses Pages Functions and does not need an external LLM API key.
+# Wrangler file example for standalone Workers only (not required for Pages):
+# [ai]
+# binding = "AI"
