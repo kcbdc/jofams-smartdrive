@@ -2318,7 +2318,9 @@ function makeEndpointMarker(kind='end',label='목적지'){
   el.className=`dangollo-endpoint-pin dangollo-${kind}-pin`;
   const color=kind==='start'?'#159B63':'#2077ED';
   el.innerHTML=`<svg class="dangollo-endpoint-svg" viewBox="0 0 92 104" role="img" aria-label="${label}" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="5" width="74" height="35" rx="17.5" fill="${color}" stroke="#ffffff" stroke-width="3"/><text x="46" y="28" fill="#ffffff" font-size="18" text-anchor="middle" font-weight="800" font-family="sans-serif">${label}</text><path d="M46 40v47" stroke="${color}" stroke-width="5" stroke-linecap="round"/><circle cx="46" cy="62" r="12" fill="#ffffff" stroke="${color}" stroke-width="5"/></svg>`;
-  return new maplibregl.Marker({element:el,anchor:'bottom'});
+  const marker=new maplibregl.Marker({element:el,anchor:'bottom'});
+  marker.addClass('dangollo-route-endpoint-marker');
+  return marker;
 }
 function makeDestMarker(){
   return makeEndpointMarker('end','목적지');
@@ -2421,6 +2423,7 @@ function ensureDestinationMarker(){
   try{
     if(!state.destMarker)state.destMarker=makeDestMarker().setLngLat([lng,lat]).addTo(state.map);
     else state.destMarker.setLngLat([lng,lat]);
+    state.destMarker.addClass?.('dangollo-route-endpoint-marker');
     const el=state.destMarker.getElement();
     if(el){
       el.style.removeProperty('display');el.style.removeProperty('visibility');el.style.removeProperty('opacity');
@@ -2460,6 +2463,7 @@ function updateOriginMarker(){
       if(state.originMarker)try{state.originMarker.remove()}catch{}
       state.originMarker=makeEndpointMarker('start','출발지').setLngLat([lng,lat]).addTo(state.map);
     }else state.originMarker.setLngLat([lng,lat]);
+    state.originMarker.addClass?.('dangollo-route-endpoint-marker');
   }catch(e){console.warn('start marker update failed',e)}
 }
 
@@ -2524,6 +2528,7 @@ function drawRoute(route=state.route,{fit=true}={}){
   try{
     if(state.map.getLayer('route-direction-arrows'))state.map.moveLayer('route-direction-arrows');
   }catch(e){console.warn('route arrow layer order failed',e)}
+  updateOriginMarker();
   updateOriginMarker();
   ensureDestinationMarker();
   if(fit){const b=new maplibregl.LngLatBounds();route.geometry.forEach(p=>b.extend(p));state.map.fitBounds(b,{padding:{top:100,bottom:310,left:36,right:36},duration:650})}
