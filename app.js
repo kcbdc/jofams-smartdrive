@@ -2403,7 +2403,11 @@ function ensureUserMarker(){
   updateUserMarkerMotion();
 }
 function ensureDestinationMarker(){
-  if(!state.map||!state.destination)return;
+  if(!state.map||!state.destination||!state.route?.geometry?.length||$('driveView')?.classList.contains('hidden')){
+    if(state.destMarker){try{state.destMarker.remove()}catch{}state.destMarker=null;}
+    updateDestinationEdgeIndicator();
+    return;
+  }
   // 도착지는 실제 경로 종단 좌표에 고정한다. 우회 재탐색에서도 좌표를 갱신한다.
   const end=state.route?.geometry?.at(-1);
   const lng=Array.isArray(end)?Number(end[0]):Number(state.destination.lng);
@@ -2503,7 +2507,8 @@ function clearRouteLayer(){['route-direction-arrows','route-traffic','route-main
 
 /* ---------- LOCATION ---------- */
 async function locate(fly=true){
-  if(pointValid(state.user)&&Date.now()-Number(state.lastRealGpsAt||state.nativeLocationAt||0)<30000)return state.user;
+  const recent=currentOriginPoint();
+  if(pointValid(recent)&&Date.now()-Number(state.lastRawFix?.at||state.lastRealGpsAt||state.nativeLocationAt||0)<30000)return recent;
   if(state.permissionPrefs?.location===false){
     toast('MY에서 위치정보 조회 동의를 켜 주세요.');
     return null;
@@ -2532,11 +2537,11 @@ async function locate(fly=true){
       p=>{applyGps(p,fly);resolve(state.user)},
       err=>{
         console.warn('browser geolocation failed',err?.code,err?.message);
-        if(pointValid(state.user)){resolve(state.user);return}
+        const fallback=currentOriginPoint();if(pointValid(fallback)){resolve(fallback);return}
         toast('현재 위치를 확인할 수 없습니다. 휴대폰 위치 권한과 GPS를 확인해 주세요.');
         resolve(null);
       },
-      {enableHighAccuracy:true,timeout:2600,maximumAge:15000}
+      {enableHighAccuracy:true,timeout:9000,maximumAge:30000}
     );
   });
 }
@@ -3665,6 +3670,7 @@ function updateCameraAlertSetting(kind,value){if(!['speed','signal'].includes(ki
 /* ---------- ROUTES ---------- */
 async function routeRequest(priority='RECOMMEND',avoid=null,waypointsOverride=null,mode=state.routeMode,originOverride=null){
   const o=pointValid(originOverride)?originOverride:(state.originMode==='current'?(currentOriginPoint()||state.user||state.origin):(state.origin||state.user)),wps=Array.isArray(waypointsOverride)?waypointsOverride:state.waypoints;
+  if(!pointValid(o))throw new Error('출발 위치를 확인하지 못했습니다. 휴대폰 위치 서비스와 브라우저 위치 권한을 확인하고 다시 시도해 주세요.');
   if(!pointValid(originOverride))state.routeOriginUsed={lat:Number(o.lat),lng:Number(o.lng)};
   const originHeading=Number.isFinite(Number(originOverride?.heading))
     ?Number(originOverride.heading)
@@ -3699,7 +3705,18 @@ async function selectTravelMode(mode){
 }
 async function loadRouteOptions(){
   state.routeCalculating=true;
-  if(state.originMode==='current'&&!state.tripStartedAt)refreshCurrentLocation().catch(()=>{});
+  if(state.originMode==='current'&&!state.tripStartedAt){
+    let origin=currentOriginPoint();
+    if(!pointValid(origin))origin=await refreshCurrentLocation({maxAgeMs:30000,timeoutMs:5500}).catch(()=>null);
+    if(!pointValid(origin))origin=await locate(false).catch(()=>null);
+    if(!pointValid(origin)){
+      state.routeCalculating=false;
+      $('routeCards').innerHTML='<div class="auto-start-hint">현재 위치를 확인하지 못했습니다. 휴대폰 위치 서비스와 사이트 위치 권한을 확인한 뒤 다시 시도해 주세요.</div>';
+      $('routePlanEta').textContent='위치 수신 실패 · 위치 서비스 확인 후 재시도';
+      renderPlanningPoiSuggestions();
+      return;
+    }
+  }
   startPlanningAi();
   cancelAutoStart();$('routeCards').innerHTML='<div class="auto-start-hint">자동차·도보 경로를 계산하고 있습니다...</div>';renderRouteModeSwitch();
   try{

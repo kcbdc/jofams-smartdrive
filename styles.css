@@ -4842,3 +4842,23 @@ html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{
  html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
  html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{width:24px!important;height:24px!important;min-width:24px!important;min-height:24px!important;max-width:24px!important;max-height:24px!important}
 }
+
+/* 7.6.22.7: hide destination until active driving; no misplaced top-left pin on route select */
+html body:has(#routeView:not(.hidden)) .maplibregl-marker:has(.destination-pin),
+html body:has(#routeView:not(.hidden)) .destination-pin,
+html body:has(#homeView:not(.hidden)) .maplibregl-marker:has(.destination-pin){display:none!important;visibility:hidden!important}
+/* Keep the radio and mic with explicit spacing; equal 3%-smaller inner icons */
+html body #app #driveView #driveRadioBtn,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice{box-sizing:border-box!important;border-radius:50%!important;}
+html body #app #driveView #driveRadioBtn{right:14px!important;top:calc(var(--safeT) + 14px)!important;}
+html body #app #driveView #arOpenBtn.dangollo-drive-voice{right:14px!important;top:calc(var(--safeT) + 93px)!important;border:3px solid #fff!important;box-shadow:0 8px 20px rgba(20,70,155,.23)!important;}
+html body #app #driveView #driveRadioBtn .drive-radio-icon,
+html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{width:27.16px!important;height:27.16px!important;min-width:27.16px!important;min-height:27.16px!important;max-width:27.16px!important;max-height:27.16px!important;display:block!important;}
+@media (orientation:landscape){
+ html body #app #driveView #driveRadioBtn{top:calc(var(--safeT) + 10px)!important;right:20px!important;}
+ html body #app #driveView #arOpenBtn.dangollo-drive-voice{top:calc(var(--safeT) + 73px)!important;right:20px!important;}
+ html body #app #driveView #driveRadioBtn .drive-radio-icon,
+ html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
+ html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{width:23.28px!important;height:23.28px!important;min-width:23.28px!important;min-height:23.28px!important;max-width:23.28px!important;max-height:23.28px!important;}
+}
