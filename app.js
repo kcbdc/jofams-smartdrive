@@ -6099,6 +6099,30 @@ function stopRouteSimulation({resumeGps=true}={}){
   state.preSimulationStationaryActive=false;
   state.preSimulationStationaryGpsAnchor=null;
 }
+// Keep the drawn route in sync with the simulated car, including after a map-style reload.
+// Never replace a valid route with a guessed straight line.
+function ensureSimulationRouteVisible(){
+  if(!state.simulationActive||!state.map||!state.route?.geometry?.length)return;
+  const now=Date.now();
+  if(now-Number(state.simulationRouteCheckAt||0)<1200)return;
+  state.simulationRouteCheckAt=now;
+  try{
+    if(!state.map.isStyleLoaded()){
+      state.pendingRouteDraw={route:state.route,options:{fit:false}};
+      return;
+    }
+    const source=state.map.getSource('route');
+    if(!source||!state.map.getLayer('route-main')||!state.map.getLayer('route-shadow')){
+      drawRoute(state.route,{fit:false});
+      return;
+    }
+    // If another style update hid route layers, restore visibility without resetting camera.
+    for(const id of ['route-main','route-shadow','route-direction-arrows']){
+      if(state.map.getLayer(id)&&state.map.getLayoutProperty(id,'visibility')==='none')
+        state.map.setLayoutProperty(id,'visibility','visible');
+    }
+  }catch(error){console.warn('[Dangollo] simulated route visibility:',error)}
+}
 function simulationTick(ts){
   state.simulationRaf=0;
   if(state.simulationFallbackTimer){clearTimeout(state.simulationFallbackTimer);state.simulationFallbackTimer=0}
@@ -6117,6 +6141,7 @@ function simulationTick(ts){
   if(!Number.isFinite(dist))dist=Number(state.user?.routeDistance)||0;
   dist=Math.min(total,dist+baseMps*mult*dt);
 
+  ensureSimulationRouteVisible();
   const p=pointAtRouteDistance(dist);
   if(p){
     state.simulationDistance=dist;
@@ -6210,6 +6235,8 @@ function startRouteSimulation(){
   stopWatch();
   stopDeadReckoning();
   state.simulationActive=true;
+  state.simulationRouteCheckAt=0;
+  drawRoute(state.route,{fit:false});
   window.__DANGOLLO_SIMULATION_ACTIVE__=true;
   state.offRouteHits=0;
   state.offRouteHeadingHits=0;
@@ -6520,25 +6547,44 @@ function ensureDrivePoiData(){
 }
 
 function drivePoiMarkerHtml(tab,item){
-  const spec=drivePoiTabSpec(tab);
-  const title=tab==='fuel'?fuelWon(item?.price):(tab==='onnuri'?'온누리':'지역사랑');
-  const sub=tab==='fuel'?String(item?.name||'주유소'):(item?.name||item?.market||'가맹점');
-  return `<button type="button" class="drive-route-poi-marker ${spec.theme}" data-drive-poi-marker="${tab}"><span class="marker-top">${escapeHtml(title)}</span><span class="marker-bottom">${escapeHtml(sub)}</span></button>`;
+  const category=classifyVoiceMerchant(item);
+  const foodLabel=category==='meal'?'식당':category==='dessert'?'디저트':'카페';
+  const brand=tab==='local'?'지역사랑':'온누리';
+  const name=String(item?.name||item?.market||'가맹점');
+  const pictogram=category==='meal'
+    ?'<path d="M7 3v7m3-7v7M4 3v5a4 4 0 0 0 8 0V3M8 12v9M17 3c-3 3-3 9 0 11h3V3h-3Zm3 11v7"/>'
+    :'<path d="M4 8h14v5a7 7 0 0 1-14 0V8Zm14 1h2a3 3 0 0 1 0 6h-2M3 21h18M8 3v2m5-2v2"/>';
+  const icon=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${pictogram}</svg>`;
+  return `<button type="button" class="drive-route-food-marker ${tab}" data-drive-poi-marker="${tab}" aria-label="${escapeHtml(brand+' '+foodLabel+' '+name)}"><span class="food-symbol">${icon}</span><span class="food-caption"><b>${escapeHtml(name)}</b><small>${escapeHtml(brand+' · '+foodLabel)}</small></span></button>`;
 }
 function renderDrivePoiMarkers(){
   clearDrivePoiMarkers();
   if(!state.map||!state.tripStartedAt||!state.route?.geometry?.length||state.routeMode!=='car')return;
   const data=state.drivePoiData||buildDrivePoiData();
-  for(const tab of ['fuel','local','onnuri']){
-    const item=(data[tab]||[])[0];
-    if(!item)continue;
-    const lng=Number(item.lng),lat=Number(item.lat);
-    if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;
+  const candidates=[];
+  const seen=new Set();
+  for(const tab of ['local','onnuri']){
+    for(const item of data[tab]||[]){
+      const category=classifyVoiceMerchant(item);
+      if(!['cafe','dessert','meal'].includes(category))continue;
+      // Market/administrative area geocoding is not a storefront location.
+      if(item?.approximate||['market-zone','admin-zone'].includes(item?.precision))continue;
+      const lng=Number(item.lng),lat=Number(item.lat);
+      if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;
+      const key=`${Math.round(lat*1e5)}:${Math.round(lng*1e5)}`;
+      if(seen.has(key))continue;
+      seen.add(key);
+      candidates.push({tab,item,lng,lat,ahead:Number(item.__aheadM)||0});
+    }
+  }
+  candidates.sort((a,b)=>a.ahead-b.ahead);
+  for(const {tab,item,lng,lat} of candidates.slice(0,18)){
     const wrap=document.createElement('div');
     wrap.innerHTML=drivePoiMarkerHtml(tab,item);
     const el=wrap.firstElementChild;
     el.onclick=e=>{e.stopPropagation();openDrivePoiPanel(tab)};
-    try{state.drivePoiMarkers.push(new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([lng,lat]).addTo(state.map))}catch{}
+    try{state.drivePoiMarkers.push(new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([lng,lat]).addTo(state.map))}
+    catch(error){console.warn('[Dangollo] merchant marker:',error)}
   }
 }
 function updateDrivePoiUI(force=false){
