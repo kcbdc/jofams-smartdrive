@@ -4359,3 +4359,154 @@ html body #app #driveView #driveRecommendBtn .dangollo-recommend-symbol svg path
 #driveView .drive-route-food-marker .food-caption b{font-size:11px;line-height:1.25;max-width:110px;overflow:hidden;text-overflow:ellipsis}
 #driveView .drive-route-food-marker .food-caption small{font-size:9px;font-weight:700;color:#567369}
 @media(max-width:380px){#driveView .drive-route-food-marker{max-width:130px;padding:4px 6px}#driveView .drive-route-food-marker .food-caption b{max-width:78px}}
+
+
+/* ===== 7.6.22.0 style refresh: route preview + drive HUD + arrival marker ===== */
+html body #app #routeView .route-header{
+  top:calc(var(--safeT) + 10px)!important;left:12px!important;right:12px!important;height:68px!important;
+  grid-template-columns:44px 1fr 44px!important;padding:8px 10px!important;border-radius:22px!important;
+  background:rgba(255,255,255,.98)!important;box-shadow:0 10px 26px rgba(10,28,56,.14)!important;
+}
+html body #app #routeView .route-header b{font-size:15px!important;font-weight:900!important}
+html body #app #routeView .route-header small{font-size:10px!important;color:#667486!important}
+html body #app #routeView .route-sheet{
+  left:0!important;right:0!important;bottom:calc(var(--safeB) + 0px)!important;max-height:none!important;overflow:visible!important;
+  padding:0 0 calc(var(--safeB) + 16px)!important;background:transparent!important;box-shadow:none!important;border-radius:0!important;
+}
+html body #app #routeView .route-mode-switch{
+  margin:0 14px 10px!important;padding:6px!important;border-radius:22px!important;background:rgba(255,255,255,.96)!important;
+  box-shadow:0 8px 22px rgba(10,28,56,.10)!important;
+}
+html body #app #routeView .route-mode-switch button{min-height:64px!important;border-radius:18px!important}
+html body #app #routeView .route-mode-switch button.active{background:#eef5ff!important;color:#1368e8!important;box-shadow:inset 0 0 0 2px rgba(25,114,237,.18)!important}
+html body #app #routeView .route-addresses,
+html body #app #routeView #routeSelectedWaypoints,
+html body #app #routeView .route-plan-eta,
+html body #app #routeView #savedWaypointCourses,
+html body #app #routeView #planningPoiSuggestions{
+  margin-left:14px!important;margin-right:14px!important;
+}
+html body #app #routeView .route-addresses{
+  padding:14px 16px!important;border-radius:24px!important;background:rgba(255,255,255,.96)!important;
+  box-shadow:0 8px 22px rgba(10,28,56,.10)!important;margin-bottom:10px!important;
+}
+html body #app #routeView .route-point-row{grid-template-columns:auto auto minmax(0,1fr) 34px!important;gap:10px!important;min-height:40px!important}
+html body #app #routeView .route-point-row b{font-size:14px!important}
+html body #app #routeView .route-plan-eta{
+  padding:11px 14px!important;border-radius:18px!important;background:rgba(255,255,255,.92)!important;color:#415065!important;
+  box-shadow:0 6px 18px rgba(10,28,56,.08)!important;font-size:12px!important;
+}
+html body #app #routeView .route-cards{
+  display:flex!important;gap:12px!important;overflow-x:auto!important;overflow-y:hidden!important;padding:4px 14px 6px!important;scroll-snap-type:x proximity!important;
+}
+html body #app #routeView .route-cards::-webkit-scrollbar{display:none!important}
+html body #app #routeView .route-card{
+  flex:0 0 274px!important;min-height:132px!important;padding:16px 16px 14px!important;border-radius:24px!important;background:rgba(255,255,255,.98)!important;
+  grid-template-columns:minmax(0,1fr)!important;gap:8px!important;box-shadow:0 12px 24px rgba(10,28,56,.10)!important;border:2px solid transparent!important;scroll-snap-align:start!important;
+}
+html body #app #routeView .route-card img{display:none!important}
+html body #app #routeView .route-card.selected{border-color:#2a84ff!important;box-shadow:0 10px 28px rgba(27,110,233,.18)!important;background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)!important}
+html body #app #routeView .route-card .route-meta{display:grid!important;gap:6px!important}
+html body #app #routeView .route-card .route-meta strong{order:2!important;margin:0!important;font-size:54px!important;line-height:.92!important;letter-spacing:-.06em!important;color:#111827!important}
+html body #app #routeView .route-card .route-meta small{order:4!important;font-size:15px!important;line-height:1.3!important;color:#657387!important;margin:0!important}
+html body #app #routeView .route-card .route-meta em{order:3!important;font-size:16px!important;line-height:1.35!important;color:#1f2937!important;font-style:normal!important;font-weight:700!important;margin:0!important}
+html body #app #routeView .route-tag{order:1!important;display:inline-flex!important;align-items:center!important;gap:6px!important;height:auto!important;padding:0!important;background:transparent!important;color:#2570e8!important;font-size:15px!important;font-weight:900!important}
+html body #app #routeView .route-tag.fast{color:#2570e8!important}
+html body #app #routeView .route-tag.free{color:#3a8c49!important}
+html body #app #routeView .route-tag.walk{color:#5c6778!important}
+html body #app #routeView .route-start-actions{
+  display:grid!important;grid-template-columns:1fr 1.7fr!important;gap:12px!important;padding:10px 14px 0!important;
+}
+html body #app #routeView .route-future-btn{
+  height:72px!important;border:0!important;border-radius:20px!important;background:#8d949e!important;color:#fff!important;font-size:19px!important;font-weight:900!important;
+  box-shadow:0 10px 22px rgba(77,87,102,.18)!important;line-height:1.15!important;
+}
+html body #app #routeView .route-start-main-btn,
+html body #app #routeView #startBtn{
+  height:72px!important;margin-top:0!important;border-radius:20px!important;background:linear-gradient(180deg,#2f87ff,#146ef1)!important;color:#fff!important;
+  font-size:22px!important;font-weight:900!important;box-shadow:0 12px 24px rgba(20,110,241,.22)!important;
+}
+html body #app #routeView .auto-start-hint{padding:10px 14px 0!important;font-size:11px!important;color:#6d7a8d!important;text-align:center!important}
+
+/* Drive HUD - Tmap-like dark blue guidance */
+html body #app #driveView .maneuver-stack{top:calc(var(--safeT) + 8px)!important;left:10px!important;width:min(468px,calc(100vw - 102px))!important}
+html body #app #driveView .maneuver-main{
+  min-height:132px!important;padding:18px 18px 16px 18px!important;grid-template-columns:102px minmax(0,1fr)!important;column-gap:12px!important;
+  border-radius:26px!important;border:2px solid #1f8ef6!important;background:linear-gradient(180deg,#0e396a 0%,#0b2c50 58%,#08233e 100%)!important;
+  box-shadow:0 12px 28px rgba(8,24,44,.28)!important;color:#fff!important;
+}
+html body #app #driveView .maneuver-main b{font-size:68px!important;line-height:.92!important;letter-spacing:-.06em!important;text-shadow:0 2px 10px rgba(0,0,0,.18)!important}
+html body #app #driveView .maneuver-main span{margin-top:4px!important;font-size:19px!important;line-height:1.18!important;font-weight:900!important;color:#fff!important}
+html body #app #driveView #maneuverSub{display:block!important;margin-top:8px!important;font-size:10px!important;line-height:1.35!important;color:#d4e1f2!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+html body #app #driveView .maneuver-svg{width:96px!important;height:96px!important;color:#fff!important}
+html body #app #driveView .maneuver-svg svg{stroke-width:3.8!important;filter:none!important}
+html body #app #driveView .maneuver-next{
+  display:grid!important;grid-template-columns:42px auto minmax(0,1fr)!important;align-items:center!important;gap:8px!important;
+  width:min(278px,74%)!important;min-height:58px!important;margin-top:-4px!important;padding:8px 12px!important;border-radius:0 0 18px 18px!important;
+  background:linear-gradient(180deg,#183657 0%,#10263f 100%)!important;box-shadow:0 8px 18px rgba(8,24,44,.18)!important;color:#fff!important;
+}
+html body #app #driveView #nextManeuverDistance{margin:0!important;font-size:22px!important;line-height:1!important;font-weight:900!important;color:#fff!important}
+html body #app #driveView #nextManeuverText{margin:0!important;font-size:12px!important;line-height:1.25!important;color:#d7e1ee!important;max-width:none!important}
+html body #app #driveView #nextManeuverIcon{width:32px!important;height:32px!important}
+html body #app #driveView #nextManeuverIcon svg{width:32px!important;height:32px!important;stroke-width:3.4!important}
+
+/* Destination arrival badge */
+html body #app .destination-pin,
+html body #app .maplibregl-marker.destination-pin,
+html body #app .maplibregl-marker:has(.destination-pin),
+body:has(#driveView:not(.hidden)) .maplibregl-marker:has(.destination-pin),
+body:has(#driveView:not(.hidden)) .destination-pin{
+  display:block!important;visibility:visible!important;opacity:1!important;overflow:visible!important;
+}
+html body #app .destination-pin{
+  width:58px!important;height:76px!important;position:relative!important;pointer-events:none!important;
+}
+html body #app .destination-pin::before,
+html body #app .destination-pin::after{content:none!important;display:none!important}
+html body #app .destination-pin .destination-flag{
+  position:absolute!important;left:50%!important;top:0!important;transform:translateX(-50%)!important;
+  min-width:48px!important;height:29px!important;padding:0 12px!important;border-radius:999px!important;
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  background:linear-gradient(180deg,#2888ff,#1668e8)!important;color:#fff!important;font-size:14px!important;font-weight:900!important;
+  box-shadow:0 8px 18px rgba(22,104,232,.26)!important;letter-spacing:-.02em!important;
+}
+html body #app .destination-pin .destination-stem{
+  position:absolute!important;left:50%!important;top:25px!important;transform:translateX(-50%)!important;width:22px!important;height:43px!important;
+}
+html body #app .destination-pin .destination-stem::before{
+  content:''!important;position:absolute!important;left:50%!important;top:2px!important;transform:translateX(-50%)!important;width:18px!important;height:18px!important;border-radius:50%!important;
+  background:#fff!important;border:4px solid #2b86ff!important;box-shadow:0 5px 12px rgba(22,104,232,.22)!important;
+}
+html body #app .destination-pin .destination-stem::after{
+  content:''!important;position:absolute!important;left:50%!important;top:18px!important;transform:translateX(-50%)!important;width:4px!important;height:24px!important;border-radius:3px!important;background:#2b86ff!important;
+}
+
+/* Larger arrival marker only in route preview for emphasis */
+html body #app #routeView .destination-pin .destination-flag{background:linear-gradient(180deg,#257cff,#145fe1)!important}
+
+@media (max-width:420px){
+  html body #app #routeView .route-card{flex-basis:248px!important;min-height:124px!important}
+  html body #app #routeView .route-card .route-meta strong{font-size:46px!important}
+  html body #app #routeView .route-start-actions{grid-template-columns:1fr 1.45fr!important}
+  html body #app #routeView .route-future-btn,
+  html body #app #routeView #startBtn{height:64px!important;font-size:19px!important}
+  html body #app #driveView .maneuver-stack{width:min(430px,calc(100vw - 94px))!important}
+  html body #app #driveView .maneuver-main{min-height:122px!important;grid-template-columns:88px minmax(0,1fr)!important;padding:16px 16px 14px!important}
+  html body #app #driveView .maneuver-svg{width:82px!important;height:82px!important}
+  html body #app #driveView .maneuver-main b{font-size:58px!important}
+  html body #app #driveView .maneuver-main span{font-size:16px!important}
+}
+@media (orientation:landscape){
+  html body #app #routeView .route-cards{padding-right:18px!important}
+  html body #app #routeView .route-card{flex-basis:252px!important;min-height:116px!important}
+  html body #app #routeView .route-card .route-meta strong{font-size:42px!important}
+  html body #app #routeView .route-start-actions{padding-inline:18px!important}
+  html body #app #driveView .maneuver-stack{width:min(360px,34vw)!important;top:calc(var(--safeT) + 8px)!important}
+  html body #app #driveView .maneuver-main{min-height:96px!important;padding:12px 14px 11px!important;grid-template-columns:70px minmax(0,1fr)!important;border-radius:22px!important}
+  html body #app #driveView .maneuver-svg{width:66px!important;height:66px!important}
+  html body #app #driveView .maneuver-main b{font-size:42px!important}
+  html body #app #driveView .maneuver-main span{font-size:15px!important}
+  html body #app #driveView .maneuver-next{min-height:46px!important;width:min(228px,70%)!important;padding:6px 10px!important}
+  html body #app #driveView #nextManeuverDistance{font-size:18px!important}
+  html body #app #driveView #nextManeuverText{font-size:11px!important}
+}

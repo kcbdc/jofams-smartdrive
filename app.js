@@ -2313,7 +2313,12 @@ function updateCarMarkerImage(){
   el.classList.toggle('walking-character-marker',isWalkingGuide());
   const img=el.querySelector('img');if(img){const src=characterGuideImage('rear');if(!img.getAttribute('src')?.endsWith(src))img.src=src;}
 }
-function makeDestMarker(){const el=document.createElement('div');el.className='destination-pin';return new maplibregl.Marker({element:el,anchor:'bottom'})}
+function makeDestMarker(){
+  const el=document.createElement('div');
+  el.className='destination-pin';
+  el.innerHTML='<span class="destination-flag">도착</span><span class="destination-stem" aria-hidden="true"></span>';
+  return new maplibregl.Marker({element:el,anchor:'bottom'});
+}
 function updateUserMarkerMotion(){
   if(state.tripStartedAt&&!state.simulationActive&&!state.navigationStartReleased){
     if(Number.isFinite(Number(state.driveMarkerRenderedDistance)))state.driveMarkerTargetDistance=Number(state.driveMarkerRenderedDistance);
@@ -2398,14 +2403,25 @@ function ensureUserMarker(){
   updateUserMarkerMotion();
 }
 function ensureDestinationMarker(){
-  // 7.6.11.8: 빨간 목적지 핀은 길안내 전/중 모두 사용하지 않는다.
-  // 경로선과 목적지 정보만으로 충분하며, 화면 좌상단에 잔상처럼 남는 빨간 마커를 원천 차단한다.
-  if(state.destMarker){try{state.destMarker.remove()}catch{}state.destMarker=null}
-  document.querySelectorAll('.destination-pin').forEach(el=>{try{el.remove()}catch{}});
+  if(!state.map||!state.destination)return;
+  // 도착지는 실제 경로 종단 좌표에 고정한다. 우회 재탐색에서도 좌표를 갱신한다.
+  const end=state.route?.geometry?.at(-1);
+  const lng=Array.isArray(end)?Number(end[0]):Number(state.destination.lng);
+  const lat=Array.isArray(end)?Number(end[1]):Number(state.destination.lat);
+  if(!Number.isFinite(lng)||!Number.isFinite(lat))return;
+  try{
+    if(!state.destMarker)state.destMarker=makeDestMarker().setLngLat([lng,lat]).addTo(state.map);
+    else state.destMarker.setLngLat([lng,lat]);
+    const el=state.destMarker.getElement();
+    if(el){el.style.removeProperty('display');el.style.removeProperty('visibility');el.style.removeProperty('opacity')}
+  }catch(e){console.warn('arrival marker update failed',e)}
 }
 function setDestinationMarker(){
-  if(state.destMarker){try{state.destMarker.remove()}catch{}state.destMarker=null}
-  document.querySelectorAll('.destination-pin').forEach(el=>{try{el.remove()}catch{}});
+  if(!state.destination){
+    if(state.destMarker){try{state.destMarker.remove()}catch{}state.destMarker=null}
+    return;
+  }
+  ensureDestinationMarker();
 }
 function updateOriginMarker(){if(state.originMarker){state.originMarker.remove();state.originMarker=null}if(state.originMode!=='custom'||!state.origin||!state.map)return;const el=document.createElement('div');el.className='origin-pin';state.originMarker=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([state.origin.lng,state.origin.lat]).addTo(state.map)}
 function trafficClassFromValues(speed,stateCode){
@@ -2469,6 +2485,7 @@ function drawRoute(route=state.route,{fit=true}={}){
   try{
     if(state.map.getLayer('route-direction-arrows'))state.map.moveLayer('route-direction-arrows');
   }catch(e){console.warn('route arrow layer order failed',e)}
+  ensureDestinationMarker();
   if(fit){const b=new maplibregl.LngLatBounds();route.geometry.forEach(p=>b.extend(p));state.map.fitBounds(b,{padding:{top:100,bottom:310,left:36,right:36},duration:650})}
 }
 function clearRouteLayer(){['route-direction-arrows','route-traffic','route-main','route-shadow'].forEach(id=>{if(state.map?.getLayer(id))state.map.removeLayer(id)});['route-traffic','route'].forEach(id=>{if(state.map?.getSource(id))state.map.removeSource(id)})}
@@ -4439,9 +4456,8 @@ function startNavigation(opts={}){
   $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearOnnuriMarkers();clearHomeCameraMarkers();
   // 경로선택/현재위치 화면에서 쓰던 보조 위치 마커는 주행 화면에 남기지 않는다.
   try{if(state.originMarker){state.originMarker.remove();state.originMarker=null}}catch{state.originMarker=null}
-  // 경로선택에서 쓰던 빨간 목적지 핀이 주행 HUD 좌상단에 걸쳐 보이는 현상 제거.
-  try{if(state.destMarker){state.destMarker.remove();state.destMarker=null}}catch{state.destMarker=null}
-  document.querySelectorAll('.maplibregl-user-location-dot,.maplibregl-user-location-accuracy-circle,.maplibregl-user-location-dot-stale,.destination-pin,.origin-pin').forEach(el=>{try{el.style.display='none'}catch{}});
+  // 시작 전 현재 위치 보조 마커만 숨기고, 경로 종단의 파란 도착 마크는 유지한다.
+  document.querySelectorAll('.maplibregl-user-location-dot,.maplibregl-user-location-accuracy-circle,.maplibregl-user-location-dot-stale,.origin-pin').forEach(el=>{try{el.style.display='none'}catch{}});
   if((state.waypoints||[]).filter(pointValid).length)saveCurrentWaypointCourse();if(!state.route||!state.destination)return;cancelAutoStart();state.preTripAnchor=null;state.tripStartedAt=Date.now();
   state.navigationStartAt=state.tripStartedAt;invalidateDrivePoiRoute();
   // 경로 API가 실제 시작점을 약간 옮겨도 현재 GPS에 투영한 출발 지점에서 출발한다.
