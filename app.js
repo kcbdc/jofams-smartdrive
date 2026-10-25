@@ -2491,22 +2491,50 @@ function buildTrafficGeoJson(route){
   }
   return{type:'FeatureCollection',features};
 }
-/* v7.6.24.5: map-native route endpoints. GeoJSON coordinates remain attached to
-   the polyline as the map moves, zooms or rotates. CSS DOM-marker rules cannot hide them. */
+/* v7.6.24.6 — MapLibre image icons anchored at real route endpoint geometry.
+   Separate images for colors, no legacy DOM/CSS marker styling involved. */
+function ensureDangolloEndpointImages(){
+  if(!state.map)return false;
+  for(const [id,color] of [['dangollo-start-pin-image','#08753c'],['dangollo-end-pin-image','#086bc8']]){
+    if(state.map.hasImage(id))continue;
+    const scale=2,w=50,h=62;
+    const canvas=document.createElement('canvas');canvas.width=w*scale;canvas.height=h*scale;
+    const ctx=canvas.getContext('2d');if(!ctx)return false;
+    ctx.scale(scale,scale);ctx.lineJoin='round';ctx.lineCap='round';
+    // Outline pin with bottom tip at (25,60); the icon anchor is bottom.
+    ctx.beginPath();ctx.moveTo(25,59);ctx.bezierCurveTo(20,54,8,42,8,27);ctx.bezierCurveTo(8,4,42,4,42,27);
+    ctx.bezierCurveTo(42,42,30,54,25,59);ctx.closePath();
+    ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle=color;ctx.lineWidth=4;ctx.stroke();
+    ctx.beginPath();ctx.arc(25,26,7.4,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle=color;ctx.lineWidth=4;ctx.stroke();
+    state.map.addImage(id,ctx.getImageData(0,0,canvas.width,canvas.height),{pixelRatio:scale});
+  }
+  return true;
+}
 function renderRouteEndpointLayers(route=state.route){
   if(!state.map?.isStyleLoaded?.())return;
-  const g=route?.geometry||[],visible=!$('routeView')?.classList.contains('hidden')||!$('driveView')?.classList.contains('hidden');
+  const g=route?.geometry||[];
+  const visible=!$('routeView')?.classList.contains('hidden')||!$('driveView')?.classList.contains('hidden');
+  const valid=p=>Array.isArray(p)&&p.length>=2&&Number.isFinite(Number(p[0]))&&Number.isFinite(Number(p[1]));
   const source='dangollo-route-endpoints';
-  const features=visible&&g.length>=2?[{type:'Feature',properties:{kind:'start',name:'출발지',color:'#16a66a'},geometry:{type:'Point',coordinates:g[0]}},{type:'Feature',properties:{kind:'end',name:'목적지',color:'#1879f4'},geometry:{type:'Point',coordinates:g[g.length-1]}}]:[];
+  const features=visible&&g.length>=2&&valid(g[0])&&valid(g[g.length-1])?[
+    {type:'Feature',properties:{kind:'start',name:'출발지',icon:'dangollo-start-pin-image'},geometry:{type:'Point',coordinates:g[0]}},
+    {type:'Feature',properties:{kind:'end',name:'목적지',icon:'dangollo-end-pin-image'},geometry:{type:'Point',coordinates:g[g.length-1]}}
+  ]:[];
   const geo={type:'FeatureCollection',features};
   if(state.map.getSource(source))state.map.getSource(source).setData(geo);
   else state.map.addSource(source,{type:'geojson',data:geo});
-  if(!state.map.getLayer('dangollo-endpoint-halo'))state.map.addLayer({id:'dangollo-endpoint-halo',type:'circle',source,paint:{'circle-radius':13,'circle-color':'#fff','circle-stroke-color':['get','color'],'circle-stroke-width':4,'circle-pitch-alignment':'map'}});
-  if(!state.map.getLayer('dangollo-endpoint-core'))state.map.addLayer({id:'dangollo-endpoint-core',type:'circle',source,paint:{'circle-radius':5,'circle-color':['get','color'],'circle-pitch-alignment':'map'}});
-  if(!state.map.getLayer('dangollo-endpoint-label'))state.map.addLayer({id:'dangollo-endpoint-label',type:'symbol',source,layout:{'text-field':['get','name'],'text-font':['Open Sans Bold','Arial Unicode MS Bold'],'text-size':13,'text-offset':[0,-2.65],'text-anchor':'center','text-allow-overlap':true,'text-ignore-placement':true},paint:{'text-color':['get','color'],'text-halo-color':'#ffffff','text-halo-width':2.2}});
-  for(const id of ['dangollo-endpoint-halo','dangollo-endpoint-core','dangollo-endpoint-label'])try{state.map.moveLayer(id)}catch{}
-  // Remove legacy DOM overlays. A single renderer prevents double markers.
-  for(const kind of ['originMarker','destMarker']){try{state[kind]?.remove()}catch{}state[kind]=null}
+  if(ensureDangolloEndpointImages()){
+    if(!state.map.getLayer('dangollo-endpoint-pin-icon'))state.map.addLayer({id:'dangollo-endpoint-pin-icon',type:'symbol',source,
+      layout:{'icon-image':['get','icon'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,
+      'icon-size':1,'symbol-placement':'point','symbol-sort-key':1}});
+    if(!state.map.getLayer('dangollo-endpoint-pin-label'))state.map.addLayer({id:'dangollo-endpoint-pin-label',type:'symbol',source,
+      layout:{'text-field':['get','name'],'text-size':13,'text-font':['Open Sans Regular','Arial Unicode MS Regular'],
+      'text-offset':[0,-4.9],'text-anchor':'center','text-allow-overlap':true,'text-ignore-placement':true},
+      paint:{'text-color':'#111827','text-halo-color':'#ffffff','text-halo-width':2.5}});
+    for(const id of ['dangollo-endpoint-pin-icon','dangollo-endpoint-pin-label'])try{state.map.moveLayer(id)}catch{}
+  }
+  // The old DOM marker and circle-label renderer must not coexist with map-native pins.
+  for(const key of ['originMarker','destMarker']){try{state[key]?.remove()}catch{}state[key]=null}
 }
 function drawRoute(route=state.route,{fit=true}={}){
   if(!route?.geometry?.length||!state.map)return;
@@ -2552,7 +2580,7 @@ function drawRoute(route=state.route,{fit=true}={}){
   renderRouteEndpointLayers(route);
   if(fit){const b=new maplibregl.LngLatBounds();route.geometry.forEach(p=>b.extend(p));state.map.fitBounds(b,{padding:{top:100,bottom:310,left:36,right:36},duration:650})}
 }
-function clearRouteLayer(){['dangollo-endpoint-label','dangollo-endpoint-core','dangollo-endpoint-halo','route-direction-arrows','route-traffic','route-main','route-shadow'].forEach(id=>{if(state.map?.getLayer(id))state.map.removeLayer(id)});['dangollo-route-endpoints','route-traffic','route'].forEach(id=>{if(state.map?.getSource(id))state.map.removeSource(id)})}
+function clearRouteLayer(){['dangollo-endpoint-pin-label','dangollo-endpoint-pin-icon','dangollo-endpoint-label','dangollo-endpoint-core','dangollo-endpoint-halo','route-direction-arrows','route-traffic','route-main','route-shadow'].forEach(id=>{if(state.map?.getLayer(id))state.map.removeLayer(id)});['dangollo-route-endpoints','route-traffic','route'].forEach(id=>{if(state.map?.getSource(id))state.map.removeSource(id)})}
 
 /* ---------- LOCATION ---------- */
 let dangolloLocationPending=null;
@@ -3211,12 +3239,14 @@ function refreshFuelWhileDriving(){
 }
 async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false}={}){
   state.fuelProduct=product||'B027';
+  const requestedProduct=state.fuelProduct;
   syncFuelTabs();
   // Initial display must not block for multiple independent GPS requests.
   let fuelOrigin=currentOriginPoint();
   if(!pointValid(fuelOrigin))fuelOrigin=await refreshCurrentLocation({maxAgeMs:60000,timeoutMs:2600}).catch(()=>null);
   if(!pointValid(fuelOrigin))fuelOrigin=currentOriginPoint();
   if(!pointValid(fuelOrigin)){
+    if(!state.fuelRetryScheduled){state.fuelRetryScheduled=true;setTimeout(()=>{state.fuelRetryScheduled=false;if(pointValid(currentOriginPoint()))loadFuelPrices(state.fuelProduct,{force:true}).catch(console.warn)},3500)}
     let cached=null;
     try{const raw=JSON.parse(localStorage.getItem('jofams_fuel_last_success_v1')||'null');if(raw?.payload)cached=raw.payload}catch{}
     if(cached){state.fuelData=cached;renderFuelData(cached);return;}
@@ -3242,8 +3272,8 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
       const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),14000);
       let res;try{res=await fetch(u,{headers:{accept:'application/json'},cache:'no-store',signal:controller.signal})}finally{clearTimeout(timeout)}
       const dd=await res.json().catch(()=>({}));
-      if(!res.ok||dd?.error){const err=new Error(dd?.error||`유가 조회 실패 (${res.status})`);err.code=dd?.code||'';throw err}
-      if(!Array.isArray(dd?.stations)&&!Number.isFinite(Number(dd?.averagePrice)))throw new Error('오피넷 응답 형식이 올바르지 않습니다. /api/fuel 서버 연결을 확인해 주세요.');
+      if(!res.ok||dd?.error){const err=new Error(dd?.error||`오피넷 연동 서버 /api/fuel 응답 오류 (HTTP ${res.status})`);err.code=dd?.code||String(res.status);throw err}
+      if(!Array.isArray(dd?.stations))throw new Error('오피넷 API 응답에 주유소 목록(stations)이 없습니다.');
       return dd;
     }).map(p=>p.catch(e=>({__err:e}))));
     const okRes=results.filter(r=>!r.__err);
@@ -3255,9 +3285,14 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
       all.sort((a,b)=>Number(a.price)-Number(b.price));
       d.stations=all;
     }
-    if(!Array.isArray(d.stations)||!d.stations.length){throw new Error('오피넷 응답에 주유소 가격 정보가 없습니다.');}
+    if(!Array.isArray(d.stations))throw new Error('오피넷 API 응답 형식 오류');
+    if(requestedProduct!==state.fuelProduct)return;
+    if(!d.stations.length){
+      if(state.fuelData?.stations?.length){renderFuelData(state.fuelData);return;}
+      throw new Error('현재 반경에 판매가격 정보가 없습니다. 유종·위치를 확인해 주세요.');
+    }
     state.fuelFetchedRouteM=curM;
-    state.fuelData=d;state.fuelFetchedAt=Date.now();
+    d.product=requestedProduct;state.fuelData=d;state.fuelFetchedAt=Date.now();
     try{localStorage.setItem('jofams_fuel_last_success_v1',JSON.stringify({savedAt:Date.now(),payload:d}))}catch{}
     renderFuelData(d);
   }catch(e){
