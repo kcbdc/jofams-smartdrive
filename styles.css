@@ -4863,38 +4863,84 @@ html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{width:27.16px!impo
  html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{width:23.28px!important;height:23.28px!important;min-width:23.28px!important;min-height:23.28px!important;max-width:23.28px!important;max-height:23.28px!important;}
 }
 
-/* v7.6.22.8: left-flush navigation boards; 5% smaller icons only */
+/* v7.6.22.8 — 주행 안내판 왼쪽 완전 밀착, 왼쪽 모서리 직각 */
 html body #app #driveView .maneuver-stack{
   left:0!important;right:auto!important;
   margin-left:0!important;padding-left:0!important;
   transform:none!important;transform-origin:top left!important;
 }
 html body #app #driveView .maneuver-main{
-  border-radius:0 26px 26px 0!important;
+  border-top-left-radius:0!important;
+  border-bottom-left-radius:0!important;
   border-left:0!important;
   margin-left:0!important;
 }
 html body #app #driveView .maneuver-next{
+  border-top-left-radius:0!important;
+  border-bottom-left-radius:0!important;
   margin-left:0!important;
-  border-radius:0 0 18px 0!important;
+}
+/* v7.6.22.8 — 라디오/마이크 버튼 5% 축소 (60→57px, 52→49.4px), 아이콘 비례 축소 */
+html body #app #driveView #driveRadioBtn,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice{
+  width:57px!important;height:57px!important;
+  min-width:57px!important;min-height:57px!important;
+  max-width:57px!important;max-height:57px!important;
 }
 html body #app #driveView #driveRadioBtn .drive-radio-icon,
 html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
 html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{
-  width:25.802px!important;height:25.802px!important;
-  min-width:25.802px!important;min-height:25.802px!important;
-  max-width:25.802px!important;max-height:25.802px!important;
+  width:25.8px!important;height:25.8px!important;
+  min-width:25.8px!important;min-height:25.8px!important;
+  max-width:25.8px!important;max-height:25.8px!important;
 }
-@media (orientation:landscape){
-  html body #app #driveView .maneuver-stack,
-  html body.landscape-drive #app #driveView .maneuver-stack{
-    left:0!important;margin-left:0!important;transform:none!important;
+@media(orientation:landscape){
+  html body #app #driveView .maneuver-stack{
+    left:0!important;transform:none!important;
+  }
+  html body #app #driveView #driveRadioBtn,
+  html body #app #driveView #arOpenBtn.dangollo-drive-voice{
+    width:49.4px!important;height:49.4px!important;
+    min-width:49.4px!important;min-height:49.4px!important;
+    max-width:49.4px!important;max-height:49.4px!important;
   }
   html body #app #driveView #driveRadioBtn .drive-radio-icon,
   html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
   html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{
-    width:22.116px!important;height:22.116px!important;
-    min-width:22.116px!important;min-height:22.116px!important;
-    max-width:22.116px!important;max-height:22.116px!important;
+    width:22.12px!important;height:22.12px!important;
+    min-width:22.12px!important;min-height:22.12px!important;
+    max-width:22.12px!important;max-height:22.12px!important;
+  }
+}
+
+
+/* v7.6.22.9 — 세로: 두 버튼 사이 최소 여백만 유지 / 교통상황 안내 확보 */
+@media (orientation:portrait){
+  html body #app #driveView #driveRadioBtn{
+    top:calc(var(--safeT) + 10px)!important;
+    right:14px!important;
+  }
+  html body #app #driveView #arOpenBtn.dangollo-drive-voice{
+    top:calc(var(--safeT) + 72px)!important; /* 57px 버튼 + 5px 간격 */
+    right:14px!important;
+  }
+  html body #app #driveView .traffic-route-rail{
+    top:max(calc(var(--safeT) + 148px),calc(var(--t0, 0px) + var(--u, .5px)*325))!important;
+  }
+}
+/* 가로: 라디오(좌) · 음성(우) 동일 줄, 오른쪽 영역. 아래 교통상황 안내와 분리 */
+@media (orientation:landscape){
+  html body #app #driveView #driveRadioBtn,
+  html body #app #driveView #arOpenBtn.dangollo-drive-voice{
+    position:absolute!important;
+    top:calc(var(--safeT) + 10px)!important;
+    bottom:auto!important;
+    left:auto!important;
+    margin:0!important;
+  }
+  html body #app #driveView #driveRadioBtn{right:calc(var(--safeR, 0px) + 79px)!important}
+  html body #app #driveView #arOpenBtn.dangollo-drive-voice{right:calc(var(--safeR, 0px) + 16px)!important}
+  html body #app #driveView .traffic-route-rail{
+    top:max(calc(var(--safeT) + 72px),calc(var(--t0, 0px) + var(--u, .5px)*151))!important;
   }
 }
