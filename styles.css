@@ -4267,3 +4267,22 @@ html body #app #driveView .drive-route-food-marker .food-symbol{
 html body #app #driveView .drive-route-food-marker.onnuri .food-symbol{background:#eaf1ff!important;color:#246ac3!important}
 html body #app #driveView .drive-route-food-marker .food-caption{display:none!important}
 html body #app #driveView .drive-route-food-marker:active{opacity:1!important;box-shadow:0 3px 10px rgba(12,36,58,.25)!important}
+
+
+/* v7.6.25.1: driving voucher merchants use the original home-map storefront SVGs.
+   This block supersedes the old text glyph markers; no letter-based markers remain. */
+html body #app #driveView .drive-route-food-marker .food-symbol{
+  width:23px!important;height:23px!important;min-width:23px!important;
+  flex:0 0 23px!important;display:grid!important;place-items:center!important;
+  transform:rotate(45deg)!important;
+  background:#e7f5ec!important;color:#21845b!important;
+  border-radius:50%!important;
+}
+html body #app #driveView .drive-route-food-marker.onnuri .food-symbol{
+  background:#fff1df!important;color:#b96b20!important;
+}
+html body #app #driveView .drive-route-food-marker .food-symbol svg{
+  display:block!important;width:19px!important;height:19px!important;
+  max-width:19px!important;max-height:19px!important;
+  overflow:visible!important;stroke:currentColor!important;
+}

@@ -6785,9 +6785,10 @@ function ensureDrivePoiData(){
 function drivePoiMarkerHtml(tab,item){
   const brand=tab==='local'?'지역사랑상품권':'온누리상품권';
   const name=String(item?.name||item?.market||'가맹점');
-  // Deliberately compact: reveal the shop name in the POI panel, not over the road map.
-  const mark=tab==='local'?'L':'온';
-  return `<button type="button" class="drive-route-food-marker ${tab}" data-drive-poi-marker="${tab}" aria-label="${escapeHtml(brand+' '+name)}" title="${escapeHtml(brand+' · '+name)}"><span class="food-symbol" aria-hidden="true">${mark}</span></button>`;
+  // Match the existing home-map merchant SVGs: a compact store silhouette, not letter badges.
+  // Merchant names remain accessible through aria-label and the recommendation panel.
+  const shopIcon=tab==='local'?voucherShopSvg():onnuriShopSvg();
+  return `<button type="button" class="drive-route-food-marker ${tab}" data-drive-poi-marker="${tab}" aria-label="${escapeHtml(brand+' '+name)}" title="${escapeHtml(brand+' · '+name)}"><span class="food-symbol" aria-hidden="true">${shopIcon}</span></button>`;
 }
 function renderDrivePoiMarkers(){
   clearDrivePoiMarkers();
