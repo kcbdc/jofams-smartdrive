@@ -2497,18 +2497,21 @@ function ensureDangolloEndpointImages(){
   if(!state.map)return false;
   for(const [id,color,label] of [['dangollo-start-pin-image','#08753c','출발'],['dangollo-end-pin-image','#086bc8','도착']]){
     if(state.map.hasImage(id))continue;
-    const scale=2,w=64,h=92;
+    const scale=3,w=96,h=105;
     const canvas=document.createElement('canvas');canvas.width=w*scale;canvas.height=h*scale;
     const ctx=canvas.getContext('2d');if(!ctx)return false;
     ctx.scale(scale,scale);ctx.lineJoin='round';ctx.lineCap='round';
-    ctx.fillStyle=color;ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(label,w/2,13);
-    ctx.translate(7,27);
-    // Outline pin with bottom tip at (25,60); the icon anchor is bottom.
-    ctx.beginPath();ctx.moveTo(25,59);ctx.bezierCurveTo(20,54,8,42,8,27);ctx.bezierCurveTo(8,4,42,4,42,27);
-    ctx.bezierCurveTo(42,42,30,54,25,59);ctx.closePath();
-    ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle=color;ctx.lineWidth=4;ctx.stroke();
-    ctx.beginPath();ctx.arc(25,26,7.4,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle=color;ctx.lineWidth=4;ctx.stroke();
+    // Dedicated readable text plaque ABOVE the map pin. Do not depend on map glyphs/CSS.
+    ctx.fillStyle='rgba(255,255,255,.98)';ctx.strokeStyle=color;ctx.lineWidth=2.2;
+    ctx.beginPath();ctx.roundRect(20,2,56,27,12);ctx.fill();ctx.stroke();
+    ctx.fillStyle=color;ctx.font='900 17px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(label,48,16.5);
+    ctx.translate(23,29);
+    // Pin tip exactly coincides with icon bottom and route endpoint coordinate.
+    ctx.beginPath();ctx.moveTo(25,76);ctx.bezierCurveTo(20,69,4,52,4,30);ctx.bezierCurveTo(4,3,46,3,46,30);
+    ctx.bezierCurveTo(46,52,30,69,25,76);ctx.closePath();
+    ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle=color;ctx.lineWidth=4.5;ctx.stroke();
+    ctx.beginPath();ctx.arc(25,30,8.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle=color;ctx.lineWidth=4.5;ctx.stroke();
     state.map.addImage(id,ctx.getImageData(0,0,canvas.width,canvas.height),{pixelRatio:scale});
   }
   return true;
@@ -3222,7 +3225,8 @@ function fuelFreshEnough(){
 function scopeFuelToRoute(stations){
   const g=state.route?.geometry;
   if(!state.tripStartedAt||!g?.length)return stations||[];
-  const cur=currentRouteDistanceAt(state.currentRouteIndex||0),out=[];
+  const liveMatch=pointValid(state.user)?routePosOfPoint(Number(state.user.lng),Number(state.user.lat),g,null,200):null;
+  const cur=Number.isFinite(Number(liveMatch?.routeDistance))?Number(liveMatch.routeDistance):currentRouteDistanceAt(state.currentRouteIndex||0),out=[];
   for(const x of stations||[]){
     const lng=Number(x.lng??x.lon??x.x),lat=Number(x.lat??x.y);
     if(!Number.isFinite(lng)||!Number.isFinite(lat))continue;
@@ -5851,9 +5855,17 @@ function renderSafetyMarkers(){
   for(const e of state.safetyEvents||[]){
     if(skip.includes(e.type))continue;
     if(cameraTypes.has(e.type)){
-      // 방향/경로 매칭은 로딩 단계에서 이미 수행했다. 표시 단계에서 다시 필터링하지 않는다.
-      // 중복 2차 필터 때문에 모든 단속카메라가 사라지는 회귀를 방지한다.
-      cameraItems.push(e);
+      // Only cameras on the traveled route; never show adjacent or parallel-road camera positions.
+      const g=state.route?.geometry||[];
+      if(g.length<2)continue;
+      const rawLng=Number(e.originalLng??e.rawLng??e.lng),rawLat=Number(e.originalLat??e.rawLat??e.lat);
+      const srcOffset=Number(e.matchDistance??e.routeMatchDistance);
+      const match=Number.isFinite(rawLng)&&Number.isFinite(rawLat)?routePosOfPoint(rawLng,rawLat,g,null,80):null;
+      const offset=Number.isFinite(srcOffset)&&srcOffset>0?srcOffset:Number(match?.distance);
+      if(!match||!Number.isFinite(offset)||offset>60)continue;
+      // Preserve known official directional checks; unknown heading is not invented.
+      if(e.cameraDirectionReliable===true && !cameraEventDirectionCompatible(e,g))continue;
+      cameraItems.push({...e,snapLng:match.lng,snapLat:match.lat,routeDistance:match.routeDistance,routeIndex:match.index});
     }/* 카메라 외 안전 마커(사고·공사·스쿨존 등)는 지도에 그리지 않는다. 안내 팝업/음성으로만 알린다. */
   }
 
@@ -6517,7 +6529,7 @@ function drivePoiIconSvg(tab='fuel'){
   return `<svg ${common}><rect x="3.5" y="4.5" width="17" height="15.5" rx="3"/><path d="M3.5 9.2h17M7 13.3h5.6M7 16.6h3.4"/><circle cx="16.2" cy="14.8" r="2.2"/><path d="M16.2 13.5v2.7M14.9 14.8h2.6" stroke-width="1.6"/></svg>`;
 }
 
-function drivePoiDistanceLabel(m){const v=Number(m);return Number.isFinite(v)?km(v):'경로상'}
+function drivePoiDistanceLabel(m,item=null){const exact=Number(item?.__roadM);if(item?.__roadConfirmed&&Number.isFinite(exact))return km(exact);const v=Number(m);return Number.isFinite(v)?`경로상 약 ${km(v)}`:'거리 확인 필요'}
 function drivePoiItemTitle(tab,item){
   if(tab==='fuel')return fuelWon(item?.price);
   return item?.name||item?.market||'가맹점';
@@ -6529,7 +6541,8 @@ function drivePoiItemSubtitle(tab,item){
 }
 function routeScopedMerchants(items,{maxOffset=180,minAhead=80,maxAhead=16000,includeApprox=true}={}){
   const g=state.route?.geometry;if(!state.tripStartedAt||!g?.length)return [];
-  const cur=currentRouteDistanceAt(state.currentRouteIndex||0),out=[];
+  const liveMatch=pointValid(state.user)?routePosOfPoint(Number(state.user.lng),Number(state.user.lat),g,null,200):null;
+  const cur=Number.isFinite(Number(liveMatch?.routeDistance))?Number(liveMatch.routeDistance):currentRouteDistanceAt(state.currentRouteIndex||0),out=[];
   const seen=new Set();
   for(const item of items||[]){
     const lng=Number(item?.lng??item?.lon??item?.longitude??item?.x),lat=Number(item?.lat??item?.latitude??item?.y);
@@ -6570,7 +6583,7 @@ function renderDrivePoiStack(){
     const headline=tab==='fuel'?fuelWon(first.price):drivePoiItemTitle(tab,first);
     const sub=tab==='fuel'?drivePoiItemSubtitle(tab,first):drivePoiItemSubtitle(tab,first);
     el.className=`drive-poi-card ${spec.theme}`;
-    el.innerHTML=`<span class="poi-icon">${drivePoiIconSvg(tab)}</span><span class="poi-copy"><small>${spec.label} · ${drivePoiDistanceLabel(first.__aheadM)}</small><b>${escapeHtml(headline)}</b><em>${escapeHtml(sub)}</em></span>`;
+    el.innerHTML=`<span class="poi-icon">${drivePoiIconSvg(tab)}</span><span class="poi-copy"><small>${spec.label} · ${drivePoiDistanceLabel(first.__aheadM,first)}</small><b>${escapeHtml(headline)}</b><em>${escapeHtml(sub)}</em></span>`;
   }
   const junctionActive=!$('laneAssistLayer')?.classList.contains('hidden');
   const safetyActive=!$('safetyAlert')?.classList.contains('hidden')||!$('sectionSpeedPanel')?.classList.contains('hidden');
@@ -6585,8 +6598,8 @@ function drivePoiEntryButtonHtml(tab,item,index){
   else if(tab==='onnuri'){const use=onnuriUseFlags(item).join(' · ');if(use)meta.push(escapeHtml(use));if(item?.market)meta.push(escapeHtml(item.market));}
   else {const use=voucherUseFlags(item).join(' · ');if(use)meta.push(escapeHtml(use));}
   return `<button type="button" class="drive-poi-entry ${spec.theme}" data-drive-poi-item="${tab}:${index}">
-    <span class="entry-left"><i class="entry-icon">${drivePoiIconSvg(tab)}</i><span class="entry-copy"><small>${spec.label} · ${escapeHtml(drivePoiDistanceLabel(item.__aheadM))}</small><b>${title}</b><em>${escapeHtml(drivePoiItemSubtitle(tab,item))}</em></span></span>
-    <span class="entry-right"><strong>${escapeHtml(drivePoiDistanceLabel(item.__aheadM))}</strong>${meta.length?`<small>${meta.join(' · ')}</small>`:''}</span>
+    <span class="entry-left"><i class="entry-icon">${drivePoiIconSvg(tab)}</i><span class="entry-copy"><small>${spec.label} · ${escapeHtml(drivePoiDistanceLabel(item.__aheadM,item))}</small><b>${title}</b><em>${escapeHtml(drivePoiItemSubtitle(tab,item))}</em></span></span>
+    <span class="entry-right"><strong>${escapeHtml(drivePoiDistanceLabel(item.__aheadM,item))}</strong>${meta.length?`<small>${meta.join(' · ')}</small>`:''}</span>
   </button>`;
 }
 function renderDrivePoiPanel(){
@@ -6643,12 +6656,43 @@ function layoutDrivePoiPanel(){
     sheet.style.maxHeight=`${Math.max(100,Math.round(bottomY-usableTop))}px`;
   }
 }
+const drivePoiRoadDistanceCache=new Map();
+let drivePoiRoadJob=0;
+async function calculateDrivePoiRoadDistances(tab){
+  if(!['local','onnuri'].includes(tab)||!pointValid(state.user))return;
+  const token=++drivePoiRoadJob;
+  const candidates=(state.drivePoiData?.[tab]||[]).slice(0,8).filter(pointValid);
+  const origin={lat:Number(state.user.lat),lng:Number(state.user.lng)};
+  for(let i=0;i<candidates.length;i+=2){
+    if(token!==drivePoiRoadJob||!state.tripStartedAt||state.drivePoiTab!==tab)return;
+    await Promise.all(candidates.slice(i,i+2).map(async item=>{
+      const key=`${origin.lat.toFixed(3)}:${origin.lng.toFixed(3)}:${Number(item.lat).toFixed(5)}:${Number(item.lng).toFixed(5)}`;
+      let d=drivePoiRoadDistanceCache.get(key);
+      if(d===undefined){
+        const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),4500);
+        try{
+          const res=await fetch('/api/route',{method:'POST',headers:{'content-type':'application/json'},signal:controller.signal,
+            body:JSON.stringify({origin,destination:{lat:Number(item.lat),lng:Number(item.lng)},priority:'RECOMMEND',alternatives:false,mode:'car'})});
+          if(!res.ok)throw Error('route HTTP '+res.status);
+          const json=await res.json();
+          d=Number(json?.distance??json?.route?.distance);
+          if(!Number.isFinite(d)||d<=0)throw Error('missing road distance');
+          drivePoiRoadDistanceCache.set(key,d);
+        }catch{d=null}finally{clearTimeout(timer)}
+      }
+      if(token!==drivePoiRoadJob)return;
+      if(Number.isFinite(d)&&d>0){item.__roadM=d;item.__roadConfirmed=true;}
+    }));
+    if(token===drivePoiRoadJob)renderDrivePoiPanel();
+  }
+}
 function openDrivePoiPanel(tab=state.drivePoiTab||'local'){
   state.drivePoiTab=tab;$('drivePoiPanel')?.classList.remove('hidden');
   buildDrivePoiData();renderDrivePoiPanel();layoutDrivePoiPanel();requestAnimationFrame(layoutDrivePoiPanel);
   ensureDrivePoiData();
+  calculateDrivePoiRoadDistances(state.drivePoiTab).catch(e=>console.warn('POI road distance',e));
 }
-function closeDrivePoiPanel(){$('drivePoiPanel')?.classList.add('hidden')}
+function closeDrivePoiPanel(){drivePoiRoadJob++;$('drivePoiPanel')?.classList.add('hidden')}
 window.addEventListener('resize',()=>{if(!$('drivePoiPanel')?.classList.contains('hidden'))layoutDrivePoiPanel()},{passive:true});
 window.addEventListener('orientationchange',()=>{requestAnimationFrame(layoutDrivePoiPanel)},{passive:true});
 /* 경로를 따라 고정 거리의 표본점들을 조회. 화면 경계만 이용할 경우 지도 뒤쪽이나 다음 도시의 가맹점을 놓친다. */
@@ -6726,7 +6770,7 @@ function ensureDrivePoiData(){
 
 function drivePoiMarkerHtml(tab,item){
   const category=classifyVoiceMerchant(item);
-  const foodLabel=category==='meal'?'식당':category==='dessert'?'디저트':'카페';
+  const foodLabel=category==='meal'?'식당':category==='dessert'?'디저트':category==='cafe'?'카페':'가맹점';
   const brand=tab==='local'?'지역사랑':'온누리';
   const name=String(item?.name||item?.market||'가맹점');
   const pictogram=category==='meal'
@@ -6744,7 +6788,8 @@ function renderDrivePoiMarkers(){
   for(const tab of ['local','onnuri']){
     for(const item of data[tab]||[]){
       const category=classifyVoiceMerchant(item);
-      if(!['cafe','dessert','meal'].includes(category))continue;
+      // Display all verified storefront POIs, not only food/cafes.
+      if(!item?.name&&!item?.market)continue;
       // Market/administrative area geocoding is not a storefront location.
       if(item?.approximate||['market-zone','admin-zone'].includes(item?.precision))continue;
       const lng=Number(item.lng),lat=Number(item.lat);
@@ -6761,7 +6806,7 @@ function renderDrivePoiMarkers(){
     wrap.innerHTML=drivePoiMarkerHtml(tab,item);
     const el=wrap.firstElementChild;
     el.onclick=e=>{e.stopPropagation();openDrivePoiPanel(tab)};
-    try{state.drivePoiMarkers.push(new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([lng,lat]).addTo(state.map))}
+    try{const marker=new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([lng,lat]).addTo(state.map);marker.getElement().classList.add('dangollo-drive-merchant-marker');state.drivePoiMarkers.push(marker)}
     catch(error){console.warn('[Dangollo] merchant marker:',error)}
   }
 }
@@ -8176,7 +8221,7 @@ function bindUI(){
     if($('driveRecommendBtn'))$('driveRecommendBtn').onclick=()=>openDrivePoiPanel(state.drivePoiTab||'local');
     if($('drivePoiPanelClose'))$('drivePoiPanelClose').onclick=closeDrivePoiPanel;
     if($('drivePoiPanel'))$('drivePoiPanel').addEventListener('click',e=>{if(e.target===$('drivePoiPanel'))closeDrivePoiPanel()});
-    document.querySelectorAll('[data-drive-poi-tab]').forEach(btn=>btn.onclick=()=>{state.drivePoiTab=btn.dataset.drivePoiTab;renderDrivePoiPanel()});
+    document.querySelectorAll('[data-drive-poi-tab]').forEach(btn=>btn.onclick=()=>{state.drivePoiTab=btn.dataset.drivePoiTab;renderDrivePoiPanel();calculateDrivePoiRoadDistances(state.drivePoiTab).catch(()=>{})});
     document.querySelectorAll('[data-drive-poi-card]').forEach(btn=>btn.onclick=()=>openDrivePoiPanel(btn.dataset.drivePoiCard));
     if($('fuelModalClose'))$('fuelModalClose').onclick=closeFuelModal;
     if($('fuelModal'))$('fuelModal').addEventListener('click',e=>{if(e.target===$('fuelModal'))closeFuelModal()});
