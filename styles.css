@@ -5095,3 +5095,51 @@ html body #app #driveView .drive-side-actions button b{display:none!important}
     width:21px!important;height:21px!important;min-width:21px!important;min-height:21px!important;max-width:21px!important;max-height:21px!important;
   }
 }
+
+
+/* 7.6.23.3 — refresh quick icons + show explicit origin/destination markers. */
+html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
+html body #app #driveView .drive-side-actions button span.dangollo-quick-icon svg[data-quick-icon="store"],
+html body #app #driveView .drive-side-actions button span.dangollo-quick-icon svg[data-quick-icon="route"]{
+  shape-rendering:geometricPrecision!important;
+}
+html body #app #driveView #driveRadioBtn .drive-radio-icon svg{color:#111!important}
+
+html body .maplibregl-marker:has(.dangollo-endpoint-pin){z-index:96!important;overflow:visible!important}
+html body .dangollo-endpoint-pin{
+  position:relative!important;width:64px!important;height:76px!important;pointer-events:none!important;
+  display:block!important;visibility:visible!important;opacity:1!important;
+}
+html body .dangollo-endpoint-pin .dangollo-endpoint-flag{
+  position:absolute!important;left:50%!important;top:0!important;transform:translateX(-50%)!important;
+  min-width:56px!important;height:28px!important;padding:0 10px!important;border-radius:999px!important;
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  color:#fff!important;font-size:13px!important;font-weight:900!important;letter-spacing:-.03em!important;
+  box-shadow:0 8px 18px rgba(18,42,84,.18)!important;
+}
+html body .dangollo-endpoint-pin .dangollo-endpoint-stem{
+  position:absolute!important;left:50%!important;top:23px!important;transform:translateX(-50%)!important;
+  width:22px!important;height:44px!important;
+}
+html body .dangollo-endpoint-pin .dangollo-endpoint-stem::before{
+  content:''!important;position:absolute!important;left:50%!important;top:0!important;transform:translateX(-50%)!important;
+  width:18px!important;height:18px!important;border-radius:50%!important;background:#fff!important;
+}
+html body .dangollo-endpoint-pin .dangollo-endpoint-stem::after{
+  content:''!important;position:absolute!important;left:50%!important;top:16px!important;transform:translateX(-50%)!important;
+  width:4px!important;height:24px!important;border-radius:4px!important;
+}
+html body .dangollo-start-pin .dangollo-endpoint-flag{background:linear-gradient(180deg,#26b06b,#149455)!important}
+html body .dangollo-start-pin .dangollo-endpoint-stem::before{border:4px solid #1da55f!important;box-shadow:0 6px 14px rgba(20,148,85,.18)!important}
+html body .dangollo-start-pin .dangollo-endpoint-stem::after{background:#1da55f!important}
+html body .dangollo-end-pin .dangollo-endpoint-flag{background:linear-gradient(180deg,#2a86ff,#1567e8)!important}
+html body .dangollo-end-pin .dangollo-endpoint-stem::before{border:4px solid #2a86ff!important;box-shadow:0 6px 14px rgba(21,103,232,.18)!important}
+html body .dangollo-end-pin .dangollo-endpoint-stem::after{background:#2a86ff!important}
+
+/* In route planning both markers must be visible, and no legacy destination badge should remain. */
+html body:has(#routeView:not(.hidden)) .maplibregl-marker:has(.dangollo-endpoint-pin),
+html body:has(#routeView:not(.hidden)) .dangollo-endpoint-pin,
+html body:has(#driveView:not(.hidden)) .maplibregl-marker:has(.dangollo-endpoint-pin),
+html body:has(#driveView:not(.hidden)) .dangollo-endpoint-pin{display:block!important;visibility:visible!important;opacity:1!important}
+html body:has(#routeView:not(.hidden)) .destination-pin:not(.dangollo-endpoint-pin),
+html body:has(#routeView:not(.hidden)) .origin-pin{display:none!important;visibility:hidden!important;opacity:0!important}

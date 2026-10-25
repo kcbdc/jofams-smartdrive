@@ -2313,11 +2313,14 @@ function updateCarMarkerImage(){
   el.classList.toggle('walking-character-marker',isWalkingGuide());
   const img=el.querySelector('img');if(img){const src=characterGuideImage('rear');if(!img.getAttribute('src')?.endsWith(src))img.src=src;}
 }
-function makeDestMarker(){
+function makeEndpointMarker(kind='end',label='목적지'){
   const el=document.createElement('div');
-  el.className='destination-pin';
-  el.innerHTML='<span class="destination-flag">도착</span><span class="destination-stem" aria-hidden="true"></span>';
+  el.className=`dangollo-endpoint-pin dangollo-${kind}-pin`;
+  el.innerHTML=`<span class="dangollo-endpoint-flag">${label}</span><span class="dangollo-endpoint-stem" aria-hidden="true"></span>`;
   return new maplibregl.Marker({element:el,anchor:'bottom'});
+}
+function makeDestMarker(){
+  return makeEndpointMarker('end','목적지');
 }
 function updateUserMarkerMotion(){
   if(state.tripStartedAt&&!state.simulationActive&&!state.navigationStartReleased){
@@ -2403,12 +2406,13 @@ function ensureUserMarker(){
   updateUserMarkerMotion();
 }
 function ensureDestinationMarker(){
-  if(!state.map||!state.destination||!state.route?.geometry?.length||$('driveView')?.classList.contains('hidden')){
+  const routeVisible=!$('routeView')?.classList.contains('hidden');
+  const driveVisible=!$('driveView')?.classList.contains('hidden');
+  if(!state.map||!state.destination||!state.route?.geometry?.length||(!routeVisible&&!driveVisible)){
     if(state.destMarker){try{state.destMarker.remove()}catch{}state.destMarker=null;}
     updateDestinationEdgeIndicator();
     return;
   }
-  // 도착지는 실제 경로 종단 좌표에 고정한다. 우회 재탐색에서도 좌표를 갱신한다.
   const end=state.route?.geometry?.at(-1);
   const lng=Array.isArray(end)?Number(end[0]):Number(state.destination.lng);
   const lat=Array.isArray(end)?Number(end[1]):Number(state.destination.lat);
@@ -2417,10 +2421,11 @@ function ensureDestinationMarker(){
     if(!state.destMarker)state.destMarker=makeDestMarker().setLngLat([lng,lat]).addTo(state.map);
     else state.destMarker.setLngLat([lng,lat]);
     const el=state.destMarker.getElement();
-    if(el){el.style.removeProperty('display');el.style.removeProperty('visibility');el.style.removeProperty('opacity')}
-    // 지도 축척/회전 후에도 원래 경로 종점의 지도 좌표에 고정한다.
-    // MapLibre 마커 자체의 pixel 위치는 지도 엔진이 관리한다.
-    if(el){el.classList.add('dangollo-arrival-visible');el.setAttribute('aria-label','최종 목적지 도착');}
+    if(el){
+      el.style.removeProperty('display');el.style.removeProperty('visibility');el.style.removeProperty('opacity');
+      el.classList.add('dangollo-arrival-visible');
+      el.setAttribute('aria-label','목적지');
+    }
     ensureDestinationEdgeIndicator();
   }catch(e){console.warn('arrival marker update failed',e)}
 }
@@ -2438,7 +2443,16 @@ function setDestinationMarker(){
   }
   ensureDestinationMarker();
 }
-function updateOriginMarker(){if(state.originMarker){state.originMarker.remove();state.originMarker=null}if(state.originMode!=='custom'||!state.origin||!state.map)return;const el=document.createElement('div');el.className='origin-pin';state.originMarker=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([state.origin.lng,state.origin.lat]).addTo(state.map)}
+function updateOriginMarker(){
+  try{if(state.originMarker){state.originMarker.remove();state.originMarker=null}}catch{state.originMarker=null}
+  const routeVisible=!$('routeView')?.classList.contains('hidden');
+  if(!routeVisible||!state.map||!state.route?.geometry?.length)return;
+  const start=state.route.geometry?.[0];
+  const lng=Array.isArray(start)?Number(start[0]):Number(state.origin?.lng);
+  const lat=Array.isArray(start)?Number(start[1]):Number(state.origin?.lat);
+  if(!Number.isFinite(lng)||!Number.isFinite(lat))return;
+  state.originMarker=makeEndpointMarker('start','출발지').setLngLat([lng,lat]).addTo(state.map);
+}
 function trafficClassFromValues(speed,stateCode){
   const st=Number(stateCode)||0,sp=Number(speed)||0;
   // Kakao Mobility 공식 traffic_state: 1=정체(heavy), 2=지체(delayed), 3=서행(slow), 4=원활(smooth), 6=사고/통행불가.
@@ -2500,6 +2514,7 @@ function drawRoute(route=state.route,{fit=true}={}){
   try{
     if(state.map.getLayer('route-direction-arrows'))state.map.moveLayer('route-direction-arrows');
   }catch(e){console.warn('route arrow layer order failed',e)}
+  updateOriginMarker();
   ensureDestinationMarker();
   if(fit){const b=new maplibregl.LngLatBounds();route.geometry.forEach(p=>b.extend(p));state.map.fitBounds(b,{padding:{top:100,bottom:310,left:36,right:36},duration:650})}
 }
@@ -4440,7 +4455,7 @@ function setView(view){
   if(view==='route'||view==='drive')setDestinationMarker();
   if(view==='drive'){setTimeout(tryLandscapeFullscreen,80);setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),500)}
   refreshMapLayout({fitRoute:view==='route'&&Boolean(state.route)});
-  if((view==='route'||view==='drive')&&state.destination)setTimeout(ensureDestinationMarker,120);
+  if(view==='route'||view==='drive')setTimeout(()=>{updateOriginMarker();ensureDestinationMarker();},120);
   requestAnimationFrame(updateDestinationEdgeIndicator);
 }
 function initializeDriveSummary(){
@@ -6791,9 +6806,12 @@ async function loadRadioSchedule(){
 }
 
 function radioToggleMarkup(isOn){
-  return `<svg class="dangollo-quick-svg drive-radio-svg ${isOn?'is-on':'is-off'}" data-quick-icon="radio" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="16" cy="16" r="2.6" fill="currentColor" stroke="none"/>
-    <path d="M10.7 10.7a7.5 7.5 0 0 0 0 10.6M21.3 10.7a7.5 7.5 0 0 1 0 10.6M7.1 7.1a12.7 12.7 0 0 0 0 17.8M24.9 7.1a12.7 12.7 0 0 1 0 17.8"/>
+  return `<svg class="dangollo-quick-svg drive-radio-svg ${isOn?'is-on':'is-off'}" data-quick-icon="radio" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#111111" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="16" cy="16" r="2.4" fill="#111111" stroke="none"/>
+    <path d="M11.6 11.6a6.3 6.3 0 0 0 0 8.8"/>
+    <path d="M20.4 11.6a6.3 6.3 0 0 1 0 8.8"/>
+    <path d="M8.2 8.2a11.2 11.2 0 0 0 0 15.6"/>
+    <path d="M23.8 8.2a11.2 11.2 0 0 1 0 15.6"/>
   </svg>`;
 }
 
