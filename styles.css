@@ -4586,3 +4586,97 @@ body:has(#routeView:not(.hidden)) .destination-pin{
   body.landscape-drive #driveView.dangollo-in-junction #laneAssistTitle{font-size:28px!important}
   body.landscape-drive #driveView.dangollo-in-junction #laneAssistRoad{font-size:18px!important;padding-left:12px!important}
 }
+
+
+/* 7.6.22.2: start actions fixed OUTSIDE scrollable route sheet.
+   The body bottom nav is intentionally hidden for the route view. */
+html body #app #routeView .route-sheet{
+  bottom:calc(var(--safeB) + 106px)!important;
+  max-height:calc(100dvh - var(--safeT) - var(--safeB) - 200px)!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+  overscroll-behavior:contain!important;
+  padding-bottom:18px!important;
+}
+html body #app #routeView .route-start-dock{
+  position:absolute!important;
+  z-index:110!important;
+  left:0!important;right:0!important;
+  bottom:calc(var(--safeB) + 0px)!important;
+  box-sizing:border-box!important;
+  padding:10px 12px 7px!important;
+  background:rgba(250,252,255,.98)!important;
+  box-shadow:0 -12px 22px rgba(12,30,54,.08)!important;
+  border-radius:18px 18px 0 0!important;
+}
+html body #app #routeView .route-start-dock .route-start-actions{
+  position:static!important;bottom:auto!important;
+  margin:0!important;padding:0!important;
+  display:grid!important;grid-template-columns:1fr 1.7fr!important;gap:10px!important;
+  background:none!important;
+}
+html body #app #routeView .route-start-dock .auto-start-hint{
+  position:static!important;bottom:auto!important;
+  min-height:15px!important;max-height:24px!important;
+  margin:0!important;padding:4px 0 0!important;
+  background:transparent!important;font-size:10px!important;
+}
+html body #app #routeView .route-start-dock button{
+  height:clamp(50px,7.7dvh,68px)!important;
+  min-height:48px!important;
+  margin:0!important;
+  box-sizing:border-box!important;
+  font-size:clamp(16px,2.7vh,22px)!important;
+  line-height:1.15!important;
+}
+html body #app #routeView:not(.hidden) ~ #bottomNav,
+html body #app:has(#routeView:not(.hidden)) #bottomNav{
+  display:none!important;
+  pointer-events:none!important;
+}
+/* The old AR shortcut becomes a microphone; explicitly supersede every legacy AR CSS rule. */
+html body #app #driveView #arOpenBtn.dangollo-drive-voice{
+  display:grid!important;place-items:center!important;
+  background:linear-gradient(145deg,#348bff,#165ee8)!important;
+  color:#fff!important;
+  border:2px solid #c8dfff!important;
+  font-size:0!important;
+  box-shadow:0 7px 20px rgba(20,94,232,.25)!important;
+}
+html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{
+  display:block!important;width:55%!important;height:55%!important;
+  stroke:#fff!important;fill:none!important;
+  filter:none!important;
+}
+@media (orientation:landscape){
+  html body #app #routeView .route-sheet{
+    top:calc(var(--safeT) + 90px)!important;
+    bottom:calc(var(--safeB) + 93px)!important;
+    max-height:none!important;
+    padding-bottom:18px!important;
+  }
+  html body #app #routeView .route-start-dock{
+    right:auto!important;
+    left:14px!important;
+    width:min(48vw,700px)!important;
+    bottom:calc(var(--safeB) + 6px)!important;
+    border-radius:18px!important;
+    padding:8px 10px 5px!important;
+  }
+  html body #app #routeView .route-start-dock .route-start-actions{
+    grid-template-columns:1fr 1.6fr!important;
+  }
+  html body #app #routeView .route-start-dock button{
+    height:clamp(48px,11dvh,66px)!important;
+    min-height:45px!important;font-size:clamp(15px,3vh,22px)!important;
+  }
+}
+@media (max-height:640px) and (orientation:portrait){
+  html body #app #routeView .route-sheet{
+    max-height:calc(100dvh - var(--safeT) - var(--safeB) - 185px)!important;
+  }
+  html body #app #routeView .route-start-dock{
+    padding:6px 10px 4px!important;
+  }
+  html body #app #routeView .route-start-dock button{height:50px!important;min-height:46px!important}
+}
