@@ -2445,15 +2445,24 @@ function setDestinationMarker(){
   ensureDestinationMarker();
 }
 function updateOriginMarker(){
-  try{if(state.originMarker){state.originMarker.remove();state.originMarker=null}}catch{state.originMarker=null}
   const routeVisible=!$('routeView')?.classList.contains('hidden');
-  if(!routeVisible||!state.map||!state.route?.geometry?.length)return;
-  const start=state.route.geometry?.[0];
-  const lng=Array.isArray(start)?Number(start[0]):Number(state.origin?.lng);
-  const lat=Array.isArray(start)?Number(start[1]):Number(state.origin?.lat);
-  if(!Number.isFinite(lng)||!Number.isFinite(lat))return;
-  state.originMarker=makeEndpointMarker('start','출발지').setLngLat([lng,lat]).addTo(state.map);
+  const driveVisible=!$('driveView')?.classList.contains('hidden');
+  const start=state.route?.geometry?.[0];
+  const lng=Array.isArray(start)?Number(start[0]):NaN;
+  const lat=Array.isArray(start)?Number(start[1]):NaN;
+  if(!state.map||!state.route?.geometry?.length||(!routeVisible&&!driveVisible)||!Number.isFinite(lng)||!Number.isFinite(lat)){
+    if(state.originMarker){try{state.originMarker.remove()}catch{}state.originMarker=null}
+    return;
+  }
+  try{
+    const el=state.originMarker?.getElement?.();
+    if(!state.originMarker||!el?.isConnected){
+      if(state.originMarker)try{state.originMarker.remove()}catch{}
+      state.originMarker=makeEndpointMarker('start','출발지').setLngLat([lng,lat]).addTo(state.map);
+    }else state.originMarker.setLngLat([lng,lat]);
+  }catch(e){console.warn('start marker update failed',e)}
 }
+
 function trafficClassFromValues(speed,stateCode){
   const st=Number(stateCode)||0,sp=Number(speed)||0;
   // Kakao Mobility 공식 traffic_state: 1=정체(heavy), 2=지체(delayed), 3=서행(slow), 4=원활(smooth), 6=사고/통행불가.
@@ -4538,7 +4547,7 @@ function startNavigation(opts={}){
   if(departure&&state.userMarker)state.userMarker.setLngLat([departure.lng,departure.lat]);
   const openingMarker=state.userMarker?.getElement?.();
   if(openingMarker){openingMarker.style.display='block';openingMarker.style.visibility='visible';openingMarker.style.opacity='1';}
-  startWatch();drawRoute(state.route,{fit:false});updateDriving(true);
+  startWatch();drawRoute(state.route,{fit:false});updateOriginMarker();ensureDestinationMarker();updateDriving(true);
   snapDriveCameraNow();setTimeout(snapDriveCameraNow,160);setTimeout(snapDriveCameraNow,650);
   // 길안내 진입 시 라디오는 60% 기준으로 초기화한다.
   // MP3 원본별 음량 편차는 Web Audio 자동 음량 평준화(AGC + compressor)로 보정한다.
