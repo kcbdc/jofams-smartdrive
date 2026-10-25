@@ -1,0 +1,1 @@
+v7.6.23.5: right-top radio/voice; right-bottom recommendation/route/search. Fast single-flight location, fuel fetch timeout/cache-bust/startup retry. Backend API /api/fuel must have a working Opinet key and endpoint; no live API verification performed.

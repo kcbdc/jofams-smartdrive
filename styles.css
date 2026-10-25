@@ -5158,3 +5158,21 @@ html body #app #driveView .traffic-route-rail > small#trafficFlowState.unknown{o
 html body .dangollo-start-pin .dangollo-endpoint-flag,
 html body .dangollo-end-pin .dangollo-endpoint-flag{white-space:nowrap!important}
 html body .dangollo-endpoint-pin{filter:drop-shadow(0 6px 10px rgba(20,40,80,.18))!important}
+
+/* v7.6.23.5 — navigation quick tools: two at upper-right, three at lower-right. */
+html body #app #driveView .drive-side-actions{
+  top:auto!important;bottom:calc(var(--safeB) + 158px)!important;
+  right:calc(var(--safeR, 0px) + 44px)!important;
+  display:flex!important;flex-direction:column!important;gap:12px!important;
+}
+html body #app #driveView #driveRadioBtn{top:calc(var(--safeT) + 18px)!important;right:calc(var(--safeR,0px) + 44px)!important}
+html body #app #driveView #arOpenBtn.dangollo-drive-voice{top:calc(var(--safeT) + 84px)!important;right:calc(var(--safeR,0px) + 44px)!important}
+@media (orientation:landscape){
+ html body #app #driveView .drive-side-actions{top:auto!important;bottom:calc(var(--safeB) + 84px)!important;right:calc(var(--safeR,0px) + 38px)!important;gap:8px!important}
+ html body #app #driveView #driveRadioBtn{top:calc(var(--safeT) + 14px)!important;right:calc(var(--safeR,0px) + 38px)!important}
+ html body #app #driveView #arOpenBtn.dangollo-drive-voice{top:calc(var(--safeT) + 70px)!important;right:calc(var(--safeR,0px) + 38px)!important}
+}
+@media (max-height:650px) and (orientation:landscape){
+ html body #app #driveView .drive-side-actions{bottom:calc(var(--safeB) + 72px)!important;gap:5px!important}
+ html body #app #driveView .drive-side-actions button{width:40px!important;height:40px!important}
+}

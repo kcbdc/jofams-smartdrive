@@ -1082,7 +1082,7 @@ async function initMap(){
       permissionStatus('geolocation').then(async status=>{
         try{
           const u=await locate(status==='granted');
-          if(u&&pointValid(u)&&state.map)state.map.easeTo({center:[u.lng,u.lat],zoom:15.5,duration:450});
+          if(u&&pointValid(u)&&state.map){state.map.easeTo({center:[u.lng,u.lat],zoom:15.5,duration:450});if(!state.fuelData&&!state.fuelLoading)loadFuelPrices(state.fuelProduct,{force:true}).catch(()=>{});}
         }catch(e){console.warn('initial current location failed',e)}
         setTimeout(()=>{scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh()},250);
       });
@@ -2521,44 +2521,31 @@ function drawRoute(route=state.route,{fit=true}={}){
 function clearRouteLayer(){['route-direction-arrows','route-traffic','route-main','route-shadow'].forEach(id=>{if(state.map?.getLayer(id))state.map.removeLayer(id)});['route-traffic','route'].forEach(id=>{if(state.map?.getSource(id))state.map.removeSource(id)})}
 
 /* ---------- LOCATION ---------- */
+let dangolloLocationPending=null;
 async function locate(fly=true){
   const recent=currentOriginPoint();
   if(pointValid(recent)&&Date.now()-Number(state.lastRawFix?.at||state.lastRealGpsAt||state.nativeLocationAt||0)<30000)return recent;
-  if(state.permissionPrefs?.location===false){
-    toast('MY에서 위치정보 조회 동의를 켜 주세요.');
-    return null;
-  }
-
-  // Android WebView에서는 브라우저 geolocation보다 네이티브 Fused Location을 먼저 요청한다.
-  if(nativeBridgeAvailable()){
-    nativePost('requestLocation',{highAccuracy:true});
-    const started=Date.now();
-    while(Date.now()-started<600){
-      if(pointValid(state.user)&&Date.now()-Number(state.nativeLocationAt||0)<5000){
-        if(fly&&state.map)state.map.easeTo({center:[state.user.lng,state.user.lat],zoom:16,duration:350});
-        return state.user;
-      }
-      await new Promise(r=>setTimeout(r,100));
+  if(state.permissionPrefs?.location===false){toast('MY에서 위치정보 조회 동의를 켜 주세요.');return null;}
+  if(dangolloLocationPending)return dangolloLocationPending;
+  dangolloLocationPending=(async()=>{
+    // Native location and browser location run concurrently, not in sequence.
+    const locationTask=refreshCurrentLocation({maxAgeMs:30000,timeoutMs:2800}).catch(()=>null);
+    const fast=await locationTask;
+    if(pointValid(fast)){
+      if(fly&&state.map)state.map.easeTo({center:[fast.lng,fast.lat],zoom:16,duration:350});
+      return fast;
     }
-  }
-
-  if(!navigator.geolocation){
-    toast('위치 기능을 지원하지 않습니다.');
-    return pointValid(state.user)?state.user:null;
-  }
-
-  return new Promise(resolve=>{
-    navigator.geolocation.getCurrentPosition(
-      p=>{applyGps(p,fly);resolve(state.user)},
-      err=>{
-        console.warn('browser geolocation failed',err?.code,err?.message);
-        const fallback=currentOriginPoint();if(pointValid(fallback)){resolve(fallback);return}
-        toast('현재 위치를 확인할 수 없습니다. 휴대폰 위치 권한과 GPS를 확인해 주세요.');
-        resolve(null);
-      },
-      {enableHighAccuracy:true,timeout:9000,maximumAge:30000}
-    );
-  });
+    if(!navigator.geolocation)return pointValid(currentOriginPoint())?currentOriginPoint():null;
+    // Only one short follow-up, with a recently cached browser fix allowed.
+    return await new Promise(resolve=>{
+      navigator.geolocation.getCurrentPosition(
+        pos=>{try{applyGps(pos,fly)}catch(e){console.warn('GPS apply failed',e)}resolve(currentOriginPoint())},
+        err=>{console.warn('location unavailable',err?.code,err?.message);resolve(pointValid(currentOriginPoint())?currentOriginPoint():null)},
+        {enableHighAccuracy:false,timeout:3800,maximumAge:30000}
+      );
+    });
+  })().finally(()=>{dangolloLocationPending=null});
+  return dangolloLocationPending;
 }
 /* ---------- 정지/출발 판정 (히스테리시스) ----------
    예전에는 GPS speed<=0.05 한 값만으로 정지/출발을 판정해서, 신호대기 중 speed 가 0.06~0.3 처럼 살짝만
@@ -3172,11 +3159,10 @@ function refreshFuelWhileDriving(){
 async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false}={}){
   state.fuelProduct=product||'B027';
   syncFuelTabs();
-  if(!state.user){
-    await refreshCurrentLocation({maxAgeMs:60000,timeoutMs:3600}).catch(()=>null);
-  }
-  if(!state.user)await locate(false);
-  if(!state.user){
+  // Initial display must not block for multiple independent GPS requests.
+  let fuelOrigin=currentOriginPoint();
+  if(!pointValid(fuelOrigin))fuelOrigin=await locate(false).catch(()=>null);
+  if(!pointValid(fuelOrigin)){
     let cached=null;
     try{const raw=JSON.parse(localStorage.getItem('jofams_fuel_last_success_v1')||'null');if(raw?.payload)cached=raw.payload}catch{}
     if(cached){state.fuelData=cached;renderFuelData(cached);return;}
@@ -3193,12 +3179,14 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
     const driving=Boolean(state.tripStartedAt&&state.route?.geometry?.length);
     // 주행 중에는 현재 위치 주변만이 아니라 앞으로 달릴 경로를 따라 여러 지점에서 조회해 합친다.
     const curM=driving?currentRouteDistanceAt(state.currentRouteIndex||0):0;
-    const probes=driving?[0,4000,8000,12000,16000].map(o=>pointAtRouteDistance(curM+o)).filter(Boolean):[{lat:state.user.lat,lng:state.user.lng}];
+    const probes=driving?[0,4000,8000,12000,16000].map(o=>pointAtRouteDistance(curM+o)).filter(Boolean):[{lat:fuelOrigin.lat,lng:fuelOrigin.lng}];
     const results=await Promise.all(probes.map(async pt=>{
       const u=new URL('/api/fuel',location.origin);
-      u.searchParams.set('lat',pt.lat);u.searchParams.set('lng',pt.lng);
+      if(!pointValid(pt))throw new Error('유가 조회 좌표가 올바르지 않습니다.');
+      u.searchParams.set('lat',Number(pt.lat).toFixed(7));u.searchParams.set('lng',Number(pt.lng).toFixed(7));
       u.searchParams.set('prodcd',state.fuelProduct);u.searchParams.set('cnt',driving?'15':'8');
-      const res=await fetch(u,{headers:{accept:'application/json'}});
+      const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),6500);
+      let res;try{res=await fetch(u,{headers:{accept:'application/json'},cache:'no-store',signal:controller.signal})}finally{clearTimeout(timeout)}
       const dd=await res.json().catch(()=>({}));
       if(!res.ok){const err=new Error(dd?.error||`유가 조회 실패 (${res.status})`);err.code=dd?.code||'';throw err}
       return dd;
@@ -8120,6 +8108,8 @@ function bootstrapApp(){
   }catch(e){console.warn('radio UI bind failed',e)}
   if('speechSynthesis'in window){try{speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices()}catch{}}
   setTimeout(()=>refreshPermissionState().catch(()=>{}),180);
+  // Startup fuel request; cached result is displayed first if the GPS is still warming up.
+  setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}).catch(e=>console.warn('initial fuel failed',e)),350);
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootstrapApp,{once:true});else bootstrapApp();
 
