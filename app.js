@@ -2420,58 +2420,12 @@ function ensureDestinationMarker(){
     ensureDestinationEdgeIndicator();
   }catch(e){console.warn('arrival marker update failed',e)}
 }
-/* 7.6.22.4: real destination off-screen indicator (MapLibre, never demo coordinates). */
+/* 7.6.22.6: no screen-edge arrival marker; actual destination is a map-coordinate marker only. */
 function updateDestinationEdgeIndicator(){
-  const map=state.map, dest=state.destination;
   const edge=document.getElementById('dangolloDestinationEdge');
-  if(!map||!edge||!pointValid(dest)||(!state.route&&!state.tripStartedAt)){
-    if(edge)edge.hidden=true;return;
-  }
-  const activeRoute=!$('routeView')?.classList.contains('hidden')||!$('driveView')?.classList.contains('hidden');
-  if(!activeRoute){edge.hidden=true;return;}
-  const end=state.route?.geometry?.at(-1);
-  const lng=Array.isArray(end)?Number(end[0]):Number(dest.lng);
-  const lat=Array.isArray(end)?Number(end[1]):Number(dest.lat);
-  if(!Number.isFinite(lng)||!Number.isFinite(lat)){edge.hidden=true;return;}
-  const mapRect=map.getContainer()?.getBoundingClientRect();
-  if(!mapRect||mapRect.width<60||mapRect.height<60){edge.hidden=true;return;}
-  let pos;
-  try{pos=map.project([lng,lat]);}catch{edge.hidden=true;return;}
-  if(!Number.isFinite(pos.x)||!Number.isFinite(pos.y)){edge.hidden=true;return;}
-  const pad=36, w=mapRect.width, h=mapRect.height;
-  const outside=pos.x<pad||pos.x>w-pad||pos.y<pad||pos.y>h-pad;
-  if(!outside){edge.hidden=true;return;}
-  // Ray / viewport rectangle intersection; safely handles vertical and horizontal rays.
-  const cx=w/2,cy=h/2,dx=pos.x-cx,dy=pos.y-cy;
-  const halfW=Math.max(8,cx-pad),halfH=Math.max(8,cy-pad);
-  const factor=Math.max(Math.abs(dx)/halfW,Math.abs(dy)/halfH,1);
-  const x=Math.min(w-pad,Math.max(pad,cx+dx/factor));
-  const y=Math.min(h-pad,Math.max(pad,cy+dy/factor));
-  // Map container may not start at viewport origin: overlay is fixed to the screen.
-  edge.style.left=`${mapRect.left+x}px`;
-  edge.style.top=`${mapRect.top+y}px`;
-  edge.style.setProperty('--edge-bearing',`${Math.atan2(dy,dx)*180/Math.PI+90}deg`);
-  edge.hidden=false;
+  if(edge)edge.remove();
 }
-function ensureDestinationEdgeIndicator(){
-  let el=document.getElementById('dangolloDestinationEdge');
-  if(!el){
-    el=document.createElement('div');el.id='dangolloDestinationEdge';
-    el.className='dangollo-destination-edge';el.hidden=true;
-    el.setAttribute('aria-label','화면 밖 최종 목적지 방향');
-    el.innerHTML='<span class="dangollo-edge-arrow" aria-hidden="true">▲</span><b>도착</b>';
-    document.body.appendChild(el);
-  }
-  if(state.map&&!state._destEdgeBound){
-    state._destEdgeBound=true;
-    for(const event of ['move','zoom','rotate','pitch','resize','style.load']){
-      state.map.on(event,updateDestinationEdgeIndicator);
-    }
-    window.addEventListener('resize',updateDestinationEdgeIndicator,{passive:true});
-    window.addEventListener('orientationchange',()=>requestAnimationFrame(updateDestinationEdgeIndicator),{passive:true});
-  }
-  updateDestinationEdgeIndicator();
-}
+function ensureDestinationEdgeIndicator(){updateDestinationEdgeIndicator()}
 function setDestinationMarker(){
   if(!state.destination){
     const edge=document.getElementById('dangolloDestinationEdge');if(edge)edge.hidden=true;
@@ -8224,39 +8178,3 @@ document.addEventListener('visibilitychange',()=>{
 });
 
 
-/* 7.6.22.5: destination marker must stay only on the true destination. */
-function hideFloatingDestinationEdge(){
-  const edge=document.getElementById('dangolloDestinationEdge');
-  if(edge){edge.hidden=true;try{edge.remove()}catch{}}
-}
-function updateDestinationEdgeIndicator(){ hideFloatingDestinationEdge(); }
-function ensureDestinationEdgeIndicator(){ hideFloatingDestinationEdge(); }
-function ensureDestinationMarker(){
-  if(!state.map||!state.destination){ hideFloatingDestinationEdge(); return; }
-  const end=state.route?.geometry?.at(-1);
-  const lng=Array.isArray(end)?Number(end[0]):Number(state.destination.lng);
-  const lat=Array.isArray(end)?Number(end[1]):Number(state.destination.lat);
-  if(!Number.isFinite(lng)||!Number.isFinite(lat)){ hideFloatingDestinationEdge(); return; }
-  try{
-    if(!state.destMarker)state.destMarker=makeDestMarker().setLngLat([lng,lat]).addTo(state.map);
-    else state.destMarker.setLngLat([lng,lat]);
-    const el=state.destMarker.getElement?.();
-    if(el){
-      el.style.removeProperty('display');
-      el.style.removeProperty('visibility');
-      el.style.removeProperty('opacity');
-      el.classList.add('dangollo-arrival-visible');
-      el.setAttribute('aria-label','최종 목적지 도착');
-    }
-  }catch(e){console.warn('arrival marker update failed',e)}
-  hideFloatingDestinationEdge();
-}
-function setDestinationMarker(){
-  hideFloatingDestinationEdge();
-  if(!state.destination){
-    if(state.destMarker){try{state.destMarker.remove()}catch{} state.destMarker=null;}
-    return;
-  }
-  ensureDestinationMarker();
-}
-window.addEventListener('DOMContentLoaded',()=>setTimeout(hideFloatingDestinationEdge,0),{once:true});

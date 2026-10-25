@@ -4831,3 +4831,14 @@ html body #app #driveView .sign-bg-marker,
 html body #app #driveView .guide-sign-bg-marker,
 html body #app #driveView .maneuver-stack + .maplibregl-marker[style*="z-index: 94"],
 html body #app #driveView .maneuver-stack + .maplibregl-marker[style*="z-index:94"]{display:none!important}
+
+/* 7.6.22.6: coordinate-only destination, safe radio/mic sizing */
+.dangollo-destination-edge{display:none!important}
+html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{
+  width:28px!important;height:28px!important;min-width:28px!important;min-height:28px!important;max-width:28px!important;max-height:28px!important;
+}
+@media(orientation:landscape){
+ html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
+ html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{width:24px!important;height:24px!important;min-width:24px!important;min-height:24px!important;max-width:24px!important;max-height:24px!important}
+}
