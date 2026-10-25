@@ -2317,7 +2317,7 @@ function makeEndpointMarker(kind='end',label='목적지'){
   const el=document.createElement('div');
   el.className=`dangollo-endpoint-pin dangollo-${kind}-pin`;
   const color=kind==='start'?'#159B63':'#2077ED';
-  el.innerHTML=`<svg class="dangollo-endpoint-svg" viewBox="0 0 92 104" role="img" aria-label="${label}" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="5" width="74" height="35" rx="17.5" fill="${color}" stroke="#ffffff" stroke-width="3"/><text x="46" y="28" fill="#ffffff" font-size="18" text-anchor="middle" font-weight="800" font-family="sans-serif">${label}</text><path d="M46 40v47" stroke="${color}" stroke-width="5" stroke-linecap="round"/><circle cx="46" cy="62" r="12" fill="#ffffff" stroke="${color}" stroke-width="5"/></svg>`;
+  el.innerHTML=`<svg class="dangollo-endpoint-svg" viewBox="0 0 92 104" role="img" aria-label="${label}" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="5" width="74" height="35" rx="17.5" fill="${color}" stroke="#ffffff" stroke-width="3"/><text x="46" y="28" fill="#ffffff" font-size="18" text-anchor="middle" font-weight="800" font-family="sans-serif">${label}</text><path d="M46 40v58" stroke="${color}" stroke-width="5" stroke-linecap="round"/><circle cx="46" cy="97" r="6" fill="#ffffff" stroke="${color}" stroke-width="4"/></svg>`;
   const marker=new maplibregl.Marker({element:el,anchor:'bottom'});
   marker.getElement().classList.add('dangollo-route-endpoint-marker');
   return marker;

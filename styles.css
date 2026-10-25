@@ -4260,3 +4260,21 @@ html body #app #driveView #driveRadioBtn.off .drive-radio-svg .dangollo-radio-wa
 @media(prefers-reduced-motion:reduce){
  html body #app #driveView #driveRadioBtn.on .drive-radio-svg .dangollo-radio-wave{animation:none!important;opacity:1!important}
 }
+
+/* v7.6.24.3: portrait lane guidance with extra vertical breathing room. */
+@media (orientation:portrait){
+ html body #app #driveView #laneAssistLayer:not(.hidden),
+ html body #app #driveView.dangollo-in-junction #laneAssistLayer:not(.hidden),
+ html body #app #driveView.dangollo-in-junction #laneAssistLayer.dangollo-junction-split:not(.hidden){
+  top:calc(var(--safeT) + 242px)!important;bottom:auto!important;
+  left:50%!important;right:auto!important;transform:translateX(-50%)!important;
+  width:min(80vw,345px)!important;max-width:calc(100vw - 40px)!important;
+ }
+}
+/* Route endpoints: MapLibre itself positions these elements from geometry[0]/geometry[last]. */
+html body .maplibregl-marker.dangollo-route-endpoint-marker{
+ pointer-events:none!important;transform-origin:center bottom!important;
+}
+html body .maplibregl-marker.dangollo-route-endpoint-marker .dangollo-endpoint-svg{
+ width:100%!important;height:100%!important;overflow:visible!important;
+}
