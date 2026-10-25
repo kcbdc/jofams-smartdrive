@@ -6820,25 +6820,15 @@ async function loadRadioSchedule(){
 }
 
 function radioToggleMarkup(isOn){
-  if(isOn){
-    // ON: 라디오 본체 + 전파(재생중) — 파란 배경 위 흰색 아이콘
-    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <rect x="3.4" y="9" width="14" height="9.6" rx="2.4"></rect>
-      <path d="M7.4 9 13 4.4"></path>
-      <circle cx="8.1" cy="13.7" r="1.9"></circle>
-      <path d="M17.3 10.5c.85.6 1.4 1.55 1.4 2.6s-.55 2-1.4 2.6"></path>
-      <path d="M19.4 8.5c1.5 1 2.5 2.65 2.5 4.6s-1 3.6-2.5 4.6" opacity=".62"></path>
-    </svg>`;
-  }
-  // OFF: 별도의 원을 SVG 안에 다시 그리지 않는다. 버튼 원형 자체를 배경으로 사용하고
-  // 라디오 SVG 픽토그램을 원 크기에 가깝게 확대하여 ON과 같은 중심/크기 기준으로 배치한다.
-  return `<svg viewBox="0 0 32 32" aria-hidden="true" class="drive-radio-off-svg">
-    <g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="3.2" y="11" width="25.6" height="16" rx="4.2"></rect>
-      <path d="M7.6 10.8 16.5 3.8"></path>
-      <circle cx="10.5" cy="19" r="3.4"></circle>
-      <path d="M18.2 16.6h6.8M18.2 21.3h6.8"></path>
-    </g>
+  const wave1=isOn?'<path d="M17 10.2a4.2 4.2 0 0 1 0 5.6"></path>':'';
+  const wave2=isOn?'<path d="M19.6 7.9a7.2 7.2 0 0 1 0 10.2" opacity=".82"></path>':'';
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="drive-radio-svg ${isOn?'is-on':'is-off'}">
+    <rect x="4" y="8.8" width="13.2" height="8.8" rx="2.3"></rect>
+    <path d="M7.6 8.8 13 4.4"></path>
+    <circle cx="8.4" cy="13.2" r="1.65"></circle>
+    <path d="M13.5 13.2h1.9"></path>
+    ${wave1}
+    ${wave2}
   </svg>`;
 }
 
@@ -8232,3 +8222,41 @@ document.addEventListener('visibilitychange',()=>{
   state.simulationLastAt=performance.now();
   scheduleDangolloSimulationFrame();
 });
+
+
+/* 7.6.22.5: destination marker must stay only on the true destination. */
+function hideFloatingDestinationEdge(){
+  const edge=document.getElementById('dangolloDestinationEdge');
+  if(edge){edge.hidden=true;try{edge.remove()}catch{}}
+}
+function updateDestinationEdgeIndicator(){ hideFloatingDestinationEdge(); }
+function ensureDestinationEdgeIndicator(){ hideFloatingDestinationEdge(); }
+function ensureDestinationMarker(){
+  if(!state.map||!state.destination){ hideFloatingDestinationEdge(); return; }
+  const end=state.route?.geometry?.at(-1);
+  const lng=Array.isArray(end)?Number(end[0]):Number(state.destination.lng);
+  const lat=Array.isArray(end)?Number(end[1]):Number(state.destination.lat);
+  if(!Number.isFinite(lng)||!Number.isFinite(lat)){ hideFloatingDestinationEdge(); return; }
+  try{
+    if(!state.destMarker)state.destMarker=makeDestMarker().setLngLat([lng,lat]).addTo(state.map);
+    else state.destMarker.setLngLat([lng,lat]);
+    const el=state.destMarker.getElement?.();
+    if(el){
+      el.style.removeProperty('display');
+      el.style.removeProperty('visibility');
+      el.style.removeProperty('opacity');
+      el.classList.add('dangollo-arrival-visible');
+      el.setAttribute('aria-label','최종 목적지 도착');
+    }
+  }catch(e){console.warn('arrival marker update failed',e)}
+  hideFloatingDestinationEdge();
+}
+function setDestinationMarker(){
+  hideFloatingDestinationEdge();
+  if(!state.destination){
+    if(state.destMarker){try{state.destMarker.remove()}catch{} state.destMarker=null;}
+    return;
+  }
+  ensureDestinationMarker();
+}
+window.addEventListener('DOMContentLoaded',()=>setTimeout(hideFloatingDestinationEdge,0),{once:true});

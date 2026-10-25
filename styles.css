@@ -4770,3 +4770,64 @@ html body #app #driveView .maneuver-main::after{content:none!important;display:n
  html body #app #driveView #driveRadioBtn,
  html body #app #driveView #arOpenBtn.dangollo-drive-voice{width:52px!important;height:52px!important;min-width:52px!important;min-height:52px!important;max-width:52px!important;max-height:52px!important}
 }
+
+
+/* 7.6.22.5 final fix: equal buttons, equal mic/radio icon scale, no floating arrival badge */
+html body #app #routeView .route-start-dock .route-start-actions,
+html body #app #routeView .route-start-actions{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+  gap:12px!important;
+}
+html body #app #routeView #routeFutureDepartureBtn,
+html body #app #routeView #startBtn,
+html body #app #routeView .route-future-btn,
+html body #app #routeView .route-start-main-btn{
+  width:100%!important; min-width:0!important; max-width:none!important;
+  height:68px!important; min-height:68px!important; max-height:68px!important;
+  display:flex!important; align-items:center!important; justify-content:center!important;
+  white-space:nowrap!important; word-break:keep-all!important;
+  padding:0 10px!important; font-size:clamp(13px,4.3vw,21px)!important; line-height:1!important;
+}
+html body #app #routeView #routeFutureDepartureBtn,
+html body #app #routeView .route-future-btn{letter-spacing:-.04em!important}
+
+html body #app #driveView #driveRadioBtn,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice{
+  width:60px!important;height:60px!important;min-width:60px!important;min-height:60px!important;
+  max-width:60px!important;max-height:60px!important;border-radius:50%!important;
+  display:grid!important;place-items:center!important;padding:0!important;
+}
+html body #app #driveView #driveRadioBtn .drive-radio-icon,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice > svg,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice .icon,
+html body #app #driveView #driveRadioBtn .drive-radio-icon > svg{
+  width:28px!important;height:28px!important;display:block!important;
+}
+html body #app #driveView #driveRadioBtn .drive-radio-icon,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice{line-height:0!important}
+html body #app #driveView #driveRadioBtn .drive-radio-svg,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{
+  stroke-width:2.15!important; stroke-linecap:round!important; stroke-linejoin:round!important;
+}
+@media (orientation:landscape){
+  html body #app #driveView #driveRadioBtn,
+  html body #app #driveView #arOpenBtn.dangollo-drive-voice{
+    width:52px!important;height:52px!important;min-width:52px!important;min-height:52px!important;max-width:52px!important;max-height:52px!important;
+  }
+  html body #app #driveView #driveRadioBtn .drive-radio-icon,
+  html body #app #driveView #arOpenBtn.dangollo-drive-voice > svg,
+  html body #app #driveView #driveRadioBtn .drive-radio-icon > svg{width:24px!important;height:24px!important}
+}
+
+/* Real destination pin only. Remove all viewport-floating arrival badges. */
+.dangollo-destination-edge{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important}
+html body #app .maplibregl-marker:has(.dangollo-destination-edge),
+html body .maplibregl-marker:has(.dangollo-destination-edge){display:none!important}
+
+/* Remove any stray decorative blue circular marker behind the top-left guide sign. */
+html body #app #driveView .top-left-marker,
+html body #app #driveView .sign-bg-marker,
+html body #app #driveView .guide-sign-bg-marker,
+html body #app #driveView .maneuver-stack + .maplibregl-marker[style*="z-index: 94"],
+html body #app #driveView .maneuver-stack + .maplibregl-marker[style*="z-index:94"]{display:none!important}
