@@ -2409,6 +2409,8 @@ function ensureUserMarker(){
   updateUserMarkerMotion();
 }
 function ensureDestinationMarker(){
+  if(state.map?.getSource?.('dangollo-route-endpoints')){renderRouteEndpointLayers();return;}
+
   const routeVisible=!$('routeView')?.classList.contains('hidden');
   const driveVisible=!$('driveView')?.classList.contains('hidden');
   if(!state.map||!state.destination||!state.route?.geometry?.length||(!routeVisible&&!driveVisible)){
@@ -2448,6 +2450,8 @@ function setDestinationMarker(){
   ensureDestinationMarker();
 }
 function updateOriginMarker(){
+  if(state.map?.getSource?.('dangollo-route-endpoints')){renderRouteEndpointLayers();return;}
+
   const routeVisible=!$('routeView')?.classList.contains('hidden');
   const driveVisible=!$('driveView')?.classList.contains('hidden');
   const start=state.route?.geometry?.[0];
@@ -2486,6 +2490,23 @@ function buildTrafficGeoJson(route){
     const coords=g.slice(a,b+1);if(coords.length<2)continue;features.push({type:'Feature',properties:{status:info.key,color:info.color},geometry:{type:'LineString',coordinates:coords}});
   }
   return{type:'FeatureCollection',features};
+}
+/* v7.6.24.5: map-native route endpoints. GeoJSON coordinates remain attached to
+   the polyline as the map moves, zooms or rotates. CSS DOM-marker rules cannot hide them. */
+function renderRouteEndpointLayers(route=state.route){
+  if(!state.map?.isStyleLoaded?.())return;
+  const g=route?.geometry||[],visible=!$('routeView')?.classList.contains('hidden')||!$('driveView')?.classList.contains('hidden');
+  const source='dangollo-route-endpoints';
+  const features=visible&&g.length>=2?[{type:'Feature',properties:{kind:'start',name:'출발지',color:'#16a66a'},geometry:{type:'Point',coordinates:g[0]}},{type:'Feature',properties:{kind:'end',name:'목적지',color:'#1879f4'},geometry:{type:'Point',coordinates:g[g.length-1]}}]:[];
+  const geo={type:'FeatureCollection',features};
+  if(state.map.getSource(source))state.map.getSource(source).setData(geo);
+  else state.map.addSource(source,{type:'geojson',data:geo});
+  if(!state.map.getLayer('dangollo-endpoint-halo'))state.map.addLayer({id:'dangollo-endpoint-halo',type:'circle',source,paint:{'circle-radius':13,'circle-color':'#fff','circle-stroke-color':['get','color'],'circle-stroke-width':4,'circle-pitch-alignment':'map'}});
+  if(!state.map.getLayer('dangollo-endpoint-core'))state.map.addLayer({id:'dangollo-endpoint-core',type:'circle',source,paint:{'circle-radius':5,'circle-color':['get','color'],'circle-pitch-alignment':'map'}});
+  if(!state.map.getLayer('dangollo-endpoint-label'))state.map.addLayer({id:'dangollo-endpoint-label',type:'symbol',source,layout:{'text-field':['get','name'],'text-font':['Open Sans Bold','Arial Unicode MS Bold'],'text-size':13,'text-offset':[0,-2.65],'text-anchor':'center','text-allow-overlap':true,'text-ignore-placement':true},paint:{'text-color':['get','color'],'text-halo-color':'#ffffff','text-halo-width':2.2}});
+  for(const id of ['dangollo-endpoint-halo','dangollo-endpoint-core','dangollo-endpoint-label'])try{state.map.moveLayer(id)}catch{}
+  // Remove legacy DOM overlays. A single renderer prevents double markers.
+  for(const kind of ['originMarker','destMarker']){try{state[kind]?.remove()}catch{}state[kind]=null}
 }
 function drawRoute(route=state.route,{fit=true}={}){
   if(!route?.geometry?.length||!state.map)return;
@@ -2528,11 +2549,10 @@ function drawRoute(route=state.route,{fit=true}={}){
   try{
     if(state.map.getLayer('route-direction-arrows'))state.map.moveLayer('route-direction-arrows');
   }catch(e){console.warn('route arrow layer order failed',e)}
-  updateOriginMarker();
-  ensureDestinationMarker();
+  renderRouteEndpointLayers(route);
   if(fit){const b=new maplibregl.LngLatBounds();route.geometry.forEach(p=>b.extend(p));state.map.fitBounds(b,{padding:{top:100,bottom:310,left:36,right:36},duration:650})}
 }
-function clearRouteLayer(){['route-direction-arrows','route-traffic','route-main','route-shadow'].forEach(id=>{if(state.map?.getLayer(id))state.map.removeLayer(id)});['route-traffic','route'].forEach(id=>{if(state.map?.getSource(id))state.map.removeSource(id)})}
+function clearRouteLayer(){['dangollo-endpoint-label','dangollo-endpoint-core','dangollo-endpoint-halo','route-direction-arrows','route-traffic','route-main','route-shadow'].forEach(id=>{if(state.map?.getLayer(id))state.map.removeLayer(id)});['dangollo-route-endpoints','route-traffic','route'].forEach(id=>{if(state.map?.getSource(id))state.map.removeSource(id)})}
 
 /* ---------- LOCATION ---------- */
 let dangolloLocationPending=null;
@@ -3194,7 +3214,7 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
   syncFuelTabs();
   // Initial display must not block for multiple independent GPS requests.
   let fuelOrigin=currentOriginPoint();
-  if(!pointValid(fuelOrigin))fuelOrigin=await refreshCurrentLocation({maxAgeMs:30000,timeoutMs:6500}).catch(()=>null);
+  if(!pointValid(fuelOrigin))fuelOrigin=await refreshCurrentLocation({maxAgeMs:60000,timeoutMs:2600}).catch(()=>null);
   if(!pointValid(fuelOrigin))fuelOrigin=currentOriginPoint();
   if(!pointValid(fuelOrigin)){
     let cached=null;
@@ -3219,7 +3239,7 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
       if(!pointValid(pt))throw new Error('유가 조회 좌표가 올바르지 않습니다.');
       u.searchParams.set('lat',Number(pt.lat).toFixed(7));u.searchParams.set('lng',Number(pt.lng).toFixed(7));
       u.searchParams.set('prodcd',state.fuelProduct);u.searchParams.set('cnt',driving?'15':'8');
-      const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),6500);
+      const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),14000);
       let res;try{res=await fetch(u,{headers:{accept:'application/json'},cache:'no-store',signal:controller.signal})}finally{clearTimeout(timeout)}
       const dd=await res.json().catch(()=>({}));
       if(!res.ok||dd?.error){const err=new Error(dd?.error||`유가 조회 실패 (${res.status})`);err.code=dd?.code||'';throw err}
@@ -3235,6 +3255,7 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
       all.sort((a,b)=>Number(a.price)-Number(b.price));
       d.stations=all;
     }
+    if(!Array.isArray(d.stations)||!d.stations.length){throw new Error('오피넷 응답에 주유소 가격 정보가 없습니다.');}
     state.fuelFetchedRouteM=curM;
     state.fuelData=d;state.fuelFetchedAt=Date.now();
     try{localStorage.setItem('jofams_fuel_last_success_v1',JSON.stringify({savedAt:Date.now(),payload:d}))}catch{}
@@ -3482,7 +3503,7 @@ async function chooseDestination(item,{autoGuide=true}={}){
     return;
   }
   // 저장돼 있던/오래된 위치가 아니라 지금 위치로 출발하도록 최신 위치를 다시 받는다.
-  if(state.originMode==='current')await refreshCurrentLocation().catch(()=>{});
+  if(state.originMode==='current'&&!pointValid(currentOriginPoint()))await refreshCurrentLocation({timeoutMs:1600}).catch(()=>{});
 
   if(!state.origin||state.originMode==='current'){
     state.origin={...(currentOriginPoint()||state.user),name:'내 위치',address:'현재 GPS 위치'};
@@ -3764,17 +3785,39 @@ async function loadRouteOptions(){
   startPlanningAi();
   cancelAutoStart();$('routeCards').innerHTML=''; if($('routePlanEta'))$('routePlanEta').textContent=''; renderRouteModeSwitch();
   try{
-    const results=await Promise.allSettled([routeRequest('RECOMMEND',null,null,'car'),routeRequest('TIME',null,null,'car'),routeRequest('RECOMMEND','toll',null,'car'),routeRequest('RECOMMEND',null,null,'walk')]);
-    const specs=[['추천','daim',''],['빠른길','sunsik','fast'],['무료도로','hunmin','free']];state.carRouteOptions=[];
-    results.slice(0,3).forEach((x,i)=>{if(x.status==='fulfilled'&&x.value?.geometry?.length)state.carRouteOptions.push({...x.value,_label:specs[i][0],_character:specs[i][1],_class:specs[i][2]})});
-    if(results[3]?.status==='fulfilled'&&results[3].value?.geometry?.length){state.walkingRoute={...results[3].value,_label:'도보 추천',_character:state.character,_class:'walk'};state.routeModeDurations.walk=results[3].value.duration}
-    const best=state.carRouteOptions.reduce((a,x)=>!a||Number(x.duration)<Number(a.duration)?x:a,null);state.routeModeDurations.car=best?.duration??null;renderRouteModeSwitch();
-    if(state.routeMode==='walk'){
-      if(!state.walkingRoute)throw new Error('도보 경로를 가져오지 못했습니다.');state.routeOptions=[state.walkingRoute];state.selectedRoute=0;
-    }else{
-      if(!state.carRouteOptions.length)throw new Error('자동차 경로가 없습니다.');state.routeOptions=state.carRouteOptions;const pref=state.routePreference;const p=state.routeOptions.findIndex(x=>(pref==='fast'&&x._class==='fast')||(pref==='free'&&x._class==='free')||(pref==='recommend'&&!x._class));state.selectedRoute=p>=0?p:0;
+    const requestSpecs=[['추천','daim','',routeRequest('RECOMMEND',null,null,'car')],['빠른길','sunsik','fast',routeRequest('TIME',null,null,'car')],['무료도로','hunmin','free',routeRequest('RECOMMEND','toll',null,'car')]];
+    const walkPromise=routeRequest('RECOMMEND',null,null,'walk');
+    // The main car route must not wait for optional alternatives or walking.
+    let first=null;
+    try{const rr=await requestSpecs[0][3];if(rr?.geometry?.length)first={...rr,_label:'추천',_character:'daim',_class:''}}catch(e){console.warn('main route delayed',e)}
+    if(!first){
+      const backup=await Promise.any(requestSpecs.slice(1).map(async ([label,character,kind,promise])=>{
+        const rr=await promise;if(!rr?.geometry?.length)throw Error('경로 없음');return{...rr,_label:label,_character:character,_class:kind};
+      }));
+      first=backup;
     }
-    state.routeCalculating=false;selectRoute(state.selectedRoute,false);renderRouteCards();renderRouteModeSwitch();renderPlanningPoiSuggestions();scheduleAutoStart();
+    state.carRouteOptions=[first];state.routeModeDurations.car=first.duration;
+    state.routeOptions=[first];state.selectedRoute=0;
+    state.routeCalculating=false;
+    if(state.routeMode==='car'){
+      selectRoute(0,false);renderRouteCards();renderRouteModeSwitch();renderPlanningPoiSuggestions();scheduleAutoStart();
+    }
+    const routeDestinationAtStart=`${state.destination?.lat}:${state.destination?.lng}`;
+    Promise.allSettled([...requestSpecs.map(x=>x[3]),walkPromise]).then(results=>{
+      if(!state.destination||state.routeCalculating||`${state.destination.lat}:${state.destination.lng}`!==routeDestinationAtStart)return;
+      const oldFirst=state.carRouteOptions[0];
+      const newCars=requestSpecs.flatMap(([label,character,kind],i)=>{
+        const x=results[i];return x.status==='fulfilled'&&x.value?.geometry?.length?[{...x.value,_label:label,_character:character,_class:kind}]:[];
+      });
+      state.carRouteOptions=newCars.length?newCars:[oldFirst];
+      const walk=results[3];if(walk.status==='fulfilled'&&walk.value?.geometry?.length){state.walkingRoute={...walk.value,_label:'도보 추천',_character:state.character,_class:'walk'};state.routeModeDurations.walk=walk.value.duration}
+      const current=state.route;
+      state.routeOptions=state.routeMode==='walk'&&state.walkingRoute?[state.walkingRoute]:state.carRouteOptions;
+      const match=state.routeOptions.findIndex(x=>x===current||x._class===current?._class);
+      state.selectedRoute=Math.max(0,match);
+      renderRouteCards();renderRouteModeSwitch();
+    }).catch(e=>console.warn('optional route refresh failed',e));
+    if(state.routeMode==='walk'){const wr=await walkPromise;state.walkingRoute={...wr,_label:'도보 추천',_character:state.character,_class:'walk'};state.routeOptions=[state.walkingRoute];state.selectedRoute=0;selectRoute(0,false);renderRouteCards();renderRouteModeSwitch();scheduleAutoStart()}
   }catch(e){state.routeCalculating=false;renderPlanningPoiSuggestions();$('routeCards').innerHTML='<div class="auto-start-hint">경로를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>';toast(e.message,3000)}
 }
 /* ---------- 7.6.21 경로 계산 중 AI 경유 추천 ----------
