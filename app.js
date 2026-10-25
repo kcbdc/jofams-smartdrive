@@ -2316,7 +2316,8 @@ function updateCarMarkerImage(){
 function makeEndpointMarker(kind='end',label='목적지'){
   const el=document.createElement('div');
   el.className=`dangollo-endpoint-pin dangollo-${kind}-pin`;
-  el.innerHTML=`<span class="dangollo-endpoint-flag">${label}</span><span class="dangollo-endpoint-stem" aria-hidden="true"></span>`;
+  const color=kind==='start'?'#159B63':'#2077ED';
+  el.innerHTML=`<svg class="dangollo-endpoint-svg" viewBox="0 0 92 104" role="img" aria-label="${label}" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="5" width="74" height="35" rx="17.5" fill="${color}" stroke="#ffffff" stroke-width="3"/><text x="46" y="28" fill="#ffffff" font-size="18" text-anchor="middle" font-weight="800" font-family="sans-serif">${label}</text><path d="M46 40v47" stroke="${color}" stroke-width="5" stroke-linecap="round"/><circle cx="46" cy="62" r="12" fill="#ffffff" stroke="${color}" stroke-width="5"/></svg>`;
   return new maplibregl.Marker({element:el,anchor:'bottom'});
 }
 function makeDestMarker(){
@@ -3161,7 +3162,8 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
   syncFuelTabs();
   // Initial display must not block for multiple independent GPS requests.
   let fuelOrigin=currentOriginPoint();
-  if(!pointValid(fuelOrigin))fuelOrigin=await locate(false).catch(()=>null);
+  if(!pointValid(fuelOrigin))fuelOrigin=await refreshCurrentLocation({maxAgeMs:30000,timeoutMs:2800}).catch(()=>null);
+  if(!pointValid(fuelOrigin))fuelOrigin=currentOriginPoint();
   if(!pointValid(fuelOrigin)){
     let cached=null;
     try{const raw=JSON.parse(localStorage.getItem('jofams_fuel_last_success_v1')||'null');if(raw?.payload)cached=raw.payload}catch{}
@@ -3188,7 +3190,8 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
       const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),6500);
       let res;try{res=await fetch(u,{headers:{accept:'application/json'},cache:'no-store',signal:controller.signal})}finally{clearTimeout(timeout)}
       const dd=await res.json().catch(()=>({}));
-      if(!res.ok){const err=new Error(dd?.error||`유가 조회 실패 (${res.status})`);err.code=dd?.code||'';throw err}
+      if(!res.ok||dd?.error){const err=new Error(dd?.error||`유가 조회 실패 (${res.status})`);err.code=dd?.code||'';throw err}
+      if(!Array.isArray(dd?.stations)&&!Number.isFinite(Number(dd?.averagePrice)))throw new Error('오피넷 응답 형식이 올바르지 않습니다. /api/fuel 서버 연결을 확인해 주세요.');
       return dd;
     }).map(p=>p.catch(e=>({__err:e}))));
     const okRes=results.filter(r=>!r.__err);
@@ -4268,9 +4271,13 @@ async function tryLandscapeFullscreen(){
   setTimeout(()=>state.map?.resize(),120);
 }
 // 시스템 뒤로가기/제스처 등으로 브라우저가 전체화면을 강제 종료했을 때도 레이아웃 상태를 맞춰준다.
-document.addEventListener('fullscreenchange',()=>{if(!isDocumentFullscreen())setTimeout(tryLandscapeFullscreen,60)});
-document.addEventListener('webkitfullscreenchange',()=>{if(!isDocumentFullscreen())setTimeout(tryLandscapeFullscreen,60)});
+document.addEventListener('fullscreenchange',()=>{setTimeout(()=>state.map?.resize(),100)});
+document.addEventListener('webkitfullscreenchange',()=>{setTimeout(()=>state.map?.resize(),100)});
 
+document.addEventListener('pointerdown',e=>{
+  if(!matchMedia('(orientation: landscape)').matches||isDocumentFullscreen())return;
+  if(!$('driveView')?.classList.contains('hidden') && e.target.closest('#driveView button')){enterAppFullscreen();}
+},{passive:true});
 function updateDriveCompass(){
   const btn=$('mapCompassBtn');if(!btn)return;
   let bearing=0;
@@ -4521,7 +4528,7 @@ function startNavigation(opts={}){
   acquireNavigationWakeLock();startDestinationCycle();logTrip('start');setView('drive');$('driveView')?.classList.toggle('walking-mode',state.routeMode==='walk');
   state.gpsFix={lat:null,lng:null,headingDeg:null,speedMps:0,at:0,fixCount:0,mapSnapped:false};state.mapMatch={index:Number(startMatch?.index)||0,routeDistance:startM,score:Infinity,confidence:0,at:0};state.routeLockedDistance=startM;state.routeLockedAt=Date.now();state.offRouteHits=0;state.offRouteHeadingHits=0;state.offRouteSince=0;state.arrivalCandidateSince=0; // 새 주행마다 상보필터 상태 초기화
   requestCompassPermission(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 iOS 나침반 권한 요청, 안드로이드/데스크톱은 즉시 리스너 등록
-  if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen(); // 사용자 제스처(시작 버튼) 컨텍스트 안에서 바로 요청해야 브라우저가 확실히 허용한다.
+  if(matchMedia('(orientation: landscape)').matches)enterAppFullscreen(); // 일부 브라우저는 전체화면 API를 지원하지 않아 CSS 확장으로 대체한다.
   initializeDriveSummary();
   // Render an already loaded character at the departure point before requesting a new GPS frame.
   preloadDangolloDriveCharacters();
@@ -6801,12 +6808,10 @@ async function loadRadioSchedule(){
 }
 
 function radioToggleMarkup(isOn){
-  return `<svg class="dangollo-quick-svg drive-radio-svg ${isOn?'is-on':'is-off'}" data-quick-icon="radio" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#111111" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="16" cy="16" r="2.2" fill="#111111" stroke="none"/>
-    <path d="M11.8 11.9a6 6 0 0 0 0 8.2"/>
-    <path d="M20.2 11.9a6 6 0 0 1 0 8.2"/>
-    <path d="M8.2 8.4a10.9 10.9 0 0 0 0 15.2"/>
-    <path d="M23.8 8.4a10.9 10.9 0 0 1 0 15.2"/>
+  return `<svg class="dangollo-quick-svg drive-radio-svg ${isOn?'is-on':'is-off'}" data-quick-icon="radio" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#ffffff" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="16" cy="16" r="2.4" fill="#ffffff" stroke="none"/>
+    <path d="M11.8 11.8a6.2 6.2 0 0 0 0 8.4"/><path d="M20.2 11.8a6.2 6.2 0 0 1 0 8.4"/>
+    <path d="M8.2 8.2a11 11 0 0 0 0 15.6"/><path d="M23.8 8.2a11 11 0 0 1 0 15.6"/>
   </svg>`;
 }
 
