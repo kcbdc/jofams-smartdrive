@@ -3992,6 +3992,32 @@ function planningReason(x,prelim){
   if(x.kind==='fuel')return `${x.saving>0?`주변보다 L당 약 ${x.saving}원 저렴 · `:'후보 중 가격 우수 · '}${fuelWon(x.price)} · ${tail}`;
   return `${x.label}상품권 사용 가능 · ${tail}`;
 }
+// LLM is advisory only. Numeric scoring and routing remain deterministic.
+const dangolloAiNarrations=new Map();
+async function fetchDangolloAiNarration(facts, fallback){
+  const key=JSON.stringify(facts);
+  if(dangolloAiNarrations.has(key))return dangolloAiNarrations.get(key);
+  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),4500);
+  try{
+    const model=localStorage.getItem('dangollo_ai_model')==='gemma'?'gemma':'llama';
+    const response=await fetch('/api/ai/narrate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model,facts}),signal:controller.signal});
+    if(!response.ok)throw new Error('AI unavailable');
+    const data=await response.json();
+    if(!data.ok||!data.text)throw new Error('AI empty');
+    dangolloAiNarrations.set(key,data.text);return data.text;
+  }catch{return fallback}finally{clearTimeout(timeout)}
+}
+function enhancePlanningAiNarrations(rows){
+  const root=$('planningPoiSuggestions');if(!root||!rows?.length)return;
+  rows.slice(0,3).forEach((x,i)=>{
+    const facts={kind:x.kind,label:x.label,name:x.name||x.market||'',distanceM:Math.round(Number(x.offset)||0),detourMin:Math.max(1,Math.round((Number(x.offset)||0)*2/8/60)),price:Number(x.price)||0,savingPerLiter:Number(x.saving)||0};
+    const fallback=planningReason(x,false);
+    fetchDangolloAiNarration(facts,fallback).then(text=>{
+      const node=root.querySelector(`[data-planning-poi="${i}"] small`);
+      if(node && node.closest('button')?.querySelector('strong')?.textContent===(x.name||x.market||x.label))node.textContent=text;
+    });
+  });
+}
 function renderPlanningPoiSuggestions(){
   const root=$('planningPoiSuggestions');if(!root)return;
   if(state.tripStartedAt||state.routeMode==='walk'){root.classList.add('hidden');return}
@@ -4010,6 +4036,7 @@ function renderPlanningPoiSuggestions(){
   const head=`<header><b><i class="ai-badge">AI 추천</i> 가는 길에 들르기 좋은 곳</b><small>${sub}</small></header>`;
   if(!rows.length){root.innerHTML=head+'<div class="planning-poi-skeleton"><i></i><i></i><i></i></div>';return}
   root.innerHTML=head+rows.map((x,i)=>`<button type="button" class="planning-poi-entry ${x.kind}" data-planning-poi="${i}"><div class="pp-top"><strong>${escapeHtml(x.name||x.market||x.label)}</strong><em>적합도 ${x.score}</em></div><small>${escapeHtml(planningReason(x,!useRoute))}</small><span>경유지로 추가 →</span></button>`).join('');
+  enhancePlanningAiNarrations(rows);
   root.querySelectorAll('[data-planning-poi]').forEach(b=>b.onclick=()=>{
     const x=rows[Number(b.dataset.planningPoi)];if(!x)return;
     const pt=normalizedPlace({name:x.name||x.market||x.label,address:x.address||x.matchedAddress||'',lat:x.lat,lng:x.lng});
