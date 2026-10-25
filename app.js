@@ -3555,8 +3555,8 @@ async function chooseDestination(item,{autoGuide=true}={}){
 
   await loadRouteOptions();
   // 7.6.1.9: 목적지를 고르자마자 바로 주행을 시작하지 않는다. loadRouteOptions()가 경로를 표시하면서
-  // 이미 scheduleAutoStart()로 10초 카운트다운을 시작하므로, 여기서 바로 startNavigation()을 호출해
-  // 카운트다운을 건너뛰지 않는다. 사용자는 10초 안에 "안내 시작"을 눌러 즉시 시작하거나 취소할 수 있다.
+  // 이미 scheduleAutoStart()로 15초 카운트다운을 시작하므로, 여기서 바로 startNavigation()을 호출해
+  // 카운트다운을 건너뛰지 않는다. 사용자는 15초 안에 "안내 시작"을 눌러 즉시 시작하거나 취소할 수 있다.
   void autoGuide;
 }
 function resumeNavigationWithSelectedRoute(){
@@ -4036,7 +4036,7 @@ function selectRoute(index,fit=true){
   syncCharacterUI();drawRoute(state.route,{fit});state.routeCumulative=buildCumulative(state.route);state.currentRouteIndex=0;updateRoutePlanEta();
   if(state.routeMode==='car')loadSafetyEvents(state.route);else{state.safetyEvents=[];clearSafetyMarkers();hideSafetyAlert()}
 }
-function scheduleAutoStart(){cancelAutoStart();if(state.voiceRecommendationPending)return;state.autoStartSeconds=10;updateAutoHint();state.autoStartTimer=setInterval(()=>{state.autoStartSeconds--;if(state.autoStartSeconds<=0){cancelAutoStart();if(state.tripStartedAt)resumeNavigationWithSelectedRoute();else startNavigation()}else updateAutoHint()},1000)}
+function scheduleAutoStart(){cancelAutoStart();if(state.voiceRecommendationPending)return;state.autoStartSeconds=15;updateAutoHint();state.autoStartTimer=setInterval(()=>{state.autoStartSeconds--;if(state.autoStartSeconds<=0){cancelAutoStart();if(state.tripStartedAt)resumeNavigationWithSelectedRoute();else startNavigation()}else updateAutoHint()},1000)}
 function cancelAutoStart(){if(state.autoStartTimer){clearInterval(state.autoStartTimer);state.autoStartTimer=null}}
 function updateAutoHint(){$('autoStartHint').textContent=state.autoStartSeconds>0?`${state.autoStartSeconds}초 후 ${state.routeMode==='walk'?'도보 ':''}안내를 시작합니다.`:''}
 
