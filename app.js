@@ -3813,65 +3813,90 @@ async function selectTravelMode(mode){
   }
   selectRoute(state.selectedRoute,true);renderRouteCards();renderRouteModeSwitch();scheduleAutoStart();
 }
+let routeOptionsRequestToken=0;
 async function loadRouteOptions(){
+  const token=++routeOptionsRequestToken;
   state.routeCalculating=true;
   if(state.originMode==='current'&&!state.tripStartedAt){
     let origin=currentOriginPoint();
     if(!pointValid(origin))origin=await refreshCurrentLocation({maxAgeMs:30000,timeoutMs:5500}).catch(()=>null);
     if(!pointValid(origin))origin=await locate(false).catch(()=>null);
+    if(token!==routeOptionsRequestToken)return;
     if(!pointValid(origin)){
       state.routeCalculating=false;
-      $('routeCards').innerHTML='<div class="auto-start-hint">현재 위치를 확인하지 못했습니다. 휴대폰 위치 서비스와 사이트 위치 권한을 확인한 뒤 다시 시도해 주세요.</div>';
+      $('routeCards').innerHTML='<div class="auto-start-hint">현재 위치를 확인하지 못했습니다. 위치 권한을 확인하고 다시 시도해 주세요.</div>';
       $('routePlanEta').textContent='위치 수신 실패 · 위치 서비스 확인 후 재시도';
       renderPlanningPoiSuggestions();
       return;
     }
   }
+  if(token!==routeOptionsRequestToken)return;
   startPlanningAi();
-  cancelAutoStart();$('routeCards').innerHTML=''; if($('routePlanEta'))$('routePlanEta').textContent=''; renderRouteModeSwitch();
-  try{
-    const requestSpecs=[['추천','daim','',routeRequest('RECOMMEND',null,null,'car')],['빠른길','sunsik','fast',routeRequest('TIME',null,null,'car')],['무료도로','hunmin','free',routeRequest('RECOMMEND','toll',null,'car')]];
-    const walkPromise=routeRequest('RECOMMEND',null,null,'walk');
-    // The main car route must not wait for optional alternatives or walking.
-    let first=null;
-    try{const rr=await requestSpecs[0][3];if(rr?.geometry?.length)first={...rr,_label:'추천',_character:'daim',_class:''}}catch(e){console.warn('main route delayed',e)}
-    if(!first){
-      const backup=await Promise.any(requestSpecs.slice(1).map(async ([label,character,kind,promise])=>{
-        const rr=await promise;if(!rr?.geometry?.length)throw Error('경로 없음');return{...rr,_label:label,_character:character,_class:kind};
-      }));
-      first=backup;
-    }
-    state.carRouteOptions=[first];state.routeModeDurations.car=first.duration;
-    state.routeOptions=[first];state.selectedRoute=0;
-    state.routeCalculating=false;
-    if(state.routeMode==='car'){
-      selectRoute(0,false);renderRouteCards();renderRouteModeSwitch();renderPlanningPoiSuggestions();scheduleAutoStart();
-    }
-    const routeDestinationAtStart=`${state.destination?.lat}:${state.destination?.lng}`;
-    Promise.allSettled([...requestSpecs.map(x=>x[3]),walkPromise]).then(results=>{
-      if(!state.destination||state.routeCalculating||`${state.destination.lat}:${state.destination.lng}`!==routeDestinationAtStart)return;
-      const oldFirst=state.carRouteOptions[0];
-      const newCars=requestSpecs.flatMap(([label,character,kind],i)=>{
-        const x=results[i];return x.status==='fulfilled'&&x.value?.geometry?.length?[{...x.value,_label:label,_character:character,_class:kind}]:[];
-      });
-      state.carRouteOptions=newCars.length?newCars:[oldFirst];
-      const walk=results[3];if(walk.status==='fulfilled'&&walk.value?.geometry?.length){state.walkingRoute={...walk.value,_label:'도보 추천',_character:state.character,_class:'walk'};state.routeModeDurations.walk=walk.value.duration}
-      const current=state.route;
-      state.routeOptions=state.routeMode==='walk'&&state.walkingRoute?[state.walkingRoute]:state.carRouteOptions;
-      const match=state.routeOptions.findIndex(x=>x===current||x._class===current?._class);
-      state.selectedRoute=Math.max(0,match);
-      // Asynchronous alternatives may replace option objects: keep the chosen geometry in sync.
-      // Do not reset a running route; let the user explicitly choose a new one.
-      if(!state.tripStartedAt&&match>=0&&state.routeOptions[match]!==current){
-        state.route=state.routeOptions[match];
+  cancelAutoStart();
+  $('routeCards').innerHTML='';
+  if($('routePlanEta'))$('routePlanEta').textContent='';
+  renderRouteModeSwitch();
+  const originalMode=state.routeMode;
+  const destinationKey=`${state.destination?.lat}:${state.destination?.lng}`;
+  const specs=[
+    {label:'추천',character:'daim',kind:'',priority:'RECOMMEND',avoid:null},
+    {label:'빠른길',character:'sunsik',kind:'fast',priority:'TIME',avoid:null},
+    {label:'무료도로',character:'hunmin',kind:'free',priority:'RECOMMEND',avoid:'toll'}
+  ];
+  state.carRouteOptions=[];
+  const valid=()=>token===routeOptionsRequestToken&&`${state.destination?.lat}:${state.destination?.lng}`===destinationKey;
+  let firstReady=false,finished=0;
+  const publish=(spec,rr)=>{
+    if(!valid()||!rr?.geometry?.length)return;
+    const route={...rr,_label:spec.label,_character:spec.character,_class:spec.kind};
+    const previousClass=state.route?._class;
+    const optionsByKind=new Map(state.carRouteOptions.map(x=>[x._class,x]));
+    optionsByKind.set(spec.kind,route);
+    state.carRouteOptions=specs.map(x=>optionsByKind.get(x.kind)).filter(Boolean);
+    state.routeModeDurations.car=state.carRouteOptions.reduce((m,x)=>Math.min(m,Number(x.duration)||Infinity),Infinity);
+    if(!Number.isFinite(state.routeModeDurations.car))state.routeModeDurations.car=null;
+    if(state.routeMode==='walk'){renderRouteModeSwitch();return}
+    state.routeOptions=state.carRouteOptions;
+    const chosenIndex=state.routeOptions.findIndex(x=>x._class===previousClass);
+    if(!firstReady){
+      firstReady=true;
+      state.routeCalculating=false;
+      const preferred=state.routeOptions.findIndex(x=>x._class===(state.routePreference==='fast'?'fast':state.routePreference==='free'?'free':''));
+      selectRoute(preferred>=0?preferred:0,false);
+      renderPlanningPoiSuggestions();
+      scheduleAutoStart();
+    }else if(!state.tripStartedAt&&chosenIndex>=0){
+      state.selectedRoute=chosenIndex;
+      if(state.route!==state.routeOptions[chosenIndex]){
+        state.route=state.routeOptions[chosenIndex];
         state.routeCumulative=buildCumulative(state.route);
-        drawRoute(state.route,{fit:false});updateRoutePlanEta();
+        drawRoute(state.route,{fit:false});
+        updateRoutePlanEta();
       }
-      renderRouteCards();renderRouteModeSwitch();
-    }).catch(e=>console.warn('optional route refresh failed',e));
-    if(state.routeMode==='walk'){const wr=await walkPromise;state.walkingRoute={...wr,_label:'도보 추천',_character:state.character,_class:'walk'};state.routeOptions=[state.walkingRoute];state.selectedRoute=0;selectRoute(0,false);renderRouteCards();renderRouteModeSwitch();scheduleAutoStart()}
-  }catch(e){state.routeCalculating=false;renderPlanningPoiSuggestions();$('routeCards').innerHTML='<div class="auto-start-hint">경로를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>';toast(e.message,3000)}
+    }else{
+      state.selectedRoute=Math.max(0,state.routeOptions.findIndex(x=>x===state.route));
+    }
+    renderRouteCards();renderRouteModeSwitch();
+  };
+  const jobs=specs.map(spec=>routeRequest(spec.priority,spec.avoid,null,'car')
+    .then(rr=>publish(spec,rr))
+    .catch(err=>console.warn(`${spec.label} 경로 요청 실패`,err))
+    .finally(()=>{finished++;if(valid()&&finished===specs.length&&!firstReady){state.routeCalculating=false;$('routeCards').innerHTML='<div class="auto-start-hint">경로를 가져오지 못했습니다. 다시 시도해 주세요.</div>';}}));
+  // 도보 경로는 자동차 3종의 렌더링과 완전히 독립적으로 처리한다.
+  const walkJob=routeRequest('RECOMMEND',null,null,'walk').then(rr=>{
+    if(!valid()||!rr?.geometry?.length)return;
+    state.walkingRoute={...rr,_label:'도보 추천',_character:state.character,_class:'walk'};
+    state.routeModeDurations.walk=rr.duration;
+    renderRouteModeSwitch();
+    if(state.routeMode==='walk'){
+      state.routeCalculating=false;state.routeOptions=[state.walkingRoute];
+      selectRoute(0,false);renderRouteCards();scheduleAutoStart();
+    }
+  }).catch(err=>console.warn('도보 경로 요청 실패',err));
+  // 백그라운드 경로 응답을 각각 즉시 반영. Promise.allSettled가 모든 결과를 기다리던 병목 제거.
+  await Promise.race([...jobs,walkJob]);
 }
+
 /* ---------- 7.6.21 경로 계산 중 AI 경유 추천 ----------
    경로 계산(최대 수 초)이 끝나기를 기다리지 않고, 출발지→(경유지)→목적지 사이 구간을 따라
    지역사랑·온누리 가맹점과 주유소를 먼저 조회/분석해 "가는 길에 들르기 좋은 곳"을 보여준다.
