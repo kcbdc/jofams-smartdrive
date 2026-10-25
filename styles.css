@@ -4286,3 +4286,38 @@ html body #app #driveView .drive-route-food-marker .food-symbol svg{
   max-width:19px!important;max-height:19px!important;
   overflow:visible!important;stroke:currentColor!important;
 }
+
+/* v7.6.25.3 — Merchant icons live in MapLibre's marker DOM, OUTSIDE #driveView.
+   All old #driveView descendant selectors do not match these nodes. */
+html body .maplibregl-marker.dangollo-drive-merchant-marker{
+  display:block!important;visibility:visible!important;opacity:1!important;
+  z-index:86!important;overflow:visible!important;
+}
+html body .maplibregl-marker.dangollo-drive-merchant-marker > button.drive-route-food-marker{
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  width:32px!important;height:34px!important;min-width:32px!important;max-width:32px!important;
+  min-height:34px!important;max-height:34px!important;
+  padding:0!important;margin:0!important;
+  border:2px solid #fff!important;border-radius:50% 50% 50% 6px!important;
+  background:#e7f5ec!important;box-shadow:0 3px 9px rgba(25,50,45,.20)!important;
+  transform:rotate(-45deg)!important;opacity:.96!important;
+  box-sizing:border-box!important;pointer-events:auto!important;
+  color:#21845b!important;font-size:0!important;line-height:1!important;
+}
+html body .maplibregl-marker.dangollo-drive-merchant-marker > button.drive-route-food-marker.onnuri{
+  background:#fff1df!important;color:#b96b20!important;
+}
+html body .maplibregl-marker.dangollo-drive-merchant-marker .food-symbol{
+  width:25px!important;height:25px!important;min-width:25px!important;min-height:25px!important;
+  flex:0 0 25px!important;padding:0!important;margin:0!important;
+  display:grid!important;place-items:center!important;transform:rotate(45deg)!important;
+  background:transparent!important;color:inherit!important;border:0!important;
+}
+html body .maplibregl-marker.dangollo-drive-merchant-marker .food-symbol > svg{
+  display:block!important;visibility:visible!important;opacity:1!important;
+  width:21px!important;height:21px!important;min-width:21px!important;min-height:21px!important;
+  max-width:21px!important;max-height:21px!important;
+  stroke:currentColor!important;fill:none!important;
+  transform:none!important;filter:none!important;-webkit-mask:none!important;mask:none!important;
+}
+html body .maplibregl-marker.dangollo-drive-merchant-marker .food-caption{display:none!important}
