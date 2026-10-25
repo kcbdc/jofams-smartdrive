@@ -4382,7 +4382,7 @@ function maybeRestoreDriveMap(){
 function setView(view){
   $('homeView').classList.toggle('hidden',view!=='home');$('routeView').classList.toggle('hidden',view!=='route');$('driveView').classList.toggle('hidden',view!=='drive');
   setTimeout(tryLandscapeFullscreen,60); // 화면 전환/최초 진입 시에도 현재 가로/세로 상태에 맞게 전체화면 여부를 갱신
-  $('bottomNav').classList.toggle('hidden',view==='drive'||state.arRunning);
+  $('bottomNav').classList.toggle('hidden',view!=='home'||state.arRunning);
   if(view==='home'){
     $('homeView')?.classList.remove('ui-hidden');
     // 생활편의시설은 최초 진입 시에도 현재 위치를 자동으로 확인해 기본 탭(주유소) 목록을 바로 보여준다.
@@ -4409,6 +4409,7 @@ function setView(view){
     $('localVoucherBadge')?.classList.add('hidden');clearLocalVoucherMarkers();clearOnnuriMarkers();clearHomeCameraMarkers();clearSafetyMarkers();
   }
   if(view==='route')renderSavedWaypointCourses();
+  if(view==='route'||view==='drive')setDestinationMarker();
   if(view==='drive'){setTimeout(tryLandscapeFullscreen,80);setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),500)}
   refreshMapLayout({fitRoute:view==='route'&&Boolean(state.route)});
 }
