@@ -2543,7 +2543,7 @@ async function locate(fly=true){
   if(dangolloLocationPending)return dangolloLocationPending;
   dangolloLocationPending=(async()=>{
     // Native location and browser location run concurrently, not in sequence.
-    const locationTask=refreshCurrentLocation({maxAgeMs:30000,timeoutMs:2800}).catch(()=>null);
+    const locationTask=refreshCurrentLocation({maxAgeMs:30000,timeoutMs:6500}).catch(()=>null);
     const fast=await locationTask;
     if(pointValid(fast)){
       if(fly&&state.map)state.map.easeTo({center:[fast.lng,fast.lat],zoom:16,duration:350});
@@ -2555,7 +2555,7 @@ async function locate(fly=true){
       navigator.geolocation.getCurrentPosition(
         pos=>{try{applyGps(pos,fly)}catch(e){console.warn('GPS apply failed',e)}resolve(currentOriginPoint())},
         err=>{console.warn('location unavailable',err?.code,err?.message);resolve(pointValid(currentOriginPoint())?currentOriginPoint():null)},
-        {enableHighAccuracy:false,timeout:3800,maximumAge:30000}
+        {enableHighAccuracy:false,timeout:9000,maximumAge:30000}
       );
     });
   })().finally(()=>{dangolloLocationPending=null});
@@ -3129,7 +3129,26 @@ function announceTunnelAhead(idx){
 }
 function startDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningLastAt=Date.now();state.deadReckoningTimer=setInterval(deadReckoningTick,500)}
 function stopDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningTimer=0;state.gpsEstimated=false;updateGpsEstimateUi();state.deadReckoningDistance=null;state.deadReckoningLastAt=0}
-function startWatch(){if(state.permissionPrefs?.location===false)return;if(nativeBridgeAvailable())setNativeNavigationActive(true);if(state.watchId!=null)return;state.watchId=navigator.geolocation.watchPosition(p=>applyGps(p,false),()=>{}, {enableHighAccuracy:true,maximumAge:0,timeout:7000});startDeadReckoning()}
+function startWatch(){
+  if(state.permissionPrefs?.location===false)return;
+  if(nativeBridgeAvailable())setNativeNavigationActive(true);
+  if(state.watchId!=null)return;
+  if(!navigator.geolocation){console.warn('[GPS] geolocation API unavailable');return;}
+  const watchError=(err)=>{
+    console.warn('[GPS] watchPosition failed',err?.code,err?.message);
+    if(err?.code===3 && state.watchId!=null){
+      navigator.geolocation.clearWatch(state.watchId);
+      state.watchId=null;
+      // Use a less restrictive fix when high-accuracy GPS times out indoors.
+      state.watchId=navigator.geolocation.watchPosition(p=>applyGps(p,false),
+        e=>console.warn('[GPS] fallback watch failed',e?.code,e?.message),
+        {enableHighAccuracy:false,maximumAge:30000,timeout:20000});
+    }
+  };
+  state.watchId=navigator.geolocation.watchPosition(p=>applyGps(p,false),watchError,
+    {enableHighAccuracy:true,maximumAge:10000,timeout:15000});
+  startDeadReckoning();
+}
 function stopWatch(){if(nativeBridgeAvailable())setNativeNavigationActive(false);if(state.watchId!=null){navigator.geolocation.clearWatch(state.watchId);state.watchId=null}state.nativeLocationActive=false;stopDeadReckoning()}
 
 
@@ -3175,7 +3194,7 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
   syncFuelTabs();
   // Initial display must not block for multiple independent GPS requests.
   let fuelOrigin=currentOriginPoint();
-  if(!pointValid(fuelOrigin))fuelOrigin=await refreshCurrentLocation({maxAgeMs:30000,timeoutMs:2800}).catch(()=>null);
+  if(!pointValid(fuelOrigin))fuelOrigin=await refreshCurrentLocation({maxAgeMs:30000,timeoutMs:6500}).catch(()=>null);
   if(!pointValid(fuelOrigin))fuelOrigin=currentOriginPoint();
   if(!pointValid(fuelOrigin)){
     let cached=null;
