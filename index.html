@@ -57,7 +57,7 @@
 <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.21.7" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.21.8" />
 </head>
 <body>
   <main id="app">
@@ -302,13 +302,13 @@
       <section id="drivePoiPanel" class="drive-poi-panel hidden" aria-label="경로상 추천 목록">
         <div class="drive-poi-panel-sheet">
           <header>
-            <div><b>경로상 추천</b><small>주유소 · 지역사랑 · 온누리</small></div>
+            <div><b>경로상 추천</b><small>지역사랑 · 온누리 · 주유소</small></div>
             <button id="drivePoiPanelClose" type="button" class="circle-btn"><span data-icon="close"></span></button>
           </header>
           <div class="drive-poi-tabs" role="tablist" aria-label="경로상 추천 분류">
-            <button type="button" data-drive-poi-tab="fuel" class="active">주유소</button>
-            <button type="button" data-drive-poi-tab="local">지역사랑</button>
+            <button type="button" data-drive-poi-tab="local" class="active">지역사랑</button>
             <button type="button" data-drive-poi-tab="onnuri">온누리</button>
+            <button type="button" data-drive-poi-tab="fuel">주유소</button>
           </div>
           <div id="drivePoiPanelBody" class="drive-poi-panel-body"></div>
         </div>
@@ -378,7 +378,7 @@
           <button id="otherRouteBtn"><span data-icon="routes"></span><b>다른경로</b></button>
           <button id="driveSettingBtn"><span data-icon="settings"></span><b>주행설정</b></button>
           <button id="shareBtn"><span data-icon="share"></span><b>도착공유</b></button>
-          <button id="driveArBtn"><span class="ar-letter">AR</span><b>AR 안내</b></button>
+          <button id="driveArBtn" type="button" aria-label="음성으로 가맹점 경유 길안내"><span class="dangollo-mic-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5.5 10.5a6.5 6.5 0 0 0 13 0M12 17v4M8.5 21h7"/><path d="M19 4.5l1.8 1.8M20 9.5h2" stroke-width="1.6"/></svg></span><b>음성 지시</b></button>
         </div>
         <button id="endNavBtn" class="end-nav-btn">안내종료</button>
       </section>
@@ -824,6 +824,6 @@
 
   <script>window.__JOFAMS_BUILD__="7.6.15.0";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.21.7"></script>
+  <script type="module" src="/app.js?v=7.6.21.8"></script>
 </body>
 </html>
