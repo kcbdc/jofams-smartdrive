@@ -2495,12 +2495,15 @@ function buildTrafficGeoJson(route){
    Separate images for colors, no legacy DOM/CSS marker styling involved. */
 function ensureDangolloEndpointImages(){
   if(!state.map)return false;
-  for(const [id,color] of [['dangollo-start-pin-image','#08753c'],['dangollo-end-pin-image','#086bc8']]){
+  for(const [id,color,label] of [['dangollo-start-pin-image','#08753c','출발'],['dangollo-end-pin-image','#086bc8','도착']]){
     if(state.map.hasImage(id))continue;
-    const scale=2,w=50,h=62;
+    const scale=2,w=64,h=92;
     const canvas=document.createElement('canvas');canvas.width=w*scale;canvas.height=h*scale;
     const ctx=canvas.getContext('2d');if(!ctx)return false;
     ctx.scale(scale,scale);ctx.lineJoin='round';ctx.lineCap='round';
+    ctx.fillStyle=color;ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(label,w/2,13);
+    ctx.translate(7,27);
     // Outline pin with bottom tip at (25,60); the icon anchor is bottom.
     ctx.beginPath();ctx.moveTo(25,59);ctx.bezierCurveTo(20,54,8,42,8,27);ctx.bezierCurveTo(8,4,42,4,42,27);
     ctx.bezierCurveTo(42,42,30,54,25,59);ctx.closePath();
