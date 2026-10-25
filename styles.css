@@ -5143,3 +5143,18 @@ html body:has(#driveView:not(.hidden)) .maplibregl-marker:has(.dangollo-endpoint
 html body:has(#driveView:not(.hidden)) .dangollo-endpoint-pin{display:block!important;visibility:visible!important;opacity:1!important}
 html body:has(#routeView:not(.hidden)) .destination-pin:not(.dangollo-endpoint-pin),
 html body:has(#routeView:not(.hidden)) .origin-pin{display:none!important;visibility:hidden!important;opacity:0!important}
+
+
+/* v7.6.23.4 */
+html body #app #driveView .traffic-route-rail > small#trafficFlowState{
+  display:grid!important;
+  place-items:center!important;
+  min-width:calc(var(--u)*83)!important;
+  white-space:nowrap!important;
+  font-weight:800!important;
+  letter-spacing:-.03em!important;
+}
+html body #app #driveView .traffic-route-rail > small#trafficFlowState.unknown{opacity:.9}
+html body .dangollo-start-pin .dangollo-endpoint-flag,
+html body .dangollo-end-pin .dangollo-endpoint-flag{white-space:nowrap!important}
+html body .dangollo-endpoint-pin{filter:drop-shadow(0 6px 10px rgba(20,40,80,.18))!important}

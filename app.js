@@ -3172,8 +3172,14 @@ function refreshFuelWhileDriving(){
 async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false}={}){
   state.fuelProduct=product||'B027';
   syncFuelTabs();
+  if(!state.user){
+    await refreshCurrentLocation({maxAgeMs:60000,timeoutMs:3600}).catch(()=>null);
+  }
   if(!state.user)await locate(false);
   if(!state.user){
+    let cached=null;
+    try{const raw=JSON.parse(localStorage.getItem('jofams_fuel_last_success_v1')||'null');if(raw?.payload)cached=raw.payload}catch{}
+    if(cached){state.fuelData=cached;renderFuelData(cached);return;}
     renderFuelLocationError();
     return;
   }
@@ -3443,12 +3449,12 @@ async function chooseDestination(item,{autoGuide=true}={}){
   // 안정본과 동일하게 먼저 화면 전환. 클릭 즉시 반응이 보인다.
   setView('route');
   refreshMapLayout();
-  if($('routeCards'))$('routeCards').innerHTML='<div class="auto-start-hint">출발 위치 확인 중...</div>';
+  if($('routeCards'))$('routeCards').innerHTML=''; if($('routePlanEta'))$('routePlanEta').textContent='';
   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
 
   if(!state.user)await locate(false);
   if(!state.user){
-    if($('routeCards'))$('routeCards').innerHTML='<div class="auto-start-hint">위치 권한을 허용하면 경로를 계산합니다.</div>';
+    if($('routeCards'))$('routeCards').innerHTML='';
     showPermissionGate();
     return;
   }
@@ -3707,7 +3713,7 @@ async function selectTravelMode(mode){
   mode=mode==='walk'?'walk':'car';cancelAutoStart();state.routeMode=mode;renderRouteModeSwitch();
   if(mode==='walk'){
     if(!state.walkingRoute){
-      $('routeCards').innerHTML='<div class="auto-start-hint">도보 경로를 계산하고 있습니다...</div>';
+      $('routeCards').innerHTML=''; if($('routePlanEta'))$('routePlanEta').textContent='';
       try{const wr=await routeRequest('RECOMMEND',null,null,'walk');if(!wr?.geometry?.length)throw new Error('도보 경로가 없습니다.');state.walkingRoute={...wr,_label:'도보 추천',_character:state.character,_class:'walk'};state.routeModeDurations.walk=wr.duration}
       catch(e){toast(e.message||'도보 경로를 가져오지 못했습니다.',2800);state.routeMode='car';renderRouteModeSwitch();return}
     }
@@ -3733,7 +3739,7 @@ async function loadRouteOptions(){
     }
   }
   startPlanningAi();
-  cancelAutoStart();$('routeCards').innerHTML='<div class="auto-start-hint">자동차·도보 경로를 계산하고 있습니다...</div>';renderRouteModeSwitch();
+  cancelAutoStart();$('routeCards').innerHTML=''; if($('routePlanEta'))$('routePlanEta').textContent=''; renderRouteModeSwitch();
   try{
     const results=await Promise.allSettled([routeRequest('RECOMMEND',null,null,'car'),routeRequest('TIME',null,null,'car'),routeRequest('RECOMMEND','toll',null,'car'),routeRequest('RECOMMEND',null,null,'walk')]);
     const specs=[['추천','daim',''],['빠른길','sunsik','fast'],['무료도로','hunmin','free']];state.carRouteOptions=[];
@@ -3859,8 +3865,8 @@ function renderPlanningPoiSuggestions(){
   root.classList.remove('hidden');root.classList.toggle('loading',loading||calc);
   const sub=calc?'경로 계산과 동시에 분석 중 · 경로 확정 후 다시 정렬됩니다':'우회거리·가격·결제수단 기준 · 정확한 경유시간은 재탐색 후 확인';
   const head=`<header><b><i class="ai-badge">AI 추천</i> 가는 길에 들르기 좋은 곳</b><small>${sub}</small></header>`;
-  if(!rows.length){root.innerHTML=head+'<div class="planning-poi-skeleton"><i></i><i></i><i></i></div><div class="planning-poi-note">가맹점·유가 데이터를 분석하고 있어요…</div>';return}
-  root.innerHTML=head+rows.map((x,i)=>`<button type="button" class="planning-poi-entry ${x.kind}" data-planning-poi="${i}"><div class="pp-top"><strong>${escapeHtml(x.name||x.market||x.label)}</strong><em>적합도 ${x.score}</em></div><small>${escapeHtml(planningReason(x,!useRoute))}</small><span>경유지로 추가 →</span></button>`).join('')+(loading?'<div class="planning-poi-note">추천 후보를 더 찾는 중…</div>':'');
+  if(!rows.length){root.innerHTML=head+'<div class="planning-poi-skeleton"><i></i><i></i><i></i></div>';return}
+  root.innerHTML=head+rows.map((x,i)=>`<button type="button" class="planning-poi-entry ${x.kind}" data-planning-poi="${i}"><div class="pp-top"><strong>${escapeHtml(x.name||x.market||x.label)}</strong><em>적합도 ${x.score}</em></div><small>${escapeHtml(planningReason(x,!useRoute))}</small><span>경유지로 추가 →</span></button>`).join('');
   root.querySelectorAll('[data-planning-poi]').forEach(b=>b.onclick=()=>{
     const x=rows[Number(b.dataset.planningPoi)];if(!x)return;
     const pt=normalizedPlace({name:x.name||x.market||x.label,address:x.address||x.matchedAddress||'',lat:x.lat,lng:x.lng});
@@ -3999,7 +4005,7 @@ function updateOriginUI(){
 }
 function updateRoutePlanEta(){
   if(!$('routePlanEta'))return;
-  if(!state.route){$('routePlanEta').textContent='출발지를 선택하면 예상 도착시간을 안내합니다.';return}
+  if(!state.route){$('routePlanEta').textContent='';return}
   const originLabel=state.originMode==='current'?'내 위치':(state.origin?.name||'선택한 출발지');
   $('routePlanEta').textContent=`${originLabel} 출발 · 예상 도착 ${eta(state.route.duration)} · ${mins(state.route.duration)}`;
 }
@@ -5250,6 +5256,7 @@ function updateTrafficStatus(seg){
   const spd=$('speedPanel');if(spd)spd.dataset.traffic=info.key;
   const detail=info.key==='smooth'?'차량 흐름이 원활합니다.':info.key==='slow'?'교통량 증가로 평소보다 속도가 낮습니다.':info.key==='delayed'?'가다 서기를 반복할 수 있는 혼잡 구간입니다.':info.key==='severe'?'차량 흐름이 매우 느린 정체 구간입니다.':'현재 도로 소통정보를 불러오고 있습니다.';
   $('trafficStatusDetail').textContent=sp>0?`${detail} · 평균 ${sp}km/h`:detail;
+  if($('trafficFlowState'))$('trafficFlowState').textContent=info.key==='unknown'?'교통':info.label;
   if(info.key!=='unknown'&&info.key!==state.lastTrafficStatus){state.lastTrafficStatus=info.key;}
 }
 
@@ -6806,12 +6813,12 @@ async function loadRadioSchedule(){
 }
 
 function radioToggleMarkup(isOn){
-  return `<svg class="dangollo-quick-svg drive-radio-svg ${isOn?'is-on':'is-off'}" data-quick-icon="radio" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#111111" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="16" cy="16" r="2.4" fill="#111111" stroke="none"/>
-    <path d="M11.6 11.6a6.3 6.3 0 0 0 0 8.8"/>
-    <path d="M20.4 11.6a6.3 6.3 0 0 1 0 8.8"/>
-    <path d="M8.2 8.2a11.2 11.2 0 0 0 0 15.6"/>
-    <path d="M23.8 8.2a11.2 11.2 0 0 1 0 15.6"/>
+  return `<svg class="dangollo-quick-svg drive-radio-svg ${isOn?'is-on':'is-off'}" data-quick-icon="radio" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#111111" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="16" cy="16" r="2.2" fill="#111111" stroke="none"/>
+    <path d="M11.8 11.9a6 6 0 0 0 0 8.2"/>
+    <path d="M20.2 11.9a6 6 0 0 1 0 8.2"/>
+    <path d="M8.2 8.4a10.9 10.9 0 0 0 0 15.2"/>
+    <path d="M23.8 8.4a10.9 10.9 0 0 1 0 15.2"/>
   </svg>`;
 }
 
