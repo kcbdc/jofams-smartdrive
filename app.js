@@ -6813,7 +6813,7 @@ function drivePoiMarkerHtml(tab,item){
   // Match the existing home-map merchant SVGs: a compact store silhouette, not letter badges.
   // Merchant names remain accessible through aria-label and the recommendation panel.
   const shopIcon=tab==='local'?voucherShopSvg():onnuriShopSvg();
-  return `<button type="button" class="drive-route-food-marker ${tab}" data-drive-poi-marker="${tab}" aria-label="${escapeHtml(brand+' '+name)}" title="${escapeHtml(brand+' · '+name)}"><span class="food-symbol" aria-hidden="true">${shopIcon}</span></button>`;
+  return `<button type="button" class="drive-route-food-marker dangollo-drive-merchant-marker ${tab}" data-drive-poi-marker="${tab}" aria-label="${escapeHtml(brand+' '+name)}" title="${escapeHtml(brand+' · '+name)}"><span class="food-symbol" aria-hidden="true">${shopIcon}</span></button>`;
 }
 function renderDrivePoiMarkers(){
   clearDrivePoiMarkers();

@@ -1209,7 +1209,7 @@ body.night-map .maplibregl-ctrl-attrib{filter:none}
 .onnuri-zone-pin svg{
   width:22px!important;
   height:22px!important;
-  transform:rotate(45deg)!important;
+ 
 }
 .onnuri-zone-label{
   display:flex!important;
@@ -4262,7 +4262,7 @@ html body #app #driveView .drive-route-food-marker .food-symbol{
   display:grid!important;place-items:center!important;width:21px!important;height:21px!important;
   min-width:21px!important;flex:0 0 21px!important;border-radius:50%!important;
   font-size:11px!important;font-weight:900!important;line-height:1!important;
-  transform:rotate(45deg)!important;background:#e5f5eb!important;color:#168056!important;
+ background:#e5f5eb!important;color:#168056!important;
 }
 html body #app #driveView .drive-route-food-marker.onnuri .food-symbol{background:#eaf1ff!important;color:#246ac3!important}
 html body #app #driveView .drive-route-food-marker .food-caption{display:none!important}
@@ -4274,7 +4274,7 @@ html body #app #driveView .drive-route-food-marker:active{opacity:1!important;bo
 html body #app #driveView .drive-route-food-marker .food-symbol{
   width:23px!important;height:23px!important;min-width:23px!important;
   flex:0 0 23px!important;display:grid!important;place-items:center!important;
-  transform:rotate(45deg)!important;
+ 
   background:#e7f5ec!important;color:#21845b!important;
   border-radius:50%!important;
 }
@@ -4321,3 +4321,34 @@ html body .maplibregl-marker.dangollo-drive-merchant-marker .food-symbol > svg{
   transform:none!important;filter:none!important;-webkit-mask:none!important;mask:none!important;
 }
 html body .maplibregl-marker.dangollo-drive-merchant-marker .food-caption{display:none!important}
+
+
+/* v7.6.25.4 — MapLibre's custom marker element IS the button; no nested button exists. */
+html body .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker,
+html body .maplibregl-marker.dangollo-drive-merchant-marker.drive-route-food-marker{
+ display:flex!important;align-items:center!important;justify-content:center!important;
+ box-sizing:border-box!important;width:34px!important;height:36px!important;min-width:34px!important;min-height:36px!important;max-width:34px!important;max-height:36px!important;
+ padding:0!important;margin:0!important;border:2px solid #fff!important;border-radius:50% 50% 50% 5px!important;
+ background:#e7f5ec!important;color:#21845b!important;
+ box-shadow:0 3px 10px rgba(20,50,40,.22)!important;
+
+ opacity:1!important;visibility:visible!important;pointer-events:auto!important;
+ font-size:0!important;line-height:1!important;overflow:visible!important;
+}
+html body .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker.onnuri{
+ background:#fff1df!important;color:#b96b20!important;
+}
+html body .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker > .food-symbol{
+ display:flex!important;align-items:center!important;justify-content:center!important;
+ box-sizing:border-box!important;width:26px!important;height:26px!important;min-width:26px!important;min-height:26px!important;
+ padding:0!important;margin:0!important;background:transparent!important;color:inherit!important;border:0!important;
+
+}
+html body .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker > .food-symbol > svg{
+ display:block!important;position:static!important;box-sizing:border-box!important;
+ width:22px!important;height:22px!important;min-width:22px!important;min-height:22px!important;max-width:22px!important;max-height:22px!important;
+ stroke:currentColor!important;fill:none!important;color:inherit!important;opacity:1!important;visibility:visible!important;
+ transform:none!important;filter:none!important;mask:none!important;-webkit-mask:none!important;
+}
+/* MapLibre controls marker position with inline transform. Keep its translation and only rotate visual child. */
+html body .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker{transform-origin:center bottom!important}
