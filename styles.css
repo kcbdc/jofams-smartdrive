@@ -4680,3 +4680,43 @@ html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{
   }
   html body #app #routeView .route-start-dock button{height:50px!important;min-height:46px!important}
 }
+
+
+/* 7.6.22.3: equal CTA widths & equal radio/voice controls */
+html body #app #routeView .route-start-dock .route-start-actions,
+html body #app #routeView .route-start-actions {
+ grid-template-columns:repeat(2,minmax(0,1fr))!important;
+}
+html body #app #routeView .route-start-dock .route-start-actions > button {
+ width:100%!important;min-width:0!important;max-width:none!important;
+ height:clamp(50px,7.7dvh,68px)!important;box-sizing:border-box!important;
+}
+html body #app #driveView #driveRadioBtn,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice{
+ width:clamp(50px,calc(var(--u, .5px)*118),66px)!important;
+ height:clamp(50px,calc(var(--u, .5px)*118),66px)!important;
+ border-radius:50%!important;box-sizing:border-box!important;
+}
+html body #app #driveView #driveRadioBtn .drive-radio-icon,
+html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
+html body #app #driveView #driveRadioBtn.off .drive-radio-off-svg{
+ width:55%!important;height:55%!important;
+}
+html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{width:55%!important;height:55%!important}
+/* Arrival flag shown on zoomed-out route preview and active navigation. */
+html body .maplibregl-marker:has(.destination-pin),
+html body .maplibregl-marker .destination-pin,
+html body .destination-pin.dangollo-arrival-visible{
+ display:block!important;visibility:visible!important;opacity:1!important;
+}
+html body .maplibregl-marker:has(.destination-pin){z-index:95!important;overflow:visible!important}
+/* Remove circular leftover overlay directly behind the top-left navigation sign. */
+html body #app #driveView .maneuver-stack::before,
+html body #app #driveView .maneuver-stack::after,
+html body #app #driveView .maneuver-main::before,
+html body #app #driveView .maneuver-main::after{content:none!important;display:none!important}
+@media(orientation:landscape){
+ html body #app #routeView .route-start-dock .route-start-actions{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+ html body #app #driveView #driveRadioBtn,
+ html body #app #driveView #arOpenBtn.dangollo-drive-voice{width:clamp(44px,9vh,60px)!important;height:clamp(44px,9vh,60px)!important}
+}

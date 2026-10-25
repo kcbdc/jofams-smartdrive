@@ -2414,6 +2414,9 @@ function ensureDestinationMarker(){
     else state.destMarker.setLngLat([lng,lat]);
     const el=state.destMarker.getElement();
     if(el){el.style.removeProperty('display');el.style.removeProperty('visibility');el.style.removeProperty('opacity')}
+    // 지도 축척/회전 후에도 원래 경로 종점의 지도 좌표에 고정한다.
+    // MapLibre 마커 자체의 pixel 위치는 지도 엔진이 관리한다.
+    if(el){el.classList.add('dangollo-arrival-visible');el.setAttribute('aria-label','최종 목적지 도착');}
   }catch(e){console.warn('arrival marker update failed',e)}
 }
 function setDestinationMarker(){
@@ -4412,6 +4415,7 @@ function setView(view){
   if(view==='route'||view==='drive')setDestinationMarker();
   if(view==='drive'){setTimeout(tryLandscapeFullscreen,80);setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),500)}
   refreshMapLayout({fitRoute:view==='route'&&Boolean(state.route)});
+  if((view==='route'||view==='drive')&&state.destination)setTimeout(ensureDestinationMarker,120);
 }
 function initializeDriveSummary(){
   if(!state.route)return;
