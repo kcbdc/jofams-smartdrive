@@ -5015,3 +5015,83 @@ html body #app #driveView .drive-side-actions button{
     width:25px!important;height:25px!important;min-width:25px!important;min-height:25px!important;max-width:25px!important;max-height:25px!important;
   }
 }
+
+
+/* 7.6.23.2 — keep quick action icons visible and place them left of the far-right traffic rail. */
+html body #app #driveView.dangollo-quick-actions-open #driveRadioBtn,
+html body #app #driveView.dangollo-quick-actions-open #arOpenBtn,
+html body #app #driveView.dangollo-quick-actions-open #driveRecommendBtn,
+html body #app #driveView.dangollo-quick-actions-open #routeInfoBtn,
+html body #app #driveView.dangollo-quick-actions-open #driveSearchBtn{
+  opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:none!important;
+}
+html body #app #driveView .traffic-route-rail{
+  right:calc(var(--safeR, 0px) + 10px)!important;
+  top:calc(var(--safeT) + 18px)!important;
+  bottom:calc(var(--safeB) + 138px)!important;
+  width:24px!important;min-height:240px!important;z-index:88!important;
+}
+html body #app #driveView .traffic-route-segments{width:9px!important}
+html body #app #driveView .traffic-route-rail > small{display:none!important}
+
+html body #app #driveView #driveRadioBtn,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice,
+html body #app #driveView .drive-side-actions{
+  right:calc(var(--safeR, 0px) + 44px)!important;
+  left:auto!important;
+}
+html body #app #driveView #driveRadioBtn{
+  top:calc(var(--safeT) + 18px)!important;
+  width:52px!important;height:52px!important;z-index:91!important;
+}
+html body #app #driveView #arOpenBtn.dangollo-drive-voice{
+  top:calc(var(--safeT) + 84px)!important;
+  width:52px!important;height:52px!important;z-index:91!important;
+}
+html body #app #driveView .drive-side-actions{
+  top:calc(var(--safeT) + 154px)!important;
+  bottom:auto!important;
+  width:52px!important;
+  display:flex!important;flex-direction:column!important;align-items:center!important;
+  gap:12px!important;z-index:90!important;
+}
+html body #app #driveView .drive-side-actions button{
+  width:52px!important;height:52px!important;
+  display:grid!important;place-items:center!important;
+  border-radius:50%!important;
+}
+html body #app #driveView .drive-side-actions button > span.dangollo-quick-icon,
+html body #app #driveView #driveRadioBtn .drive-radio-icon,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice svg.dangollo-quick-svg{
+  width:24px!important;height:24px!important;
+}
+html body #app #driveView .drive-side-actions button span.dangollo-quick-icon svg.dangollo-quick-svg,
+html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice svg.dangollo-quick-svg{
+  width:24px!important;height:24px!important;min-width:24px!important;min-height:24px!important;
+  max-width:24px!important;max-height:24px!important;display:block!important;opacity:1!important;visibility:visible!important;
+}
+html body #app #driveView .drive-side-actions button b{display:none!important}
+
+@media (orientation:landscape){
+  html body #app #driveView .traffic-route-rail{
+    right:calc(var(--safeR, 0px) + 8px)!important;
+    top:calc(var(--safeT) + 14px)!important;
+    bottom:calc(var(--safeB) + 78px)!important;
+    width:22px!important;
+  }
+  html body #app #driveView #driveRadioBtn,
+  html body #app #driveView #arOpenBtn.dangollo-drive-voice,
+  html body #app #driveView .drive-side-actions{right:calc(var(--safeR, 0px) + 38px)!important}
+  html body #app #driveView #driveRadioBtn{top:calc(var(--safeT) + 14px)!important;width:46px!important;height:46px!important}
+  html body #app #driveView #arOpenBtn.dangollo-drive-voice{top:calc(var(--safeT) + 70px)!important;width:46px!important;height:46px!important}
+  html body #app #driveView .drive-side-actions{top:calc(var(--safeT) + 126px)!important;gap:9px!important;width:46px!important}
+  html body #app #driveView .drive-side-actions button{width:46px!important;height:46px!important}
+  html body #app #driveView .drive-side-actions button > span.dangollo-quick-icon,
+  html body #app #driveView #driveRadioBtn .drive-radio-icon,
+  html body #app #driveView #arOpenBtn.dangollo-drive-voice svg.dangollo-quick-svg,
+  html body #app #driveView .drive-side-actions button span.dangollo-quick-icon svg.dangollo-quick-svg,
+  html body #app #driveView #driveRadioBtn .drive-radio-icon svg{
+    width:21px!important;height:21px!important;min-width:21px!important;min-height:21px!important;max-width:21px!important;max-height:21px!important;
+  }
+}

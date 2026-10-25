@@ -8190,35 +8190,21 @@ document.addEventListener('visibilitychange',()=>{
 
 
 
-/* 7.6.23.0: 주행 중 필요할 때만 표시하는 우측 5종 바로가기. */
+/* 7.6.23.2: 우측 5종 바로가기 고정 표시. 교통흐름 레일은 최우측, 버튼은 그 왼쪽에 배치. */
 function initDangolloDrivingQuickActions(){
   const drive=document.getElementById('driveView');
   if(!drive||drive.dataset.quickActionsBound==='true')return;
   drive.dataset.quickActionsBound='true';
-  let closeTimer=0;
   const quickIds=['driveRadioBtn','arOpenBtn','driveRecommendBtn','routeInfoBtn','driveSearchBtn'];
   const buttons=quickIds.map(id=>document.getElementById(id)).filter(Boolean);
   function setOpen(open){
-    clearTimeout(closeTimer);
     drive.classList.toggle('dangollo-quick-actions-open',Boolean(open));
     for(const button of buttons){button.tabIndex=open?0:-1;button.setAttribute('aria-hidden',String(!open));}
-    if(open){closeTimer=setTimeout(()=>setOpen(false),6500);}
   }
   const isDriveVisible=()=>!drive.classList.contains('hidden');
-  setOpen(false);
-  // 지도 빈 곳을 눌렀을 때만 열고, 메뉴/표지판 등 길안내 정보 클릭은 기존 동작 유지.
-  drive.addEventListener('pointerup',e=>{
-    if(!isDriveVisible())return;
-    if(e.target.closest('button,a,input,select,textarea,[role="button"],.maneuver-stack,.lane-assist-layer,.drive-bottom-card,.safety-alert,.drive-poi-panel,.drive-poi-stack,.drive-map-controls,.traffic-route-rail,.speed-panel'))return;
-    setOpen(true);
-  },{passive:true});
-  // 마이크/라디오 등 버튼을 누른 뒤 바로 숨기지 않아 연속 조작 가능.
-  buttons.forEach(button=>button.addEventListener('click',()=>{
-    if(isDriveVisible())setOpen(true);
-  },{passive:true}));
-  const observer=new MutationObserver(()=>{if(!isDriveVisible())setOpen(false);});
+  setOpen(true);
+  const observer=new MutationObserver(()=>{setOpen(isDriveVisible());});
   observer.observe(drive,{attributes:true,attributeFilter:['class']});
-  window.addEventListener('pagehide',()=>clearTimeout(closeTimer),{once:true});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initDangolloDrivingQuickActions,{once:true});
 else initDangolloDrivingQuickActions();
