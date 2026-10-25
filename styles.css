@@ -4246,3 +4246,24 @@ html body #app #driveView #driveRadioBtn.off .drive-radio-svg .dangollo-radio-wa
 html body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-drive-merchant-marker,
 html body:has(#driveView:not(.hidden)) .maplibregl-marker:has(> .drive-route-food-marker){display:block!important;visibility:visible!important;opacity:1!important;z-index:88!important}
 html body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-drive-merchant-marker .drive-route-food-marker{display:flex!important;visibility:visible!important;opacity:1!important}
+
+/* v7.6.25.0 — map-appropriate, unobtrusive merchant pins. Keep these after legacy selectors. */
+html body #app #driveView .drive-route-food-marker{
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  width:31px!important;height:33px!important;min-width:31px!important;max-width:31px!important;
+  min-height:33px!important;max-height:33px!important;padding:0!important;margin:0!important;
+  border:1.5px solid rgba(255,255,255,.95)!important;border-radius:50% 50% 50% 7px!important;
+  background:#fff!important;box-shadow:0 2px 7px rgba(12,36,58,.20)!important;
+  transform:rotate(-45deg)!important;color:#236b53!important;white-space:normal!important;
+  opacity:.89!important;box-sizing:border-box!important;
+}
+html body #app #driveView .drive-route-food-marker.onnuri{color:#346ab2!important}
+html body #app #driveView .drive-route-food-marker .food-symbol{
+  display:grid!important;place-items:center!important;width:21px!important;height:21px!important;
+  min-width:21px!important;flex:0 0 21px!important;border-radius:50%!important;
+  font-size:11px!important;font-weight:900!important;line-height:1!important;
+  transform:rotate(45deg)!important;background:#e5f5eb!important;color:#168056!important;
+}
+html body #app #driveView .drive-route-food-marker.onnuri .food-symbol{background:#eaf1ff!important;color:#246ac3!important}
+html body #app #driveView .drive-route-food-marker .food-caption{display:none!important}
+html body #app #driveView .drive-route-food-marker:active{opacity:1!important;box-shadow:0 3px 10px rgba(12,36,58,.25)!important}
