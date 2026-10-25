@@ -2409,7 +2409,7 @@ function ensureUserMarker(){
   updateUserMarkerMotion();
 }
 function ensureDestinationMarker(){
-  if(state.map?.getSource?.('dangollo-route-endpoints')){renderRouteEndpointLayers();return;}
+  if(state.route?.geometry?.length){renderRouteEndpointLayers();return;}
 
   const routeVisible=!$('routeView')?.classList.contains('hidden');
   const driveVisible=!$('driveView')?.classList.contains('hidden');
@@ -2450,7 +2450,7 @@ function setDestinationMarker(){
   ensureDestinationMarker();
 }
 function updateOriginMarker(){
-  if(state.map?.getSource?.('dangollo-route-endpoints')){renderRouteEndpointLayers();return;}
+  if(state.route?.geometry?.length){renderRouteEndpointLayers();return;}
 
   const routeVisible=!$('routeView')?.classList.contains('hidden');
   const driveVisible=!$('driveView')?.classList.contains('hidden');
@@ -2517,24 +2517,24 @@ function renderRouteEndpointLayers(route=state.route){
   const valid=p=>Array.isArray(p)&&p.length>=2&&Number.isFinite(Number(p[0]))&&Number.isFinite(Number(p[1]));
   const source='dangollo-route-endpoints';
   const features=visible&&g.length>=2&&valid(g[0])&&valid(g[g.length-1])?[
-    {type:'Feature',properties:{kind:'start',name:'출발지',icon:'dangollo-start-pin-image'},geometry:{type:'Point',coordinates:g[0]}},
-    {type:'Feature',properties:{kind:'end',name:'목적지',icon:'dangollo-end-pin-image'},geometry:{type:'Point',coordinates:g[g.length-1]}}
+    {type:'Feature',properties:{kind:'start',icon:'dangollo-start-pin-image'},geometry:{type:'Point',coordinates:[Number(g[0][0]),Number(g[0][1])] }},
+    {type:'Feature',properties:{kind:'end',icon:'dangollo-end-pin-image'},geometry:{type:'Point',coordinates:[Number(g[g.length-1][0]),Number(g[g.length-1][1])] }}
   ]:[];
   const geo={type:'FeatureCollection',features};
-  if(state.map.getSource(source))state.map.getSource(source).setData(geo);
-  else state.map.addSource(source,{type:'geojson',data:geo});
-  if(ensureDangolloEndpointImages()){
-    if(!state.map.getLayer('dangollo-endpoint-pin-icon'))state.map.addLayer({id:'dangollo-endpoint-pin-icon',type:'symbol',source,
-      layout:{'icon-image':['get','icon'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,
-      'icon-size':1,'symbol-placement':'point','symbol-sort-key':1}});
-    if(!state.map.getLayer('dangollo-endpoint-pin-label'))state.map.addLayer({id:'dangollo-endpoint-pin-label',type:'symbol',source,
-      layout:{'text-field':['get','name'],'text-size':13,'text-font':['Open Sans Regular','Arial Unicode MS Regular'],
-      'text-offset':[0,-4.9],'text-anchor':'center','text-allow-overlap':true,'text-ignore-placement':true},
-      paint:{'text-color':'#111827','text-halo-color':'#ffffff','text-halo-width':2.5}});
-    for(const id of ['dangollo-endpoint-pin-icon','dangollo-endpoint-pin-label'])try{state.map.moveLayer(id)}catch{}
-  }
-  // The old DOM marker and circle-label renderer must not coexist with map-native pins.
-  for(const key of ['originMarker','destMarker']){try{state[key]?.remove()}catch{}state[key]=null}
+  try{
+    if(state.map.getSource(source))state.map.getSource(source).setData(geo);
+    else state.map.addSource(source,{type:'geojson',data:geo});
+    if(ensureDangolloEndpointImages()){
+      if(!state.map.getLayer('dangollo-endpoint-pin-icon'))state.map.addLayer({id:'dangollo-endpoint-pin-icon',type:'symbol',source,
+        layout:{'icon-image':['get','icon'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,
+        'icon-size':1,'symbol-placement':'point'}});
+      // Avoid map glyph/font loading dependencies: icons render even when text glyph server fails.
+      if(state.map.getLayer('dangollo-endpoint-pin-label'))state.map.removeLayer('dangollo-endpoint-pin-label');
+      state.map.moveLayer('dangollo-endpoint-pin-icon');
+    }
+    // No duplicate DOM markers: keep one source of truth (route GeoJSON endpoints).
+    for(const key of ['originMarker','destMarker']){try{state[key]?.remove()}catch{}state[key]=null}
+  }catch(e){console.warn('[endpoints] render failed',e)}
 }
 function drawRoute(route=state.route,{fit=true}={}){
   if(!route?.geometry?.length||!state.map)return;
