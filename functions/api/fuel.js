@@ -2,10 +2,11 @@ const JSON_HEADERS={'content-type':'application/json; charset=utf-8','cache-cont
 
 export async function onRequestGet({request,env}){
   const url=new URL(request.url);
-  const lat=Number(url.searchParams.get('lat')),lng=Number(url.searchParams.get('lng'));
+  const latRaw=url.searchParams.get('lat'),lngRaw=url.searchParams.get('lng');
+  const lat=latRaw===null?NaN:Number(latRaw),lng=lngRaw===null?NaN:Number(lngRaw);
   const prodcd=validProduct(url.searchParams.get('prodcd')||'B027');
   const cnt=Math.max(1,Math.min(20,Number(url.searchParams.get('cnt'))||8));
-  if(!Number.isFinite(lat)||!Number.isFinite(lng))return json({error:'lat/lng가 필요합니다.',code:'INVALID_COORDINATES'},400);
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat<-90||lat>90||lng<-180||lng>180)return json({error:'올바른 lat/lng가 필요합니다.',code:'INVALID_COORDINATES'},400);
 
   // 기존 배포에서 사용하던 OPINET_CERT_KEY를 최우선으로 유지하되,
   // 환경변수 이름이 달랐던 과거/별도 배포도 호환한다.
@@ -24,14 +25,22 @@ export async function onRequestGet({request,env}){
   },503);
 
   try{
-    const region=await kakaoRegion(lat,lng,env.KAKAO_REST_API_KEY);
+    // Kakao region may be unavailable or the key may be missing: do not abort Opinet pricing.
+    const region=await kakaoRegion(lat,lng,env.KAKAO_REST_API_KEY).catch(e=>{console.warn('[fuel] region fallback',String(e));return null});
     const area=await resolveOpinetArea(region,certKey);
     const areaCode=area.sigunCode||area.sidoCode||'';
-    const [stations,avg]=await Promise.all([
+    let [stations,avg]=await Promise.all([
       opinetLow(areaCode,prodcd,cnt,certKey),
       area.sidoCode?opinetAverage(area.sidoCode,area.sigunCode,prodcd,certKey):Promise.resolve(null)
     ]);
-    const detailed=await enrichStationLocations(stations.slice(0,8),certKey,env.KAKAO_REST_API_KEY);
+    // A district-only query can return no rows. Retry with province and then nationally.
+    if(!stations.length&&area.sigunCode)stations=await opinetLow(area.sidoCode,prodcd,cnt,certKey);
+    if(!stations.length&&areaCode)stations=await opinetLow('',prodcd,cnt,certKey);
+    // Price display must not wait indefinitely for geocoding enrichment.
+    const detailed=await Promise.race([
+      enrichStationLocations(stations.slice(0,8),certKey,env.KAKAO_REST_API_KEY),
+      new Promise(resolve=>setTimeout(()=>resolve(stations.slice(0,8)),2200))
+    ]);
     return json({
       provider:'opinet',
       product:prodcd,
@@ -55,7 +64,8 @@ export async function onRequestGet({request,env}){
 function validProduct(v){return ['B027','D047','B034','K015'].includes(v)?v:'B027'}
 function productName(v){return ({B027:'휘발유',D047:'경유',B034:'고급휘발유',K015:'LPG'})[v]||v}
 async function fetchJson(url,headers={}){
-  const r=await fetch(url,{headers});
+  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),7500);
+  let r;try{r=await fetch(url,{headers,signal:controller.signal})}finally{clearTimeout(timer)}
   if(!r.ok)throw new Error(`외부 API 오류 (${r.status})`);
   const text=await r.text();
   try{return JSON.parse(text)}catch{throw new Error('외부 API 응답 형식 오류')}
@@ -76,6 +86,8 @@ async function opinet(endpoint,params,key){
   return fetchJson(u);
 }
 function rows(d){
+  const result=d?.RESULT;
+  if(result&&typeof result==='object'&&!Array.isArray(result)&&result.CODE&&String(result.CODE)!=='00')throw new Error(String(result.MESSAGE||'오피넷 조회 오류'));
   const r=d?.RESULT?.OIL??d?.RESULT?.AREA??d?.RESULT??[];
   return Array.isArray(r)?r:r?[r]:[];
 }
@@ -86,6 +98,10 @@ async function resolveOpinetArea(region,key){
   if(region?.region1){
     const n=normName(region.region1);
     sido=sidoRows.find(x=>normName(x.AREA_NM)===n)||sidoRows.find(x=>n.includes(normName(x.AREA_NM))||normName(x.AREA_NM).includes(n));
+  }
+  if(!sido&&region?.region1){
+    const prefix=normName(region.region1).slice(0,2);
+    if(prefix)sido=sidoRows.find(x=>normName(x.AREA_NM).startsWith(prefix));
   }
   if(!sido&&sidoRows.length===1)sido=sidoRows[0];
   if(sido&&region?.region2){
