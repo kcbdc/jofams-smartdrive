@@ -4862,3 +4862,39 @@ html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{width:27.16px!impo
  html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
  html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{width:23.28px!important;height:23.28px!important;min-width:23.28px!important;min-height:23.28px!important;max-width:23.28px!important;max-height:23.28px!important;}
 }
+
+/* v7.6.22.8: left-flush navigation boards; 5% smaller icons only */
+html body #app #driveView .maneuver-stack{
+  left:0!important;right:auto!important;
+  margin-left:0!important;padding-left:0!important;
+  transform:none!important;transform-origin:top left!important;
+}
+html body #app #driveView .maneuver-main{
+  border-radius:0 26px 26px 0!important;
+  border-left:0!important;
+  margin-left:0!important;
+}
+html body #app #driveView .maneuver-next{
+  margin-left:0!important;
+  border-radius:0 0 18px 0!important;
+}
+html body #app #driveView #driveRadioBtn .drive-radio-icon,
+html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{
+  width:25.802px!important;height:25.802px!important;
+  min-width:25.802px!important;min-height:25.802px!important;
+  max-width:25.802px!important;max-height:25.802px!important;
+}
+@media (orientation:landscape){
+  html body #app #driveView .maneuver-stack,
+  html body.landscape-drive #app #driveView .maneuver-stack{
+    left:0!important;margin-left:0!important;transform:none!important;
+  }
+  html body #app #driveView #driveRadioBtn .drive-radio-icon,
+  html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
+  html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{
+    width:22.116px!important;height:22.116px!important;
+    min-width:22.116px!important;min-height:22.116px!important;
+    max-width:22.116px!important;max-height:22.116px!important;
+  }
+}
