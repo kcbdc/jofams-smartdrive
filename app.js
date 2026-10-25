@@ -6791,15 +6791,9 @@ async function loadRadioSchedule(){
 }
 
 function radioToggleMarkup(isOn){
-  const wave1=isOn?'<path d="M17 10.2a4.2 4.2 0 0 1 0 5.6"></path>':'';
-  const wave2=isOn?'<path d="M19.6 7.9a7.2 7.2 0 0 1 0 10.2" opacity=".82"></path>':'';
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="drive-radio-svg ${isOn?'is-on':'is-off'}">
-    <rect x="4" y="8.8" width="13.2" height="8.8" rx="2.3"></rect>
-    <path d="M7.6 8.8 13 4.4"></path>
-    <circle cx="8.4" cy="13.2" r="1.65"></circle>
-    <path d="M13.5 13.2h1.9"></path>
-    ${wave1}
-    ${wave2}
+  return `<svg class="dangollo-quick-svg drive-radio-svg ${isOn?'is-on':'is-off'}" data-quick-icon="radio" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="16" cy="16" r="2.6" fill="currentColor" stroke="none"/>
+    <path d="M10.7 10.7a7.5 7.5 0 0 0 0 10.6M21.3 10.7a7.5 7.5 0 0 1 0 10.6M7.1 7.1a12.7 12.7 0 0 0 0 17.8M24.9 7.1a12.7 12.7 0 0 1 0 17.8"/>
   </svg>`;
 }
 

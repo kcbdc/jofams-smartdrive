@@ -4963,3 +4963,55 @@ html body #app #driveView #driveSearchBtn{
 }
 /* 메뉴 3개가 들어있는 컨테이너는 숨긴 버튼의 이벤트 영역을 차지하지 않는다. */
 html body #app #driveView:not(.dangollo-quick-actions-open) .drive-side-actions{pointer-events:none!important}
+
+
+/* 7.6.23.1 — reference-matched monochrome five-icon set. Keep existing action visibility logic. */
+html body #app #driveView #driveRadioBtn,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice,
+html body #app #driveView #driveRecommendBtn,
+html body #app #driveView #routeInfoBtn,
+html body #app #driveView #driveSearchBtn{
+  background:#f4f4f4!important;color:#111!important;
+}
+html body #app #driveView #arOpenBtn.dangollo-drive-voice{border:2px solid #fff!important}
+html body #app #driveView #driveRadioBtn .drive-radio-icon,
+html body #app #driveView .drive-side-actions button>span.dangollo-quick-icon{
+  display:grid!important;place-items:center!important;
+  background:transparent!important;-webkit-mask:none!important;mask:none!important;
+  -webkit-mask-image:none!important;mask-image:none!important;
+  width:29px!important;height:29px!important;color:#111!important;
+}
+html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice svg.dangollo-quick-svg,
+html body #app #driveView .drive-side-actions button span.dangollo-quick-icon svg.dangollo-quick-svg{
+  display:block!important;width:29px!important;height:29px!important;
+  min-width:29px!important;min-height:29px!important;max-width:29px!important;max-height:29px!important;
+  color:#111!important;stroke:#111!important;fill:none!important;
+  opacity:1!important;visibility:visible!important;
+  stroke-width:2.8!important;stroke-linecap:round!important;stroke-linejoin:round!important;
+}
+html body #app #driveView #driveRadioBtn .drive-radio-icon svg circle[fill="currentColor"]{fill:#111!important;stroke:none!important}
+html body #app #driveView .drive-side-actions button>span.dangollo-quick-icon svg *{stroke:#111!important}
+html body #app #driveView #driveRecommendBtn .dangollo-quick-icon,
+html body #app #driveView #routeInfoBtn .dangollo-quick-icon,
+html body #app #driveView #driveSearchBtn .dangollo-quick-icon{
+  -webkit-mask-image:none!important;mask-image:none!important;
+}
+/* Reference has a small label below each illustration: keep labels visible when actions revealed. */
+html body #app #driveView .drive-side-actions button b{
+  display:block!important;font-size:10px!important;font-weight:800!important;
+  line-height:1.05!important;margin-top:1px!important;color:#111!important;
+}
+html body #app #driveView .drive-side-actions button{
+  display:flex!important;flex-direction:column!important;gap:2px!important;
+  align-items:center!important;justify-content:center!important;
+}
+@media(orientation:landscape){
+  html body #app #driveView #driveRadioBtn .drive-radio-icon,
+  html body #app #driveView .drive-side-actions button>span.dangollo-quick-icon{width:25px!important;height:25px!important}
+  html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
+  html body #app #driveView #arOpenBtn.dangollo-drive-voice svg.dangollo-quick-svg,
+  html body #app #driveView .drive-side-actions button span.dangollo-quick-icon svg.dangollo-quick-svg{
+    width:25px!important;height:25px!important;min-width:25px!important;min-height:25px!important;max-width:25px!important;max-height:25px!important;
+  }
+}
