@@ -4219,3 +4219,44 @@ body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-endpoint-mar
  display:block!important;visibility:visible!important;opacity:1!important;
 }
 body:has(#homeView:not(.hidden)) .maplibregl-marker.dangollo-route-endpoint-marker{display:none!important}
+
+/* 7.6.24.1 canonical controls: endpoint markers, portrait lane panel, animated radio. */
+body:has(#routeView:not(.hidden)) .maplibregl-marker.dangollo-route-endpoint-marker,
+body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-endpoint-marker{
+  display:block!important;visibility:visible!important;opacity:1!important;
+  z-index:96!important;overflow:visible!important;
+}
+body:has(#homeView:not(.hidden)) .maplibregl-marker.dangollo-route-endpoint-marker{display:none!important}
+.maplibregl-marker.dangollo-route-endpoint-marker .dangollo-endpoint-pin,
+.maplibregl-marker.dangollo-route-endpoint-marker .dangollo-endpoint-svg{
+  display:block!important;visibility:visible!important;opacity:1!important;
+}
+@media (orientation:portrait){
+  html body #app #driveView #laneAssistLayer:not(.hidden),
+  html body #app #driveView.dangollo-in-junction #laneAssistLayer:not(.hidden),
+  html body #app #driveView.dangollo-in-junction #laneAssistLayer.dangollo-junction-split:not(.hidden){
+    position:absolute!important;
+    top:calc(var(--safeT) + 210px)!important;
+    left:50%!important;right:auto!important;
+    transform:translateX(-50%)!important;
+    bottom:auto!important;
+    width:min(80vw,345px)!important;max-width:calc(100vw - 40px)!important;
+    min-height:54px!important;max-height:88px!important;
+    border-radius:24px!important;
+    z-index:86!important;
+  }
+}
+@keyframes dangollo-radio-pulse{0%,100%{opacity:1}50%{opacity:.25}}
+html body #app #driveView #driveRadioBtn.on .drive-radio-svg .dangollo-radio-wave{
+ animation:dangollo-radio-pulse 1.25s ease-in-out infinite!important;
+}
+html body #app #driveView #driveRadioBtn.on .drive-radio-svg .outer-left,
+html body #app #driveView #driveRadioBtn.on .drive-radio-svg .outer-right{
+ animation-delay:.25s!important;
+}
+html body #app #driveView #driveRadioBtn.off .drive-radio-svg .dangollo-radio-wave{
+ animation:none!important;opacity:1!important;
+}
+@media(prefers-reduced-motion:reduce){
+ html body #app #driveView #driveRadioBtn.on .drive-radio-svg .dangollo-radio-wave{animation:none!important;opacity:1!important}
+}

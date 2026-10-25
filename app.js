@@ -2319,7 +2319,7 @@ function makeEndpointMarker(kind='end',label='목적지'){
   const color=kind==='start'?'#159B63':'#2077ED';
   el.innerHTML=`<svg class="dangollo-endpoint-svg" viewBox="0 0 92 104" role="img" aria-label="${label}" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="5" width="74" height="35" rx="17.5" fill="${color}" stroke="#ffffff" stroke-width="3"/><text x="46" y="28" fill="#ffffff" font-size="18" text-anchor="middle" font-weight="800" font-family="sans-serif">${label}</text><path d="M46 40v47" stroke="${color}" stroke-width="5" stroke-linecap="round"/><circle cx="46" cy="62" r="12" fill="#ffffff" stroke="${color}" stroke-width="5"/></svg>`;
   const marker=new maplibregl.Marker({element:el,anchor:'bottom'});
-  marker.addClass('dangollo-route-endpoint-marker');
+  marker.getElement().classList.add('dangollo-route-endpoint-marker');
   return marker;
 }
 function makeDestMarker(){
@@ -2423,7 +2423,7 @@ function ensureDestinationMarker(){
   try{
     if(!state.destMarker)state.destMarker=makeDestMarker().setLngLat([lng,lat]).addTo(state.map);
     else state.destMarker.setLngLat([lng,lat]);
-    state.destMarker.addClass?.('dangollo-route-endpoint-marker');
+    state.destMarker.getElement()?.classList.add('dangollo-route-endpoint-marker');
     const el=state.destMarker.getElement();
     if(el){
       el.style.removeProperty('display');el.style.removeProperty('visibility');el.style.removeProperty('opacity');
@@ -2463,7 +2463,7 @@ function updateOriginMarker(){
       if(state.originMarker)try{state.originMarker.remove()}catch{}
       state.originMarker=makeEndpointMarker('start','출발지').setLngLat([lng,lat]).addTo(state.map);
     }else state.originMarker.setLngLat([lng,lat]);
-    state.originMarker.addClass?.('dangollo-route-endpoint-marker');
+    state.originMarker.getElement()?.classList.add('dangollo-route-endpoint-marker');
   }catch(e){console.warn('start marker update failed',e)}
 }
 
@@ -2528,7 +2528,6 @@ function drawRoute(route=state.route,{fit=true}={}){
   try{
     if(state.map.getLayer('route-direction-arrows'))state.map.moveLayer('route-direction-arrows');
   }catch(e){console.warn('route arrow layer order failed',e)}
-  updateOriginMarker();
   updateOriginMarker();
   ensureDestinationMarker();
   if(fit){const b=new maplibregl.LngLatBounds();route.geometry.forEach(p=>b.extend(p));state.map.fitBounds(b,{padding:{top:100,bottom:310,left:36,right:36},duration:650})}
@@ -6822,10 +6821,12 @@ async function loadRadioSchedule(){
 }
 
 function radioToggleMarkup(isOn){
-  return `<svg class="dangollo-quick-svg drive-radio-svg ${isOn?'is-on':'is-off'}" data-quick-icon="radio" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#ffffff" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <circle cx="16" cy="16" r="2.4" fill="#ffffff" stroke="none"/>
-    <path d="M11.8 11.8a6.2 6.2 0 0 0 0 8.4"/><path d="M20.2 11.8a6.2 6.2 0 0 1 0 8.4"/>
-    <path d="M8.2 8.2a11 11 0 0 0 0 15.6"/><path d="M23.8 8.2a11 11 0 0 1 0 15.6"/>
+  return `<svg class="dangollo-quick-svg drive-radio-svg ${isOn?'is-on':'is-off'}" data-quick-icon="radio" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#ffffff" stroke-width="3.1" stroke-linecap="round" aria-hidden="true">
+    <circle cx="16" cy="16" r="2.6" fill="#ffffff" stroke="none"/>
+    <path class="dangollo-radio-wave inner-left" d="M11.5 11.6a6.2 6.2 0 0 0 0 8.8"/>
+    <path class="dangollo-radio-wave inner-right" d="M20.5 11.6a6.2 6.2 0 0 1 0 8.8"/>
+    <path class="dangollo-radio-wave outer-left" d="M8 8a11.3 11.3 0 0 0 0 16"/>
+    <path class="dangollo-radio-wave outer-right" d="M24 8a11.3 11.3 0 0 1 0 16"/>
   </svg>`;
 }
 
@@ -6841,7 +6842,9 @@ function stopNavigationRadioImmediately(){
 }
 function updateRadioUI(){
   const btn=$('driveRadioBtn');if(!btn)return;
-  const on=Boolean(state.radioPlaying);
+  const player=radioPlayer();
+  const on=Boolean(player&&!player.paused&&!player.ended);
+  state.radioPlaying=on;
   btn.classList.toggle('on',on);
   btn.classList.toggle('off',!on);
   btn.setAttribute('aria-label',on?'라디오 정지':'라디오 재생');
