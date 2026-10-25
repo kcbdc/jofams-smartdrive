@@ -5159,67 +5159,116 @@ html body .dangollo-start-pin .dangollo-endpoint-flag,
 html body .dangollo-end-pin .dangollo-endpoint-flag{white-space:nowrap!important}
 html body .dangollo-endpoint-pin{filter:drop-shadow(0 6px 10px rgba(20,40,80,.18))!important}
 
-/* v7.6.23.5 — navigation quick tools: two at upper-right, three at lower-right. */
-html body #app #driveView .drive-side-actions{
-  top:auto!important;bottom:calc(var(--safeB) + 158px)!important;
-  right:calc(var(--safeR, 0px) + 44px)!important;
-  display:flex!important;flex-direction:column!important;gap:12px!important;
-}
-html body #app #driveView #driveRadioBtn{top:calc(var(--safeT) + 18px)!important;right:calc(var(--safeR,0px) + 44px)!important}
-html body #app #driveView #arOpenBtn.dangollo-drive-voice{top:calc(var(--safeT) + 84px)!important;right:calc(var(--safeR,0px) + 44px)!important}
-@media (orientation:landscape){
- html body #app #driveView .drive-side-actions{top:auto!important;bottom:calc(var(--safeB) + 84px)!important;right:calc(var(--safeR,0px) + 38px)!important;gap:8px!important}
- html body #app #driveView #driveRadioBtn{top:calc(var(--safeT) + 14px)!important;right:calc(var(--safeR,0px) + 38px)!important}
- html body #app #driveView #arOpenBtn.dangollo-drive-voice{top:calc(var(--safeT) + 70px)!important;right:calc(var(--safeR,0px) + 38px)!important}
-}
-@media (max-height:650px) and (orientation:landscape){
- html body #app #driveView .drive-side-actions{bottom:calc(var(--safeB) + 72px)!important;gap:5px!important}
- html body #app #driveView .drive-side-actions button{width:40px!important;height:40px!important}
-}
-
-/* 7.6.23.6: navigation controls, safe overlays and endpoint SVG. */
+/* v7.6.23.7 — consolidated final overrides (replaces 7.6.23.5-6). */
+/* Upper right: radio and voice, identical circular controls. */
 html body #app #driveView #driveRadioBtn,
 html body #app #driveView #arOpenBtn.dangollo-drive-voice{
+  position:absolute!important;right:calc(var(--safeR, 0px) + 46px)!important;
   width:46px!important;height:46px!important;min-width:46px!important;min-height:46px!important;
-  max-width:46px!important;max-height:46px!important;background:#2778F4!important;
-  border-radius:50%!important;display:grid!important;place-items:center!important;
-  color:#ffffff!important;box-sizing:border-box!important;
+  max-width:46px!important;max-height:46px!important;
+  background:#2778f4!important;color:#fff!important;border-radius:50%!important;
+  box-sizing:border-box!important;display:grid!important;place-items:center!important;
+  padding:0!important;z-index:92!important;
+}
+html body #app #driveView #driveRadioBtn{top:calc(var(--safeT) + 12px)!important}
+html body #app #driveView #arOpenBtn.dangollo-drive-voice{
+  top:calc(var(--safeT) + 67px)!important;border:2px solid #fff!important;
 }
 html body #app #driveView #driveRadioBtn .drive-radio-icon,
 html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
 html body #app #driveView #arOpenBtn.dangollo-drive-voice svg.dangollo-quick-svg{
   width:22px!important;height:22px!important;min-width:22px!important;min-height:22px!important;
-  max-width:22px!important;max-height:22px!important;stroke:#fff!important;color:#fff!important;
+  max-width:22px!important;max-height:22px!important;
+  background:transparent!important;stroke:#fff!important;color:#fff!important;
+  -webkit-mask:none!important;mask:none!important;display:block!important;
 }
 html body #app #driveView #driveRadioBtn .drive-radio-icon svg path{stroke:#fff!important;fill:none!important}
-html body #app #driveView #driveRadioBtn .drive-radio-icon svg circle{stroke:none!important;fill:#fff!important}
-html body #app #driveView #arOpenBtn.dangollo-drive-voice{border:2px solid #fff!important}
-html body #app #driveView #driveRadioBtn{top:calc(var(--safeT) + 12px)!important}
-html body #app #driveView #arOpenBtn.dangollo-drive-voice{top:calc(var(--safeT) + 69px)!important}
-html body .dangollo-endpoint-pin{width:92px!important;height:104px!important;background:none!important;filter:none!important}
-html body .dangollo-endpoint-svg{display:block!important;width:92px!important;height:104px!important;overflow:visible!important;filter:drop-shadow(0 4px 7px rgba(14,36,69,.22))!important}
+html body #app #driveView #driveRadioBtn .drive-radio-icon svg circle{fill:#fff!important;stroke:none!important}
+/* Lower right: recommendation / route / search, leaving the traffic line at the far right. */
+html body #app #driveView .drive-side-actions{
+  position:absolute!important;top:auto!important;bottom:calc(var(--safeB) + 158px)!important;
+  right:calc(var(--safeR, 0px) + 44px)!important;
+  display:flex!important;flex-direction:column!important;align-items:center!important;gap:10px!important;
+  width:48px!important;z-index:90!important;
+}
+html body #app #driveView .drive-side-actions button{
+  width:48px!important;height:48px!important;min-width:48px!important;min-height:48px!important;
+  background:#f4f4f4!important;color:#111!important;border-radius:50%!important;
+  display:grid!important;place-items:center!important;padding:0!important;
+}
+html body #app #driveView .drive-side-actions button .dangollo-quick-icon,
+html body #app #driveView .drive-side-actions button .dangollo-quick-icon svg{
+  width:24px!important;height:24px!important;min-width:24px!important;min-height:24px!important;
+  color:#111!important;stroke:#111!important;fill:none!important;-webkit-mask:none!important;mask:none!important;
+}
+html body #app #driveView .drive-side-actions button b{display:none!important}
+/* Traffic line stays outside tools, and the live text is above the line. */
+html body #app #driveView .traffic-route-rail{
+  right:calc(var(--safeR, 0px) + 8px)!important;
+  top:calc(var(--safeT) + 142px)!important;bottom:calc(var(--safeB) + 142px)!important;
+  width:27px!important;display:flex!important;align-items:center!important;
+}
+html body #app #driveView .traffic-route-rail > small#trafficFlowState{
+  display:grid!important;place-items:center!important;white-space:nowrap!important;
+  width:auto!important;min-width:35px!important;height:24px!important;
+  font-size:10px!important;padding:3px 5px!important;line-height:1!important;
+  border-radius:10px!important;color:#243348!important;background:rgba(255,255,255,.96)!important;
+}
+/* SVG endpoint markers are map-anchored; never render a viewport-floating destination label. */
+html body .dangollo-endpoint-pin{
+  display:block!important;visibility:visible!important;opacity:1!important;
+  width:92px!important;height:104px!important;background:none!important;filter:none!important;
+  pointer-events:none!important;
+}
+html body .dangollo-endpoint-svg{
+  display:block!important;width:92px!important;height:104px!important;overflow:visible!important;
+  filter:drop-shadow(0 4px 7px rgba(14,36,69,.22))!important;
+}
 html body .dangollo-endpoint-pin .dangollo-endpoint-flag,
-html body .dangollo-endpoint-pin .dangollo-endpoint-stem{display:none!important}
-/* in portrait the junction assist remains below direction box and above trip footer. */
+html body .dangollo-endpoint-pin .dangollo-endpoint-stem,
+html body .dangollo-destination-edge{display:none!important}
+html body:has(#routeView:not(.hidden)) .maplibregl-marker:has(.dangollo-endpoint-pin),
+html body:has(#driveView:not(.hidden)) .maplibregl-marker:has(.dangollo-endpoint-pin){
+  display:block!important;visibility:visible!important;opacity:1!important;z-index:96!important;
+}
+/* Portrait junction directions: in the middle free area, sized away from HUD and sidebar. */
 @media (orientation:portrait){
- html body #app #driveView.dangollo-in-junction #laneAssistLayer,
- html body #app #driveView.dangollo-in-junction #laneAssistLayer.dangollo-junction-split{
-  top:auto!important;left:50%!important;right:auto!important;
-  bottom:calc(var(--safeB) + 185px)!important;transform:translateX(-50%)!important;
-  width:min(78vw,420px)!important;max-width:calc(100vw - 125px)!important;
-  padding:8px 10px!important;max-height:78px!important;overflow:hidden!important;
-  z-index:86!important;box-sizing:border-box!important;
- }
- html body #app #driveView.dangollo-in-junction #laneAssistTitle{font-size:15px!important}
- html body #app #driveView.dangollo-in-junction #laneAssistRoad{font-size:11px!important}
- html body #app #driveView.dangollo-in-junction .lane-assist-icon{width:40px!important;height:40px!important;font-size:22px!important}
+  html body #app #driveView.dangollo-in-junction #laneAssistLayer,
+  html body #app #driveView.dangollo-in-junction #laneAssistLayer.dangollo-junction-split{
+    position:absolute!important;top:auto!important;left:50%!important;right:auto!important;
+    bottom:calc(var(--safeB) + 190px)!important;
+    width:min(76vw,360px)!important;max-width:calc(100vw - 130px)!important;
+    max-height:78px!important;overflow:hidden!important;padding:8px 10px!important;
+    transform:translateX(-50%)!important;z-index:86!important;box-sizing:border-box!important;
+  }
+  html body #app #driveView.dangollo-in-junction #laneAssistTitle{font-size:15px!important}
+  html body #app #driveView.dangollo-in-junction #laneAssistRoad{font-size:11px!important}
+  html body #app #driveView.dangollo-in-junction .lane-assist-icon{width:40px!important;height:40px!important;font-size:22px!important}
 }
 @media (orientation:landscape){
- html,body,#app{width:100%!important;max-width:none!important;overflow:hidden!important}
- html body.landscape-full #app{height:100dvh!important;min-height:100dvh!important}
- html body #app #driveView #driveRadioBtn{top:calc(var(--safeT) + 10px)!important;width:42px!important;height:42px!important;min-width:42px!important;min-height:42px!important;max-width:42px!important;max-height:42px!important}
- html body #app #driveView #arOpenBtn.dangollo-drive-voice{top:calc(var(--safeT) + 61px)!important;width:42px!important;height:42px!important;min-width:42px!important;min-height:42px!important;max-width:42px!important;max-height:42px!important}
- html body #app #driveView #driveRadioBtn .drive-radio-icon,
- html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
- html body #app #driveView #arOpenBtn.dangollo-drive-voice svg.dangollo-quick-svg{width:20px!important;height:20px!important;min-width:20px!important;min-height:20px!important;max-width:20px!important;max-height:20px!important}
+  html,body,#app{width:100%!important;max-width:none!important;overflow:hidden!important}
+  html body.landscape-full #app{height:100dvh!important;min-height:100dvh!important}
+  html body #app #driveView #driveRadioBtn,
+  html body #app #driveView #arOpenBtn.dangollo-drive-voice{
+    right:calc(var(--safeR, 0px) + 40px)!important;
+    width:42px!important;height:42px!important;min-width:42px!important;min-height:42px!important;
+    max-width:42px!important;max-height:42px!important;
+  }
+  html body #app #driveView #driveRadioBtn{top:calc(var(--safeT) + 8px)!important}
+  html body #app #driveView #arOpenBtn.dangollo-drive-voice{top:calc(var(--safeT) + 59px)!important}
+  html body #app #driveView #driveRadioBtn .drive-radio-icon,
+  html body #app #driveView #driveRadioBtn .drive-radio-icon svg,
+  html body #app #driveView #arOpenBtn.dangollo-drive-voice svg.dangollo-quick-svg{
+    width:20px!important;height:20px!important;min-width:20px!important;min-height:20px!important;max-width:20px!important;max-height:20px!important;
+  }
+  html body #app #driveView .drive-side-actions{
+    top:auto!important;bottom:calc(var(--safeB) + 78px)!important;
+    right:calc(var(--safeR, 0px) + 39px)!important;gap:7px!important;width:42px!important;
+  }
+  html body #app #driveView .drive-side-actions button{width:42px!important;height:42px!important;min-width:42px!important;min-height:42px!important}
+  html body #app #driveView .traffic-route-rail{top:calc(var(--safeT) + 70px)!important;bottom:calc(var(--safeB) + 75px)!important}
+}
+@media (max-height:500px) and (orientation:landscape){
+  html body #app #driveView .drive-side-actions{bottom:calc(var(--safeB) + 67px)!important;gap:5px!important}
+  html body #app #driveView .drive-side-actions button{height:38px!important;width:38px!important;min-height:38px!important;min-width:38px!important}
 }
