@@ -4944,3 +4944,22 @@ html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{
     top:max(calc(var(--safeT) + 72px),calc(var(--t0, 0px) + var(--u, .5px)*151))!important;
   }
 }
+
+/* 7.6.23.0: 라디오/마이크/추천/경로/검색 = 주행 기본 숨김, 지도 터치로 펼침 */
+html body #app #driveView:not(.dangollo-quick-actions-open) #driveRadioBtn,
+html body #app #driveView:not(.dangollo-quick-actions-open) #arOpenBtn,
+html body #app #driveView:not(.dangollo-quick-actions-open) #driveRecommendBtn,
+html body #app #driveView:not(.dangollo-quick-actions-open) #routeInfoBtn,
+html body #app #driveView:not(.dangollo-quick-actions-open) #driveSearchBtn{
+  opacity:0!important;visibility:hidden!important;pointer-events:none!important;
+  transform:scale(.92)!important;
+}
+html body #app #driveView #driveRadioBtn,
+html body #app #driveView #arOpenBtn,
+html body #app #driveView #driveRecommendBtn,
+html body #app #driveView #routeInfoBtn,
+html body #app #driveView #driveSearchBtn{
+  transition:opacity .18s ease,transform .18s ease,visibility .18s ease!important;
+}
+/* 메뉴 3개가 들어있는 컨테이너는 숨긴 버튼의 이벤트 영역을 차지하지 않는다. */
+html body #app #driveView:not(.dangollo-quick-actions-open) .drive-side-actions{pointer-events:none!important}
