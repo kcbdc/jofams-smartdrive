@@ -2417,10 +2417,64 @@ function ensureDestinationMarker(){
     // 지도 축척/회전 후에도 원래 경로 종점의 지도 좌표에 고정한다.
     // MapLibre 마커 자체의 pixel 위치는 지도 엔진이 관리한다.
     if(el){el.classList.add('dangollo-arrival-visible');el.setAttribute('aria-label','최종 목적지 도착');}
+    ensureDestinationEdgeIndicator();
   }catch(e){console.warn('arrival marker update failed',e)}
+}
+/* 7.6.22.4: real destination off-screen indicator (MapLibre, never demo coordinates). */
+function updateDestinationEdgeIndicator(){
+  const map=state.map, dest=state.destination;
+  const edge=document.getElementById('dangolloDestinationEdge');
+  if(!map||!edge||!pointValid(dest)||(!state.route&&!state.tripStartedAt)){
+    if(edge)edge.hidden=true;return;
+  }
+  const activeRoute=!$('routeView')?.classList.contains('hidden')||!$('driveView')?.classList.contains('hidden');
+  if(!activeRoute){edge.hidden=true;return;}
+  const end=state.route?.geometry?.at(-1);
+  const lng=Array.isArray(end)?Number(end[0]):Number(dest.lng);
+  const lat=Array.isArray(end)?Number(end[1]):Number(dest.lat);
+  if(!Number.isFinite(lng)||!Number.isFinite(lat)){edge.hidden=true;return;}
+  const mapRect=map.getContainer()?.getBoundingClientRect();
+  if(!mapRect||mapRect.width<60||mapRect.height<60){edge.hidden=true;return;}
+  let pos;
+  try{pos=map.project([lng,lat]);}catch{edge.hidden=true;return;}
+  if(!Number.isFinite(pos.x)||!Number.isFinite(pos.y)){edge.hidden=true;return;}
+  const pad=36, w=mapRect.width, h=mapRect.height;
+  const outside=pos.x<pad||pos.x>w-pad||pos.y<pad||pos.y>h-pad;
+  if(!outside){edge.hidden=true;return;}
+  // Ray / viewport rectangle intersection; safely handles vertical and horizontal rays.
+  const cx=w/2,cy=h/2,dx=pos.x-cx,dy=pos.y-cy;
+  const halfW=Math.max(8,cx-pad),halfH=Math.max(8,cy-pad);
+  const factor=Math.max(Math.abs(dx)/halfW,Math.abs(dy)/halfH,1);
+  const x=Math.min(w-pad,Math.max(pad,cx+dx/factor));
+  const y=Math.min(h-pad,Math.max(pad,cy+dy/factor));
+  // Map container may not start at viewport origin: overlay is fixed to the screen.
+  edge.style.left=`${mapRect.left+x}px`;
+  edge.style.top=`${mapRect.top+y}px`;
+  edge.style.setProperty('--edge-bearing',`${Math.atan2(dy,dx)*180/Math.PI+90}deg`);
+  edge.hidden=false;
+}
+function ensureDestinationEdgeIndicator(){
+  let el=document.getElementById('dangolloDestinationEdge');
+  if(!el){
+    el=document.createElement('div');el.id='dangolloDestinationEdge';
+    el.className='dangollo-destination-edge';el.hidden=true;
+    el.setAttribute('aria-label','화면 밖 최종 목적지 방향');
+    el.innerHTML='<span class="dangollo-edge-arrow" aria-hidden="true">▲</span><b>도착</b>';
+    document.body.appendChild(el);
+  }
+  if(state.map&&!state._destEdgeBound){
+    state._destEdgeBound=true;
+    for(const event of ['move','zoom','rotate','pitch','resize','style.load']){
+      state.map.on(event,updateDestinationEdgeIndicator);
+    }
+    window.addEventListener('resize',updateDestinationEdgeIndicator,{passive:true});
+    window.addEventListener('orientationchange',()=>requestAnimationFrame(updateDestinationEdgeIndicator),{passive:true});
+  }
+  updateDestinationEdgeIndicator();
 }
 function setDestinationMarker(){
   if(!state.destination){
+    const edge=document.getElementById('dangolloDestinationEdge');if(edge)edge.hidden=true;
     if(state.destMarker){try{state.destMarker.remove()}catch{}state.destMarker=null}
     return;
   }
@@ -4416,6 +4470,7 @@ function setView(view){
   if(view==='drive'){setTimeout(tryLandscapeFullscreen,80);setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}),500)}
   refreshMapLayout({fitRoute:view==='route'&&Boolean(state.route)});
   if((view==='route'||view==='drive')&&state.destination)setTimeout(ensureDestinationMarker,120);
+  requestAnimationFrame(updateDestinationEdgeIndicator);
 }
 function initializeDriveSummary(){
   if(!state.route)return;
@@ -4545,6 +4600,7 @@ function stopNavigation(){
   state.safetyEvents=[];resetSectionSpeedState();state.tunnelRouteLock={active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0};state.route=null;state.routeOptions=[];state.waypoints=[];renderRouteWaypoints();
   try{if(state.destMarker){state.destMarker.remove();state.destMarker=null}}catch{state.destMarker=null}
   try{if(state.originMarker){state.originMarker.remove();state.originMarker=null}}catch{state.originMarker=null}
+  const edge=document.getElementById('dangolloDestinationEdge');if(edge)edge.hidden=true;
   state.destination=null;state.origin=null;state.originMode='current';state.routeMode='car';state.carRouteOptions=[];state.walkingRoute=null;state.routeModeDurations={car:null,walk:null};$('driveView')?.classList.remove('walking-mode');
   try{updateOverspeed(0,0)}catch{}
   try{setView('home')}catch(e){console.error('home restore failed',e);$('homeView')?.classList.remove('hidden');$('driveView')?.classList.add('hidden')}

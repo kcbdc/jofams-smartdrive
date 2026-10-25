@@ -4720,3 +4720,53 @@ html body #app #driveView .maneuver-main::after{content:none!important;display:n
  html body #app #driveView #driveRadioBtn,
  html body #app #driveView #arOpenBtn.dangollo-drive-voice{width:clamp(44px,9vh,60px)!important;height:clamp(44px,9vh,60px)!important}
 }
+
+
+/* 7.6.22.4 FINAL: selectors validated against actual index.html, NOT demo IDs. */
+html body #app #routeView .route-start-dock .route-start-actions,
+html body #app #routeView .route-start-actions{
+  display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+  gap:10px!important;width:100%!important;
+}
+html body #app #routeView #routeFutureDepartureBtn,
+html body #app #routeView #startBtn{
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  width:100%!important;min-width:0!important;max-width:100%!important;
+  height:60px!important;min-height:60px!important;max-height:60px!important;
+  padding:0 7px!important;margin:0!important;box-sizing:border-box!important;
+  font-size:clamp(14px,4vw,20px)!important;line-height:1.2!important;text-align:center!important;
+}
+html body #app #routeView .route-start-dock{z-index:130!important;}
+html body #app:has(#routeView:not(.hidden)) #bottomNav{display:none!important;}
+html body #app #driveView #driveRadioBtn,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice{
+  width:60px!important;height:60px!important;min-width:60px!important;min-height:60px!important;
+  max-width:60px!important;max-height:60px!important;padding:0!important;
+  display:grid!important;place-items:center!important;box-sizing:border-box!important;
+}
+html body #app #driveView #driveRadioBtn .drive-radio-icon,
+html body #app #driveView #arOpenBtn.dangollo-drive-voice svg{
+  width:31px!important;height:31px!important;
+}
+/* True out-of-viewport destination indicator. Original coordinate marker remains MapLibre-managed. */
+.dangollo-destination-edge{
+  position:fixed;z-index:94;transform:translate(-50%,-50%);
+  width:54px;height:54px;border-radius:50%;background:#247afa;color:#fff;
+  box-shadow:0 6px 18px rgba(3,40,112,.28);border:3px solid #fff;
+  display:flex;align-items:center;justify-content:center;flex-direction:column;
+  gap:0;pointer-events:none;font-size:12px;font-weight:900;
+}
+.dangollo-destination-edge[hidden]{display:none!important}
+.dangollo-edge-arrow{display:block;transform:rotate(var(--edge-bearing,0deg));font-size:14px;line-height:1}
+/* No generic .circle-marker DOM removal: actual code has no such elements. */
+html body #app #driveView .maneuver-stack::before,
+html body #app #driveView .maneuver-stack::after,
+html body #app #driveView .maneuver-main::before,
+html body #app #driveView .maneuver-main::after{content:none!important;display:none!important}
+@media(orientation:landscape){
+ html body #app #routeView .route-start-dock .route-start-actions{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+ html body #app #routeView #routeFutureDepartureBtn,
+ html body #app #routeView #startBtn{height:clamp(46px,12dvh,60px)!important;min-height:46px!important;max-height:60px!important;font-size:clamp(14px,3vh,19px)!important}
+ html body #app #driveView #driveRadioBtn,
+ html body #app #driveView #arOpenBtn.dangollo-drive-voice{width:52px!important;height:52px!important;min-width:52px!important;min-height:52px!important;max-width:52px!important;max-height:52px!important}
+}
