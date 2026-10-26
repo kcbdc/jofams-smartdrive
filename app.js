@@ -2473,14 +2473,18 @@ function updateOriginMarker(){
 
 function trafficClassFromValues(speed,stateCode){
   const st=Number(stateCode)||0,sp=Number(speed)||0;
-  // Kakao Mobility 공식 traffic_state: 1=정체(heavy), 2=지체(delayed), 3=서행(slow), 4=원활(smooth), 6=사고/통행불가.
-  // 공급자 상태값이 있으면 이를 우선하고, 상태값 0(정보 없음)일 때만 속도 기준으로 보조 판단한다.
-  if(st===4)return{key:'smooth',label:'원활',color:'#16a36a'};
-  if(st===3)return{key:'slow',label:'서행',color:'#f0a400'};
-  if(st===2)return{key:'delayed',label:'지체 · 혼잡',color:'#ef6c35'};
-  if(st===1||st===6)return{key:'severe',label:st===6?'사고 · 통행주의':'정체 · 극심한 정체',color:'#d82f3c'};
-  if(sp>0){if(sp>=40)return{key:'smooth',label:'원활',color:'#16a36a'};if(sp>=20)return{key:'slow',label:'서행',color:'#f0a400'};return{key:'severe',label:'정체 · 극심한 정체',color:'#d82f3c'}}
-  return{key:'unknown',label:'교통정보 확인 중',color:'#9aa6b5'};
+  // 카카오 공식 traffic_state: 4 원활 / 3 서행 / 2 지체 / 1 정체 / 6 사고·통행불가.
+  // "극심"은 카카오 독립 상태코드가 아니다. 정체(1) + 제공된 평균속도 <=5km/h인 경우에만 보조 분류한다.
+  // 0은 미상(추정 표기 금지); 6만 실제 통제/통행불가로 표기한다.
+  if(st===6)return{key:'blocked',label:'통제',color:'#222b3a',detail:'사고 등으로 통행할 수 없는 구간입니다.'};
+  if(st===4)return{key:'smooth',label:'원활',color:'#16a36a',detail:'차량 간격이 충분하고 흐름이 원활합니다.'};
+  if(st===3)return{key:'slow',label:'서행',color:'#f0c02d',detail:'제한속도보다 낮게 이동하는 서행 구간입니다.'};
+  if(st===2)return{key:'delayed',label:'지체',color:'#ef8434',detail:'차량이 늘어나 이동속도가 감소한 구간입니다.'};
+  if(st===1){
+    if(sp>0&&sp<=5)return{key:'extreme',label:'극심',color:'#93213a',detail:'정체 구간의 평균속도가 5km/h 이하입니다(속도 기반 세분류).'};
+    return{key:'severe',label:'정체',color:'#d82f3c',detail:'차량 흐름이 매우 느린 정체 구간입니다.'};
+  }
+  return{key:'unknown',label:'미상',color:'#9aa6b5',detail:'현재 구간에 제공되는 교통 상태 정보가 없습니다.'};
 }
 function buildTrafficGeoJson(route){
   const g=route?.geometry||[],features=[];
@@ -5413,9 +5417,9 @@ function updateTrafficStatus(seg){
   const info=trafficClassFromValues(seg?.trafficSpeed,seg?.trafficState),sp=Math.round(Number(seg?.trafficSpeed)||0);
   el.className=`traffic-status traffic-${info.key}`;$('trafficStatusLabel').textContent=info.label;
   const spd=$('speedPanel');if(spd)spd.dataset.traffic=info.key;
-  const detail=info.key==='smooth'?'차량 흐름이 원활합니다.':info.key==='slow'?'교통량 증가로 평소보다 속도가 낮습니다.':info.key==='delayed'?'가다 서기를 반복할 수 있는 혼잡 구간입니다.':info.key==='severe'?'차량 흐름이 매우 느린 정체 구간입니다.':'현재 도로 소통정보를 불러오고 있습니다.';
+  const detail=info.detail;
   $('trafficStatusDetail').textContent=sp>0?`${detail} · 평균 ${sp}km/h`:detail;
-  if($('trafficFlowState'))$('trafficFlowState').textContent=info.key==='unknown'?'교통':info.label;
+  if($('trafficFlowState'))$('trafficFlowState').textContent=info.label;
   if(info.key!=='unknown'&&info.key!==state.lastTrafficStatus){state.lastTrafficStatus=info.key;}
 }
 

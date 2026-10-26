@@ -4372,3 +4372,12 @@ html body #app #drivePoiPanel .drive-ai-result[hidden]{display:none!important;}
 
 /* Dangollo 7.6.26 - 유가 오류 다시시도 버튼 */
 .fuel-retry-btn{margin-top:8px;padding:8px 16px;border:0;border-radius:999px;background:#1f6bff;color:#fff;font-weight:800;font-size:13px}
+
+/* 7.6.26.4 — six concise traffic-state labels, shared with Kakao traffic_state data. */
+.traffic-route-segments i.extreme,.traffic-legend .extreme{background:#93213a!important}
+.traffic-route-segments i.blocked,.traffic-legend .blocked{background:#222b3a!important}
+.traffic-extreme .traffic-dot{background:#93213a!important}
+.traffic-blocked .traffic-dot{background:#222b3a!important}
+html body #app #driveView #trafficRouteSegments i.extreme{background:#93213a!important}
+html body #app #driveView #trafficRouteSegments i.blocked{background:#222b3a!important}
+.traffic-legend .traffic-legend-note{display:block;margin-top:8px;color:#697689;font-size:10px;line-height:1.45}

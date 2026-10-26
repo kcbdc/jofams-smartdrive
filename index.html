@@ -57,7 +57,7 @@
 <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.26.0" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.26.4" />
 </head>
 <body>
   <main id="app">
@@ -384,10 +384,13 @@
         </div>
         <div class="traffic-legend" aria-label="교통정보 기준">
           <b>교통정보</b>
-          <div><span class="smooth"></span><strong>원활</strong><small>40km/h 이상</small></div>
-          <div><span class="slow"></span><strong>서행</strong><small>20~40km/h 미만</small></div>
-          <div><span class="delayed"></span><strong>지체·혼잡</strong><small>교통량 증가·가다 서기</small></div>
-          <div><span class="severe"></span><strong>정체</strong><small>20km/h 미만</small></div>
+          <div><span class="smooth"></span><strong>원활</strong><small>통행 원활</small></div>
+          <div><span class="slow"></span><strong>서행</strong><small>속도 감소</small></div>
+          <div><span class="delayed"></span><strong>지체</strong><small>이동 지연</small></div>
+          <div><span class="severe"></span><strong>정체</strong><small>흐름 정체</small></div>
+          <div><span class="extreme"></span><strong>극심</strong><small>정체+평균 5km/h 이하*</small></div>
+          <div><span class="blocked"></span><strong>통제</strong><small>사고·통행불가</small></div>
+          <small class="traffic-legend-note">* 극심은 속도 기준 추가 분류이며, 통제는 교통 API의 통행불가 상태입니다.</small>
         </div>
         <div class="drive-menu-actions">
           <button id="otherRouteBtn"><span data-icon="routes"></span><b>다른경로</b></button>
@@ -839,6 +842,6 @@
 
   <script>window.__JOFAMS_BUILD__="7.6.23.8";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.26.0"></script>
+  <script type="module" src="/app.js?v=7.6.26.4"></script>
 </body>
 </html>
