@@ -1070,9 +1070,21 @@ function setBuildingExtrusions(visible){
   if(!state.map)return;
   try{const layers=state.map.getStyle()?.layers||[];layers.filter(l=>l.type==='fill-extrusion').forEach(l=>{try{state.map.setLayoutProperty(l.id,'visibility',visible?'visible':'none')}catch{}})}catch{}
 }
+// 2D/3D는 건물 입체 레이어의 차이이며, 주행 중 2D 지도도 전방을 볼 수 있도록 기울인다.
+// 홈·경로 탐색은 종전처럼 위에서 내려다보는 평면 지도를 유지한다.
+const DRIVE_2D_PITCH=48;
+const DRIVE_3D_PITCH=55;
+const DRIVE_2D_ZOOM=16.85;
+const DRIVE_3D_ZOOM=17.2;
+function driveMapPitch(){return state.map3D?DRIVE_3D_PITCH:DRIVE_2D_PITCH}
+function driveMapZoom(){return state.map3D?DRIVE_3D_ZOOM:DRIVE_2D_ZOOM}
 function enforce2DMap(){
   if(!state.map||state.map3D)return;
-  try{state.map.jumpTo({pitch:0});setBuildingExtrusions(false)}catch(e){console.warn('2D map enforcement failed',e)}
+  try{
+    const driving=Boolean(document.getElementById('driveView')&&!document.getElementById('driveView').classList.contains('hidden'));
+    state.map.jumpTo({pitch:driving?DRIVE_2D_PITCH:0});
+    setBuildingExtrusions(false);
+  }catch(e){console.warn('2D map enforcement failed',e)}
 }
 
 async function initMap(){
@@ -4543,8 +4555,8 @@ function resetDriveCompass(e){
 }
 
 function applyDriveMapMode(){
-  if(!state.map)return;const pitch=state.map3D?55:0;
-  try{setBuildingExtrusions(state.map3D);state.map.jumpTo({pitch});const btn=$('map3dBtn');if(btn){btn.classList.toggle('active',state.map3D);btn.textContent=state.map3D?'2D':'3D';btn.setAttribute('aria-label',state.map3D?'2D 지도 보기':'3D 지도 보기')}state.map.resize()}catch(e){console.warn('map mode change failed',e)}
+  if(!state.map)return;const pitch=driveMapPitch();
+  try{setBuildingExtrusions(state.map3D);state.map.jumpTo({pitch,zoom:driveMapZoom()});const btn=$('map3dBtn');if(btn){btn.classList.toggle('active',state.map3D);btn.textContent=state.map3D?'2D':'3D';btn.setAttribute('aria-label',state.map3D?'2D 지도 보기':'3D 지도 보기')}state.map.resize()}catch(e){console.warn('map mode change failed',e)}
 }
 function toggleMapControls(force){const el=$('driveMapControls');if(!el)return;state.mapControlsVisible=typeof force==='boolean'?force:!state.mapControlsVisible;el.classList.toggle('hidden',!state.mapControlsVisible);if(state.mapControlsVisible){updateDriveCompass();clearTimeout(toggleMapControls.t);toggleMapControls.t=setTimeout(()=>toggleMapControls(false),5000)}}
 
@@ -4901,8 +4913,8 @@ function updateDriving(force=false){
       const camCenter=camPt?[camPt.lng,camPt.lat]:[state.user.lng,state.user.lat];
       state.map.easeTo({
         center:camCenter,
-        zoom:17.2,
-        pitch:state.map3D?55:0,
+        zoom:driveMapZoom(),
+        pitch:driveMapPitch(),
         bearing:driveCameraBearing(),
         duration:force?0:270,
         padding:driveCameraPadding()
@@ -4943,7 +4955,7 @@ function snapDriveCameraNow(){
     if(!state.map||!state.tripStartedAt||!pointValid(state.user)||state.userMapInteracting)return;
     state.map.resize();
     const camPt=Number.isFinite(Number(state.driveMarkerRenderedDistance))?pointAtRouteDistance(Number(state.driveMarkerRenderedDistance)):null;
-    state.map.jumpTo({center:camPt?[camPt.lng,camPt.lat]:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?55:0,bearing:driveCameraBearing(),padding:driveCameraPadding()});
+    state.map.jumpTo({center:camPt?[camPt.lng,camPt.lat]:[state.user.lng,state.user.lat],zoom:driveMapZoom(),pitch:driveMapPitch(),bearing:driveCameraBearing(),padding:driveCameraPadding()});
     updateDriveCompass();
   }catch(e){console.warn('drive camera snap failed',e)}
 }
@@ -5520,7 +5532,7 @@ function recenterDriveMap(){
   if(!state.user)return toast('현재 위치를 확인할 수 없습니다.');
   const g=state.route?.geometry||[],idx=state.currentRouteIndex||0,next=g[Math.min(g.length-1,idx+3)];
   const heading=Number.isFinite(state.user.heading)?state.user.heading:(next?bearing(state.user.lat,state.user.lng,next[1],next[0]):0);
-  state.map?.easeTo({center:[state.user.lng,state.user.lat],zoom:17.2,pitch:state.map3D?55:0,bearing:heading,duration:350,padding:driveCameraPadding()});
+  state.map?.easeTo({center:[state.user.lng,state.user.lat],zoom:driveMapZoom(),pitch:driveMapPitch(),bearing:heading,duration:350,padding:driveCameraPadding()});
   toast('현재 위치로 지도를 맞췄습니다.',1200);
 }
 async function reroute(originOverride=null){
@@ -6438,8 +6450,8 @@ function stopRouteSimulation({resumeGps=true}={}){
       // 애니메이션 없이 즉시 실제 위치 복귀
       state.map.jumpTo({
         center:[state.user.lng,state.user.lat],
-        zoom:17.2,
-        pitch:state.map3D?55:0,
+        zoom:driveMapZoom(),
+        pitch:driveMapPitch(),
         bearing:Number(state.user.heading)||0,
         padding:driveCameraPadding()
       });
@@ -6554,8 +6566,8 @@ function simulationTick(ts){
       state.lastSimulationCameraAt=now;
       state.map.easeTo({
         center:[state.user.lng,state.user.lat],
-        zoom:17.2,
-        pitch:state.map3D?55:0,
+        zoom:driveMapZoom(),
+        pitch:driveMapPitch(),
         bearing:Number(state.user.heading)||0,
         duration:140,
         padding:driveCameraPadding()
