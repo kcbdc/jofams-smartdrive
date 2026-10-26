@@ -3296,7 +3296,7 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
     if(requestedProduct!==state.fuelProduct)return;
     if(!d.stations.length){
       if(state.fuelData?.stations?.length){renderFuelData(state.fuelData);return;}
-      throw new Error('현재 반경에 판매가격 정보가 없습니다. 유종·위치를 확인해 주세요.');
+      {const err=new Error('반경 5km 안에 해당 유종의 판매가격 정보가 없습니다.');err.code='FUEL_EMPTY';throw err}
     }
     state.fuelFetchedRouteM=curM;
     d.product=requestedProduct;state.fuelData=d;state.fuelFetchedAt=Date.now();
@@ -3375,14 +3375,22 @@ function renderFuelLocationError(){
   if($('fuelModalList'))$('fuelModalList').innerHTML=msg;
 }
 function renderFuelError(message,code=''){
+  // 7.6.26: 오류 종류별로 정확한 원인을 안내한다(기존에는 "데이터 없음"도 "네트워크 지연"으로 표시됐다).
   const safe=escapeHtml(message||'유가 정보를 불러오지 못했습니다.');
-  const keyProblem=code==='OPINET_KEY_MISSING'||code==='OPINET_KEY_REJECTED';
-  const detail=keyProblem
-    ?'<small>오피넷 서버 인증키 연결 상태를 확인해 주세요.</small>'
-    :'<small>오피넷 또는 네트워크 연결이 일시적으로 지연되고 있습니다.</small>';
-  const msg=`<div class="fuel-empty fuel-error">${safe}<br>${detail}</div>`;
-  if($('fuelStationList'))$('fuelStationList').innerHTML=msg;
-  if($('fuelModalList'))$('fuelModalList').innerHTML=msg;
+  const detailByCode={
+    OPINET_KEY_MISSING:'서버에 오피넷 인증키(OPINET_CERT_KEY)가 등록되지 않았습니다.',
+    OPINET_KEY_REJECTED:'오피넷이 인증키를 거부했습니다. 키와 사용 승인 상태를 확인해 주세요.',
+    OPINET_BLOCKED:'서버에서 오피넷 접속이 차단되었습니다. 잠시 후 다시 시도해 주세요.',
+    FUEL_EMPTY:'다른 유종을 선택하거나 잠시 후 다시 확인해 주세요.',
+    INVALID_COORDINATES:'현재 위치를 아직 확인하지 못했습니다. 위치 권한과 GPS를 확인해 주세요.'
+  };
+  const detail=`<small>${detailByCode[code]||'오피넷 또는 네트워크 연결이 일시적으로 지연되고 있습니다.'}</small>`;
+  const retry='<button type="button" class="fuel-retry-btn" data-fuel-retry>다시 시도</button>';
+  const msg=`<div class="fuel-empty fuel-error">${safe}<br>${detail}<br>${retry}</div>`;
+  for(const id of ['fuelStationList','fuelModalList']){
+    const el=$(id);if(!el)continue;el.innerHTML=msg;
+    el.querySelector('[data-fuel-retry]')?.addEventListener('click',()=>loadFuelPrices(state.fuelProduct,{force:true}).catch(()=>{}));
+  }
 }
 function openFuelModal(){
   $('fuelModal').classList.remove('hidden');syncFuelTabs();
@@ -3555,8 +3563,8 @@ async function chooseDestination(item,{autoGuide=true}={}){
 
   await loadRouteOptions();
   // 7.6.1.9: 목적지를 고르자마자 바로 주행을 시작하지 않는다. loadRouteOptions()가 경로를 표시하면서
-  // 이미 scheduleAutoStart()로 15초 카운트다운을 시작하므로, 여기서 바로 startNavigation()을 호출해
-  // 카운트다운을 건너뛰지 않는다. 사용자는 15초 안에 "안내 시작"을 눌러 즉시 시작하거나 취소할 수 있다.
+  // 이미 scheduleAutoStart()로 10초 카운트다운을 시작하므로, 여기서 바로 startNavigation()을 호출해
+  // 카운트다운을 건너뛰지 않는다. 사용자는 10초 안에 "안내 시작"을 눌러 즉시 시작하거나 취소할 수 있다.
   void autoGuide;
 }
 function resumeNavigationWithSelectedRoute(){
@@ -4036,7 +4044,7 @@ function selectRoute(index,fit=true){
   syncCharacterUI();drawRoute(state.route,{fit});state.routeCumulative=buildCumulative(state.route);state.currentRouteIndex=0;updateRoutePlanEta();
   if(state.routeMode==='car')loadSafetyEvents(state.route);else{state.safetyEvents=[];clearSafetyMarkers();hideSafetyAlert()}
 }
-function scheduleAutoStart(){cancelAutoStart();if(state.voiceRecommendationPending)return;state.autoStartSeconds=15;updateAutoHint();state.autoStartTimer=setInterval(()=>{state.autoStartSeconds--;if(state.autoStartSeconds<=0){cancelAutoStart();if(state.tripStartedAt)resumeNavigationWithSelectedRoute();else startNavigation()}else updateAutoHint()},1000)}
+function scheduleAutoStart(){cancelAutoStart();if(state.voiceRecommendationPending)return;state.autoStartSeconds=10;updateAutoHint();state.autoStartTimer=setInterval(()=>{state.autoStartSeconds--;if(state.autoStartSeconds<=0){cancelAutoStart();if(state.tripStartedAt)resumeNavigationWithSelectedRoute();else startNavigation()}else updateAutoHint()},1000)}
 function cancelAutoStart(){if(state.autoStartTimer){clearInterval(state.autoStartTimer);state.autoStartTimer=null}}
 function updateAutoHint(){$('autoStartHint').textContent=state.autoStartSeconds>0?`${state.autoStartSeconds}초 후 ${state.routeMode==='walk'?'도보 ':''}안내를 시작합니다.`:''}
 

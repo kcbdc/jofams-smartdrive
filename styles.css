@@ -4369,3 +4369,6 @@ html body #app #drivePoiPanel .drive-ai-result[hidden]{display:none!important;}
 .route-ai-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.route-ai-actions label{font-weight:700;font-size:13px}.route-ai-actions select{min-height:36px;padding:5px 9px;border:1px solid #c7d9ce;border-radius:9px;background:white;color:#213b2e}
 .route-ai-actions button{min-height:36px;padding:7px 13px;border:0;border-radius:9px;background:#208157;color:white;font-weight:700}.route-ai-actions button:disabled{opacity:.6}
 .route-ai-answer{margin:10px 0 0;white-space:pre-wrap;line-height:1.65;font-size:13px;overflow-wrap:anywhere}.route-ai-answer[hidden]{display:none!important}
+
+/* Dangollo 7.6.26 - 유가 오류 다시시도 버튼 */
+.fuel-retry-btn{margin-top:8px;padding:8px 16px;border:0;border-radius:999px;background:#1f6bff;color:#fff;font-weight:800;font-size:13px}
