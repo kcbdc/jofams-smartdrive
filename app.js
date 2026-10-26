@@ -355,6 +355,35 @@ async function requestCompassPermission(){
 }
 /* raw GNSS 픽스를 받아 예측-보정 상보필터 + 텔레포트 감쇠 + 맵스냅을 적용한 최종 좌표를 반환한다. */
 
+/* v7.6.26.5: 원시 위치/이동 방향으로 독립 검증한다. 경로에 붙인 가공 좌표로 검증하지 않는다. */
+function assessRealDriveDirection(lat,lng,heading,speed,accuracy,now=Date.now()){
+  if(!state.tripStartedAt||state.simulationActive||!state.route?.geometry?.length)return 'unknown';
+  const h=finiteOrNull(heading),v=finiteOrNull(speed),a=finiteOrNull(accuracy);
+  if(!Number.isFinite(h)||!Number.isFinite(v)||v<3||!Number.isFinite(a)||a>35)return 'unknown';
+  // 방향 패널티로 정방향 차선을 억지 선택하지 않도록, 물리적으로 가장 가까운 경로 조각을 먼저 검사한다.
+  const match=routePosOfPoint(Number(lng),Number(lat),state.route.geometry,null,60);
+  if(!match||match.distance>Math.max(25,a*1.5))return 'unknown';
+  const opposite=angleDiff(h,match.heading)>=125;
+  if(opposite){state.wrongDirectionHits=(state.wrongDirectionHits||0)+1;state.correctDirectionHits=0;}
+  else{state.correctDirectionHits=(state.correctDirectionHits||0)+1;state.wrongDirectionHits=0;}
+  if(state.wrongDirectionHits>=2)state.wrongDirectionActive=true;
+  if(state.correctDirectionHits>=3)state.wrongDirectionActive=false;
+  return state.wrongDirectionActive?'opposite':opposite?'suspect':'correct';
+}
+function showDirectionUncertain(){
+  if(!state.tripStartedAt||state.simulationActive)return;
+  const key=state.wrongDirectionActive?'reverse':'unverified';
+  if(state.directionToastKey!==key||Date.now()-(state.directionToastAt||0)>14000){
+    state.directionToastKey=key;state.directionToastAt=Date.now();
+    toast(state.wrongDirectionActive?'현재 이동 방향이 안내 경로와 다릅니다. 안전한 곳에서 경로를 확인하세요.':'현재 GPS 위치·방향을 확인 중입니다. 회전 안내를 잠시 보류합니다.',3700);
+  }
+}
+function clearUncertainGuidance(){
+  state.drivePositionUncertain=true;
+  if(state.driveMarkerRaf){cancelAnimationFrame(state.driveMarkerRaf);state.driveMarkerRaf=0;}
+  state.driveMarkerTargetDistance=state.driveMarkerRenderedDistance;
+  showDirectionUncertain();
+}
 function lockDisplayPositionToRoute(rawLike,now=Date.now(),opts={}){
   if(!state.tripStartedAt||!state.route?.geometry?.length||!state.routeCumulative?.length)return null;
   const raw={
@@ -363,15 +392,18 @@ function lockDisplayPositionToRoute(rawLike,now=Date.now(),opts={}){
     accuracy:Number(rawLike?.accuracy)||20
   };
   if(!pointValid(raw))return null;
+  const previousMatch={...state.mapMatch};
   const match=probabilisticRouteMatch(raw,now);
   if(!match)return null;
-
+  if(state.wrongDirectionActive){state.mapMatch=previousMatch;return null;}
+  // 멀리 떨어진 도로 조각(교차/평행 구간)에 순간적으로 붙는 오류 방지
+  if(match.distance>Math.max(35,Math.min(70,raw.accuracy*1.8))){state.mapMatch=previousMatch;return null;}
   const headingMismatch=Number(raw.speed)>2.8&&Number.isFinite(Number(raw.heading))
     ?angleDiff(Number(raw.heading),Number(match.heading))
     :0;
   // 평행한 반대 차선처럼 GPS 거리는 가까워도 실제 주행방향이 반대라면
   // 기존 경로에 캐릭터를 억지로 붙이지 않는다.
-  if(Number(raw.speed)>2.8&&headingMismatch>=105&&match.distance<=35)return null;
+  if(Number(raw.speed)>2.8&&Number.isFinite(Number(raw.heading))&&headingMismatch>=105){state.mapMatch=previousMatch;return null;}
 
   // 기차가 레일을 따라가듯 화면 캐릭터 진행거리는 역행하지 않도록 한다.
   // 단, 아래 '재동기화(snap)' 조건에서는 실제 수신 위치로 즉시 맞춘다(따라잡기 애니메이션 없음).
@@ -382,6 +414,7 @@ function lockDisplayPositionToRoute(rawLike,now=Date.now(),opts={}){
   const trustable=match.distance<=Math.max(30,raw.accuracy*1.5)&&match.confidence>=.3;
   if(opts.resync&&match.distance<=Math.max(45,raw.accuracy*2)&&match.confidence>=.2){
     // 터널 복귀/수신 공백 후 첫 유효 GPS: 밀린 구간을 몰아서 채우지 않고 수신된 그 자리에서 바로 시작한다.
+    if(Number.isFinite(previous)&&Math.abs(distance-previous)>Math.max(90,(Math.max(0,raw.speed)||0)*8+45)&&!opts.allowLargeResync){state.mapMatch=previousMatch;return null;}
     snap=true;state.lockBehindHits=0;state.lockAheadHits=0;
   }else if(Number.isFinite(previous)){
     const dt=Math.max(.25,Math.min(2.5,(now-(state.routeLockedAt||now-500))/1000));
@@ -400,7 +433,7 @@ function lockDisplayPositionToRoute(rawLike,now=Date.now(),opts={}){
         // 확인되면(실제로 그만큼 이동한 것) 계속 뒤처져 '몰아서 따라잡지' 않고 바로 맞춘다.
         state.lockAheadHits=trustable?(Number(state.lockAheadHits)||0)+1:0;
         if(state.lockAheadHits>=3){snap=true;state.lockAheadHits=0}
-        else distance=previous+maxAdvance;
+        else {state.mapMatch=previousMatch;return null;}
       }else state.lockAheadHits=0;
     }
   }
@@ -2356,8 +2389,8 @@ function scheduleSmoothDriveMarker(){
       next=Math.max(rendered,Math.min(total,target));
     }else if(!stationary&&dt>0){
       const age=Math.max(0,(Date.now()-Number(state.driveMarkerTargetAt||0))/1000);
-      // 센서/GPS 공백에서는 1.2초 이상 장기 외삽하지 않는다.
-      const predicted=Math.max(target,target+speed*Math.min(1.2,age));
+      // 미확인 미래 위치로 캐릭터가 앞서가지 않도록 예측 주행 금지.
+      const predicted=state.drivePositionUncertain?rendered:target;
       const gap=Math.max(0,predicted-rendered);
       // 초당 GPS 보정 목표로 끌려가는 급가속/급정지를 완화한다.
       const travelSpeed=Math.min(speed*1.16+1.0,Math.max(speed*.70,gap*1.8));
@@ -2368,7 +2401,7 @@ function scheduleSmoothDriveMarker(){
       if(pos){state.driveMarkerRenderedDistance=next;state.userMarker.setLngLat([pos.lng,pos.lat]);}
     }
     // 주행 중에는 다음 GPS 프레임까지 계속 갱신한다. 정차 시에는 프레임을 중단해 전진 드리프트 방지.
-    if(state.simulationActive||(!stationary&&speed>.2))state.driveMarkerRaf=requestAnimationFrame(frame);
+    if(state.simulationActive||(!stationary&&!state.drivePositionUncertain&&speed>.2&&target>next+.2))state.driveMarkerRaf=requestAnimationFrame(frame);
   };
   state.driveMarkerFrameAt=0;
   state.driveMarkerRaf=requestAnimationFrame(frame);
@@ -2389,6 +2422,10 @@ function ensureUserMarker(){
     const initial=state.tripStartedAt&&state.route?.geometry?.length?pointAtRouteDistance(Number(state.driveMarkerRenderedDistance)||0):null;
     state.userMarker=makeCarMarker().setLngLat(initial?[initial.lng,initial.lat]:[state.user.lng,state.user.lat]).addTo(state.map);
     {const rd0=finiteOrNull(state.user.routeDistance);if(rd0!=null&&!state.tripStartedAt)state.driveMarkerRenderedDistance=rd0;}
+  }
+  if(state.tripStartedAt&&state.drivePositionUncertain&&!state.simulationActive){
+    if(state.driveMarkerRaf){cancelAnimationFrame(state.driveMarkerRaf);state.driveMarkerRaf=0;}
+    updateUserMarkerMotion();return;
   }
   if(state.tripStartedAt&&state.route?.geometry?.length&&finiteOrNull(state.user.routeDistance)!=null&&state.navigationStartReleased){
     const incomingRouteDistance=finiteOrNull(state.user?.routeDistance);
@@ -2788,6 +2825,17 @@ function applyGps(pos,fly=false){
     }else{state.stationaryGpsAnchor=null;state.stationaryActive=false}
     if(forceN)nSpeed=0;
     let nLat=lat,nLng=lng,nRouteDistance=finiteOrNull(pos.routeDistance),nRouteIndex=finiteOrNull(pos.routeIndex);
+    if(state.tripStartedAt&&!estimated&&!state.simulationActive&&state.route?.geometry?.length){
+      assessRealDriveDirection(rawLatN,rawLngN,c.heading, nSpeed,Number(c.accuracy)||0,now);
+      const physical=routePosOfPoint(rawLngN,rawLatN,state.route.geometry,null,90);
+      const rawDistanceValid=Boolean(physical&&physical.distance<=Math.max(35,Math.min(65,(Number(c.accuracy)||15)*1.7)));
+      const impossibleForward=nRouteDistance!=null&&Number.isFinite(Number(state.routeLockedDistance))&&nRouteDistance-Number(state.routeLockedDistance)>Math.max(90,nSpeed*Math.max(1,(now-(state.lastGpsTickAt||now))/1000)*3+35);
+      if(state.wrongDirectionActive||!rawDistanceValid||impossibleForward){
+        state.user={lat:rawLatN,lng:rawLngN,rawLat:rawLatN,rawLng:rawLngN,speed:nSpeed,heading:c.heading,accuracy:Number(c.accuracy)||0,routeDistance:null,mapSnapped:false,estimated:false,native:true};
+        clearUncertainGuidance();updateGpsEstimateUi();return;
+      }
+      state.drivePositionUncertain=false;
+    }
     if(forceN&&state.route?.geometry?.length){
       let fd=finiteOrNull(state.stationaryGpsAnchor?.routeDistance);
       if(fd==null)fd=finiteOrNull(state.driveMarkerRenderedDistance);
@@ -2929,6 +2977,13 @@ function applyGps(pos,fly=false){
 
   let snapInfo=null;
   if(state.tripStartedAt&&state.route?.geometry?.length){
+    assessRealDriveDirection(rawLat,rawLng,stateObj.heading,stateObj.speed,stateObj.accuracy,now);
+    if(state.wrongDirectionActive){
+      stateObj.lat=rawLat;stateObj.lng=rawLng;stateObj.mapSnapped=false;
+      stateObj.routeDistance=null;stateObj.routeIndex=null;
+      state.user=stateObj;clearUncertainGuidance();updateGpsEstimateUi();
+      return;
+    }
     // 주행 화면 위치는 항상 현재 경로에 강제 스냅.
     // 터널 복귀/수신 공백(3.5초↑) 뒤 첫 유효 GPS 는 수신된 그 자리에서 바로 시작한다.
     // (예전에는 DR 위치 + 소폭으로 제한한 뒤 밀린 구간을 빠르게 몰아서 채웠다.)
@@ -2937,6 +2992,7 @@ function applyGps(pos,fly=false){
     const locked=lockDisplayPositionToRoute(stateObj,now,{resync:needResync});
     if(locked){
       state.resyncPending=false;
+      state.drivePositionUncertain=false;
       if(locked.snap)snapInfo=locked;
       if(forceStationary&&locked.snap&&state.stationaryGpsAnchor)state.stationaryGpsAnchor.routeDistance=locked.distance;
       if(forceStationary&&!locked.snap){
@@ -2957,6 +3013,10 @@ function applyGps(pos,fly=false){
       stateObj.mapSnapped=true;stateObj.routeIndex=locked.index;stateObj.routeDistance=locked.distance;
       stateObj.matchConfidence=Number(locked.confidence)||0;
     }else{
+      stateObj.lng=rawLng;stateObj.lat=rawLat;stateObj.mapSnapped=false;
+      stateObj.routeIndex=null;stateObj.routeDistance=null;stateObj.matchConfidence=0;
+      state.user=stateObj;clearUncertainGuidance();updateGpsEstimateUi();
+      return;
       const fused=fuseGpsFix({lat:rawLat,lng:rawLng,heading:stateObj.heading,speed:stateObj.speed,accuracy:stateObj.accuracy},now);
       stateObj.lng=fused.lng;stateObj.lat=fused.lat;
       if(Number.isFinite(fused.heading))stateObj.heading=fused.heading;
@@ -4746,6 +4806,7 @@ function stopNavigation(){
   // 안내 종료는 어떤 부가기능 오류가 발생해도 반드시 홈 화면까지 복귀해야 한다.
   try{if(state.tripStartedAt)logTrip('finish')}catch(e){console.warn('finish log failed',e)}
   try{if(state.tripStartedAt)addTripHistory({destination:state.destination?.name||'목적지',date:new Date().toLocaleString('ko-KR'),distance:state.route?.distance||0,duration:Math.round((Date.now()-state.tripStartedAt)/1000),character:state.character})}catch(e){console.warn('trip history finish failed',e)}
+  state.wrongDirectionActive=false;state.wrongDirectionHits=0;state.correctDirectionHits=0;state.drivePositionUncertain=false;
   state.tripStartedAt=0;state.preTripAnchor=null;state.preTripMoveHits=0;
   state.navigationStartAnchor=null;state.navigationStartReleased=false;state.navigationStartAt=0;
   state.stationaryActive=false;state.stationaryGpsAnchor=null;
@@ -4825,6 +4886,11 @@ function updateDriving(force=false){
         padding:driveCameraPadding()
       });
     }
+  }
+  if(!state.simulationActive&&(state.drivePositionUncertain||state.wrongDirectionActive)){
+    clearUncertainGuidance();
+    checkOffRoute(idx);
+    return;
   }
   updateProgressUI(idx,force);
   if(state.arRunning)updateAROverlay();
@@ -5237,6 +5303,7 @@ function fitManeuverDistanceText(){
 }
 
 function updateProgressUI(idx,force=false){
+  if(!state.simulationActive&&(state.drivePositionUncertain||state.wrongDirectionActive))return;
   const total=state.routeCumulative.at(-1)||state.route.distance||1;
   const locked=Number(state.user?.routeDistance);
   const done=Number.isFinite(locked)?Math.max(0,Math.min(total,locked)):(state.routeCumulative[idx]||0);
@@ -5356,7 +5423,10 @@ function speakNavOnce(key,text,minGapMs=9000){
   speak(text);
 }
 function guideDisplayDistance(idx,guide,remain){
-  const d=distanceAlong(idx,Number(guide?.routeIndex));
+  const at=finiteOrNull(state.user?.routeDistance);
+  const gi=Number(guide?.routeIndex);
+  const gd=Number(state.routeCumulative?.[Math.max(0,Math.min((state.routeCumulative?.length||1)-1,Math.round(gi)))]);
+  const d=at!=null&&Number.isFinite(gd)?Math.max(0,gd-at):distanceAlong(idx,gi);
   if(d>=8)return d;
   // 동일/중복 routeIndex 때문에 0m가 나오는 경우 전체 남은거리 또는 다음 실제 geometry 거리 사용
   if(Number(remain)>8)return Math.min(Number(remain),Math.max(15,Number(guide?.distance)||Number(remain)));
@@ -5400,6 +5470,7 @@ function guideSpokenDistance(display=''){
 }
 
 function maybeSpeakGuide(g,d){
+  if(!state.simulationActive&&(state.drivePositionUncertain||state.wrongDirectionActive))return;
   const cat=guideVoiceCategory(g);
   if(!cat)return;
   const speedKmh=Math.max(0,(Number(state.user?.speed)||0)*3.6);
@@ -5819,7 +5890,7 @@ function renderCameraClusterMarkers(items){
         const marker=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map);
         const markerEl=marker.getElement?.();
         if(markerEl){
-          markerEl.style.zIndex='120';
+          markerEl.style.zIndex='40';
           markerEl.style.visibility='visible';
           markerEl.style.opacity='1';
           markerEl.style.pointerEvents='none';
@@ -5895,7 +5966,7 @@ function routeSnappedCameraItems(items){
 function renderSafetyMarkers(){
   if(!state.map||!maplibregl?.Marker)return;
   clearSafetyMarkers();
-  if(!state.tripStartedAt||$('driveView')?.classList.contains('hidden'))return;
+  if(!state.tripStartedAt||state.routeMode!=='car'||$('driveView')?.classList.contains('hidden'))return;
   const skip=['speed_limit','tunnel','curve_left','curve_right','double_curve','chronic_congestion'];
   /* 7.6.11.5 지도에는 안내 팝업이 뜨는 신호·속도·구간단속 카메라만 표시한다(이동식/버스전용차로 및 카메라 외 안전 마커 제거). */
   const cameraTypes=new Set(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','section_speed_end']);
@@ -5916,6 +5987,7 @@ function renderSafetyMarkers(){
       if(!match||!Number.isFinite(offset)||offset>60)continue;
       // Preserve known official directional checks; unknown heading is not invented.
       if(e.cameraDirectionReliable===true && !cameraEventDirectionCompatible(e,g))continue;
+      if(state.wrongDirectionActive&&!state.simulationActive)continue;
       cameraItems.push({...e,snapLng:match.lng,snapLat:match.lat,routeDistance:match.routeDistance,routeIndex:match.index});
     }/* 카메라 외 안전 마커(사고·공사·스쿨존 등)는 지도에 그리지 않는다. 안내 팝업/음성으로만 알린다. */
   }
@@ -5950,7 +6022,7 @@ function renderSafetyMarkers(){
           markerEl.style.pointerEvents='none';
         }
         marker.__rd=Number(e.__routeM);
-        marker.getElement()?.style.setProperty('z-index','120','important');
+        marker.getElement()?.style.setProperty('z-index','40','important');
         state.safetyMarkers.push(marker);
       }catch{}
     }

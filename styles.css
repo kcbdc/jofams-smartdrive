@@ -4381,3 +4381,8 @@ html body #app #drivePoiPanel .drive-ai-result[hidden]{display:none!important;}
 html body #app #driveView #trafficRouteSegments i.extreme{background:#93213a!important}
 html body #app #driveView #trafficRouteSegments i.blocked{background:#222b3a!important}
 .traffic-legend .traffic-legend-note{display:block;margin-top:8px;color:#697689;font-size:10px;line-height:1.45}
+
+/* v7.6.26.5: 단속카메라는 실주행 안내 화면에서만 노출 */
+body:not(:has(#driveView:not(.hidden))) .safety-map-marker.camera-pin{display:none!important}
+.maplibregl-marker.character-car-marker{z-index:150!important}
+.maplibregl-marker.camera-pin,.safety-map-marker.camera-pin{z-index:40!important;pointer-events:none!important}
