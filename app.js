@@ -237,7 +237,7 @@ function nearestPointOnRoute(lng,lat,geometry){
 /* 7.6.11.3: 경로 누적거리 캐시 + 점 → 경로 상 정확한 진행거리(routeDistance, m) 계산 */
 let _routeCumCache={g:null,cum:null};
 function cumForGeometry(geometry){
-  if(state.routeCumulative&&geometry&&state.routeCumulative.length===geometry.length)return state.routeCumulative;
+  if(geometry===state.route?.geometry&&state.routeCumulative&&state.routeCumulative.length===geometry.length)return state.routeCumulative;
   if(_routeCumCache.g!==geometry)_routeCumCache={g:geometry,cum:buildCumulative({geometry})};
   return _routeCumCache.cum;
 }
@@ -847,7 +847,7 @@ async function loadStaticCameraEvents(route){
     let type=officialBusLaneCamera(row)?'bus_lane_camera':officialCameraType(pickField(row,['단속구분','regltSe','규제구분']));
     if(row.__priorityExpressway&&type==='section_speed_camera'&&!sectionPosition)type='traffic_camera';
     const base={
-      id:`local-camera:${manageNo}`,type,lat,lng,routeIndex:idx,name,maxspeed,
+      id:`local-camera:${manageNo}`,type,lat,lng,originalLat:lat,originalLng:lng,routeIndex:idx,name,maxspeed,
       routeDistance:routeDistanceFromMatch(routeMatch,geometry),snapLng:routeMatch.lng,snapLat:routeMatch.lat,routeMatchDistance:d,
       /* 7.6.13.2: 경찰청 원본 좌표 ↔ 경로 스냅 지점 거리(d)가 40m를 넘으면 "저정밀" 매칭으로 표시한다.
          원본 위경도 오차가 크면 스냅된 routeDistance 자체가 실제 카메라 위치보다 앞/뒤로 밀려
@@ -5670,7 +5670,7 @@ async function loadSafetyEvents(route){
   const official=await loadStaticCameraEvents(route).catch(e=>{console.warn('static camera merge failed',e);return []});
   // 보조 API 응답을 기다리는 동안(수 초) 카메라가 하나도 없어 '누락'되던 구간을 없애기 위해
   // 경로 기반/공식 카메라를 먼저 반영하고, 보조 이벤트가 오면 병합본으로 교체한다.
-  if(seq===state.safetyRequestSeq){
+  if(seq===state.safetyRequestSeq&&state.route===route){
     try{
       const early=enforceCameraMinSpacing(mergeSafetyEvents([...primary,...official],route.geometry));
       if(early.length){state.safetyEvents=early;renderSafetyMarkers();if(state.currentRouteIndex>=0)updateSafetyUI(state.currentRouteIndex)}
@@ -5679,7 +5679,7 @@ async function loadSafetyEvents(route){
   let supplemental=[];
   try{
     const r=await fetch('/api/safety',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({points:sampleRoutePoints(route.geometry),trafficSamples:buildTrafficSafetySamples(route)})});
-    const d=await r.json().catch(()=>({events:[]}));if(seq!==state.safetyRequestSeq)return;
+    const d=await r.json().catch(()=>({events:[]}));if(seq!==state.safetyRequestSeq||state.route!==route)return;
     supplemental=Array.isArray(d?.events)?d.events:[];
     const regionalSectionNodes=[];
     const regionalOthers=[];
@@ -5692,13 +5692,13 @@ async function loadSafetyEvents(route){
       }else if(e?.type!=='section_speed_camera')regionalOthers.push(e);
     }
     supplemental=[...regionalOthers,...buildSectionSpeedEvents(regionalSectionNodes,route)];
-  }catch(e){if(seq!==state.safetyRequestSeq)return;console.warn('supplemental safety fetch failed',e)}
+  }catch(e){if(seq!==state.safetyRequestSeq||state.route!==route)return;console.warn('supplemental safety fetch failed',e)}
+  if(seq!==state.safetyRequestSeq||state.route!==route)return;
   let merged=mergeSafetyEvents([...primary,...official,...supplemental],route.geometry);
   // 후처리 단계에서 예외가 나도 병합된 카메라는 그대로 유지한다.
   for(const step of [
     m=>suppressPostSectionDuplicateCameras(m),
     m=>suppressStaleNamedDuplicateCameras(m),
-    m=>addUserConfirmedHoedeokCamera(m,route),
     m=>mergeSafetyEvents(m,route.geometry),
     m=>suppressPostSectionDuplicateCameras(m),
     m=>suppressStaleNamedDuplicateCameras(m),
@@ -5717,10 +5717,10 @@ async function loadSafetyEvents(route){
   renderSafetyMarkers();
   // Android WebView/MapLibre에서 경로 직후 DOM marker 배치가 유실되는 경우 재렌더링.
   setTimeout(()=>{
-    if(seq===state.safetyRequestSeq&&state.route?.geometry?.length&&state.safetyEvents?.length)renderSafetyMarkers();
+    if(seq===state.safetyRequestSeq&&state.route===route&&state.route?.geometry?.length&&state.safetyEvents?.length)renderSafetyMarkers();
   },350);
   setTimeout(()=>{
-    if(seq===state.safetyRequestSeq&&state.route?.geometry?.length&&state.safetyEvents?.length)renderSafetyMarkers();
+    if(seq===state.safetyRequestSeq&&state.route===route&&state.route?.geometry?.length&&state.safetyEvents?.length)renderSafetyMarkers();
   },1200);
   if(state.currentRouteIndex>=0)updateSafetyUI(state.currentRouteIndex)
 }
@@ -5937,49 +5937,59 @@ function renderCameraClusterMarkers(items){
 function cameraDisplayPriority(e){
   return ({signal_speed_camera:0,section_speed_camera:1,section_speed_end:1,speed_camera:2,signal_camera:3,traffic_camera:4,mobile_camera:5,bus_lane_camera:6})[e?.type]??9;
 }
+/* v7.6.26.9 - 지도 카메라 표시의 단일 진실원: 현재 선택 경로의 실제 좌표.
+   CSS로 떨어진 핀을 숨기는 대신 원본 좌표→경로 투영을 매번 재검증한다.
+   신뢰할 수 없는 카메라는 아예 마커를 생성하지 않는다. */
+function strictCameraProjection(lng,lat,geometry,maxOffset=24){
+  if(!Number.isFinite(lng)||!Number.isFinite(lat)||!Array.isArray(geometry)||geometry.length<2)return null;
+  const cum=cumForGeometry(geometry);let best=null,bestOffset=Infinity;
+  // 정점 간 선분 전체를 검사한다. 오래된 routeIndex, 임의 snapLng, 다른 경로 누적거리 재사용 금지.
+  const latSpan=maxOffset/110540+0.00005;
+  const lngSpan=maxOffset/(111320*Math.max(.2,Math.cos(lat*Math.PI/180)))+0.00005;
+  for(let i=1;i<geometry.length;i++){
+    const a=geometry[i-1],b=geometry[i];
+    if(Math.abs(lat-Math.min(a[1],b[1]))>latSpan&&lat<Math.min(a[1],b[1]))continue;
+    if(lat>Math.max(a[1],b[1])+latSpan||lat<Math.min(a[1],b[1])-latSpan)continue;
+    if(lng>Math.max(a[0],b[0])+lngSpan||lng<Math.min(a[0],b[0])-lngSpan)continue;
+    const proj=projectPointToSegmentDetailed(lng,lat,a,b);
+    const offset=hav(lat,lng,proj.lat,proj.lng);
+    if(offset<bestOffset){
+      bestOffset=offset;
+      const t=Math.max(0,Math.min(1,Number(proj.t)||0));
+      best={lng:proj.lng,lat:proj.lat,index:i,distance:offset,
+        heading:bearing(a[1],a[0],b[1],b[0]),
+        routeDistance:Number(cum[i-1]||0)+t*(Number(cum[i]||0)-Number(cum[i-1]||0))};
+    }
+  }
+  return best&&bestOffset<=maxOffset?best:null;
+}
 function routeSnappedCameraItems(items){
-  const g=state.route?.geometry||[],cum=state.routeCumulative||[];
-  if(g.length<2)return items||[];
-  const projected=[];
+  const geometry=state.route?.geometry||[];
+  if(geometry.length<2)return [];
+  const filtered=[];
   for(const e of items||[]){
-    let idx=Number(e.routeIndex),srcDist=Number(e.routeMatchDistance)||0,exact=null;
-    // 1순위: 이미 공식 카메라 로딩 단계에서 확정한 경로 투영값을 그대로 사용한다.
-    // 다시 60m 필터를 걸면 실제 카메라가 전부 사라질 수 있다.
-    if(e.snapLng!=null&&e.snapLat!=null&&e.routeDistance!=null&&Number.isFinite(Number(e.snapLng))&&Number.isFinite(Number(e.snapLat))&&Number.isFinite(Number(e.routeDistance))){
-      exact={lng:Number(e.snapLng),lat:Number(e.snapLat),m:Number(e.routeDistance)};
-    }else if(e.routeDistance!=null&&Number.isFinite(Number(e.routeDistance))&&Number.isFinite(idx)){
-      const p=pointAtRouteDistance(Number(e.routeDistance));
-      if(p)exact={lng:Number(p.lng),lat:Number(p.lat),m:Number(e.routeDistance)};
-    }else{
-      // 원천 좌표만 있는 보조 이벤트는 넉넉한 범위에서 현재 경로에 1회 투영한다.
-      const rematch=routePosOfPoint(Number(e.lng),Number(e.lat),g,e?.cameraDirectionReliable===true&&Number.isFinite(Number(e.cameraHeading))?Number(e.cameraHeading):null,150);
-      if(rematch&&Number(rematch.distance)<=120){
-        idx=Number(rematch.index);srcDist=Number(rematch.distance)||0;exact={lng:rematch.lng,lat:rematch.lat,m:Number(rematch.routeDistance)};
-      }
+    // 원본 좌표가 없으면 검증 불가. 이미 스냅된 좌표를 검증에 재사용하면 옆길 카메라가 살아남는다.
+    const rawLng=Number(e.originalLng??e.rawLng??e.lng);
+    const rawLat=Number(e.originalLat??e.rawLat??e.lat);
+    const section=e.type==='section_speed_camera'||e.type==='section_speed_end';
+    const hit=strictCameraProjection(rawLng,rawLat,geometry,section?30:24);
+    if(!hit)continue;
+    if(e.cameraDirectionReliable===true){
+      const h=Number(e.cameraHeading);
+      if(Number.isFinite(h)&&angleDiff(h,hit.heading)>cameraHeadingToleranceDeg(e.cameraHeadingPrecise===true))continue;
     }
-    if(!Number.isFinite(idx)&&exact&&Number.isFinite(exact.m)){
-      const p=pointAtRouteDistance(exact.m);if(p)idx=Number(p.index);
-    }
-    if(!Number.isFinite(idx))continue;
-    idx=Math.max(0,Math.min(g.length-1,Math.round(idx)));
-    const p=g[idx];if(!p)continue;
-    projected.push({...e,lng:exact?exact.lng:p[0],lat:exact?exact.lat:p[1],routeIndex:idx,__routeM:exact&&Number.isFinite(exact.m)?exact.m:(Number(cum[idx])||0),__srcDist:srcDist});
+    filtered.push({...e,lng:hit.lng,lat:hit.lat,routeIndex:hit.index,
+      routeDistance:hit.routeDistance,__routeM:hit.routeDistance,__rawOffset:hit.distance});
   }
-  projected.sort((a,b)=>a.__routeM-b.__routeM||cameraDisplayPriority(a)-cameraDisplayPriority(b));
-  const out=[];
-  for(const e of projected){
-    const prev=out[out.length-1];
-    const routeGap=prev?Math.abs(e.__routeM-prev.__routeM):Infinity;
-    const physicalGap=prev?hav(Number(e.lat),Number(e.lng),Number(prev.lat),Number(prev.lng)):Infinity;
-    // 같은 물리 지점의 차로별/기관별 중복만 합치고, 별개의 카메라는 유지한다.
-    if(prev&&(routeGap<=55||physicalGap<=45)){
-      if(cameraDisplayPriority(e)<cameraDisplayPriority(prev))out[out.length-1]={...e,maxspeed:Number(e.maxspeed)||Number(prev.maxspeed)||null};
-      else if(!Number(prev.maxspeed)&&Number(e.maxspeed))prev.maxspeed=e.maxspeed;
-      continue;
-    }
-    out.push(e);
+  filtered.sort((a,b)=>a.__routeM-b.__routeM||cameraDisplayPriority(a)-cameraDisplayPriority(b));
+  const unique=[];
+  for(const e of filtered){
+    const prior=unique.at(-1);
+    if(prior&&Math.abs(e.__routeM-prior.__routeM)<45){
+      if(cameraDisplayPriority(e)<cameraDisplayPriority(prior))unique[unique.length-1]=e;
+    }else unique.push(e);
   }
-  return out;
+  return unique;
 }
 
 function renderSafetyMarkers(){
@@ -5990,30 +6000,21 @@ function renderSafetyMarkers(){
   /* 7.6.11.5 지도에는 안내 팝업이 뜨는 신호·속도·구간단속 카메라만 표시한다(이동식/버스전용차로 및 카메라 외 안전 마커 제거). */
   const cameraTypes=new Set(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','section_speed_end']);
   const cameraItems=[];
-  const otherItems=[];
 
-  const curRouteM=Number(state.user?.routeDistance);
+  // Source cameras with raw coordinates are matched to the currently selected route only.
   for(const e of state.safetyEvents||[]){
-    if(skip.includes(e.type))continue;
-    if(cameraTypes.has(e.type)){
-      // Only cameras on the traveled route; never show adjacent or parallel-road camera positions.
-      const g=state.route?.geometry||[];
-      if(g.length<2)continue;
-      const rawLng=Number(e.originalLng??e.rawLng??e.lng),rawLat=Number(e.originalLat??e.rawLat??e.lat);
-      const srcOffset=Number(e.matchDistance??e.routeMatchDistance);
-      const match=Number.isFinite(rawLng)&&Number.isFinite(rawLat)?routePosOfPoint(rawLng,rawLat,g,null,80):null;
-      const offset=Number.isFinite(srcOffset)&&srcOffset>0?srcOffset:Number(match?.distance);
-      if(!match||!Number.isFinite(offset)||offset>45)continue;
-      // Preserve known official directional checks; unknown heading is not invented.
-      if(e.cameraDirectionReliable===true && !cameraEventDirectionCompatible(e,g))continue;
-      if(state.wrongDirectionActive&&!state.simulationActive)continue;
-      cameraItems.push({...e,snapLng:match.lng,snapLat:match.lat,routeDistance:match.routeDistance,routeIndex:match.index});
-    }/* 카메라 외 안전 마커(사고·공사·스쿨존 등)는 지도에 그리지 않는다. 안내 팝업/음성으로만 알린다. */
+    if(skip.includes(e.type)||!cameraTypes.has(e.type))continue;
+    if(state.wrongDirectionActive&&!state.simulationActive)continue;
+    cameraItems.push(e);
   }
 
   // 카메라는 실제 원본 좌표가 도로 가장자리여도 경로 선 정중앙으로 스냅하고,
   // 같은 진행 위치(약 32m)에 여러 레코드가 있어도 CCTV SVG 하나만 표시한다.
-  const routeCameraItems=state.route?.geometry?.length?routeSnappedCameraItems(cameraItems):cameraItems;
+  const allMatchedCameraItems=routeSnappedCameraItems(cameraItems);
+  const driveM=finiteOrNull(state.user?.routeDistance);
+  // 주행 시에는 지나친 지점과 지나치게 멀리 앞선 카메라까지 한꺼번에 그리지 않는다.
+  const routeCameraItems=driveM===null?allMatchedCameraItems:
+    allMatchedCameraItems.filter(e=>e.__routeM>=driveM-35&&e.__routeM<=driveM+3000);
   if(state.route?.geometry?.length){
     console.info('[JOFAMS camera]',{
       safetyEvents:(state.safetyEvents||[]).length,
@@ -6023,12 +6024,14 @@ function renderSafetyMarkers(){
   }
 
   // 화면 가시폭이 1km 이상이면 CCTV는 숫자 클러스터로 묶는다.
-  if(!state.route?.geometry?.length && mapVisibleWidthMeters()>=1000)renderCameraClusterMarkers(routeCameraItems);
-  else{
+  {
     for(const e of routeCameraItems){
       if(!Number.isFinite(Number(e.lng))||!Number.isFinite(Number(e.lat)))continue;
+      // A route switch during an async calculation must not leave old camera DOM behind.
+      if(!state.tripStartedAt||state.routeMode!=='car')break;
       const el=document.createElement('div'),limit=Number(e.maxspeed)||0;
-      el.className=`safety-map-marker camera camera-pin camera-${e.type}${e.type==='mobile_camera'?' mobile':''}`;
+      el.className=`safety-map-marker camera camera-pin dangollo-route-camera camera-${e.type}${e.type==='mobile_camera'?' mobile':''}`;
+      el.dataset.cameraOnRoute='true';
       el.title=e.type==='signal_speed_camera'?'신호·과속 단속카메라':e.type==='signal_camera'?'신호 단속카메라':e.type==='speed_camera'?'과속 단속카메라':e.type==='section_speed_camera'?'구간단속 시작':e.type==='section_speed_end'?'구간단속 종료':e.type==='bus_lane_camera'?'버스전용차로 단속':e.type==='mobile_camera'?'이동식 단속카메라':'단속 카메라';
       el.innerHTML=`<span class="camera-pin-icon">${cctvMarkerSvg()}</span>${limit>0?`<small class="camera-pin-speed">${Math.round(limit)}</small>`:''}`;
       try{
@@ -6047,30 +6050,7 @@ function renderSafetyMarkers(){
     }
   }
 
-  for(const e of otherItems){
-    if(!Number.isFinite(Number(e.lng))||!Number.isFinite(Number(e.lat)))continue;
-    const meta=e.type.startsWith('school')?['school','S','스쿨존/학교 주변']
-      :e.type==='silver_zone'?['silver','실','노인 보호구역']
-      :e.type==='disabled_zone'?['silver','보','장애인 보호구역']
-      :e.type==='accident'?['incident','!','교통사고']
-      :e.type==='construction'?['construction','공','도로 공사']
-      :e.type==='fog_zone'?['weather','안','안개 구간']
-      :e.type==='heavy_rain_zone'?['weather','비','강우 주의']
-      :e.type==='snow_ice_zone'?['weather','눈','눈·결빙 주의']
-      :e.type==='chronic_congestion'?['stat','정','상습정체 구간']
-      :e.type==='accident_hotspot'?['stat','다','사고다발지역']
-      :e.type==='crosswalk'?['warn','횡','횡단보도']
-      :e.type==='railway_crossing'?['warn','건','철길 건널목']
-      :e.type==='height_limit'?['truck','H','높이제한']
-      :e.type==='weight_limit'?['truck','W','중량제한']
-      :e.type==='width_limit'?['truck','폭','폭제한']
-      :['warn','!','안전운전'];
-    const el=document.createElement('div');
-    el.className=`safety-map-marker ${meta[0]}${e.type==='chronic_congestion'?' sign-badge':''}`;
-    el.title=meta[2];
-    if(e.type==='chronic_congestion')el.innerHTML=congestionMarkerSvg();else el.textContent=meta[1];
-    try{state.safetyMarkers.push(new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map))}catch{}
-  }
+
 }
 /* ---------- 도로표지판 분류 (법정 도로안전표지 체계 반영) ----------
    1) 주의표지판(경고): 굽은도로/이중굽음/횡단보도/철길건널목 등 위험요소

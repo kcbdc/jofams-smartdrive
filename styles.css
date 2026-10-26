@@ -4306,3 +4306,14 @@ body:not(:has(#driveView:not(.hidden))) .safety-map-marker.camera-pin{display:no
 body:has(#driveView:not(.hidden)) .maplibregl-marker.character-car-marker.dangollo-gps-unverified{opacity:.45!important;filter:grayscale(1)!important}
 body:has(#driveView:not(.hidden)) .maplibregl-marker.camera-pin{pointer-events:none!important}
 @media(prefers-reduced-motion:reduce){body:has(#driveView:not(.hidden)) .maplibregl-marker.character-car-marker{transition:none!important}}
+
+/* v7.6.26.9: 단속카메라 마커 단일 출처. 과거 클러스터/속도배지 마커는 지도에서 제거.
+   MapLibre 위치 transform은 절대로 CSS에서 변경하지 않는다. */
+.maplibregl-marker.home-camera-marker,
+.maplibregl-marker.camera-cluster-marker,
+.maplibregl-marker.speed-limit-marker{display:none!important}
+body:not(:has(#driveView:not(.hidden))) .maplibregl-marker.dangollo-route-camera{display:none!important}
+body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-camera[data-camera-on-route="true"]{display:grid!important;pointer-events:none!important;z-index:40!important}
+.maplibregl-marker.dangollo-route-camera.passed{display:none!important}
+
+body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-camera.passed{display:none!important}
