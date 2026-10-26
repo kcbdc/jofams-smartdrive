@@ -310,7 +310,7 @@ function probabilisticRouteMatch(raw,now=Date.now()){
   for(const center of [coarse,prior])for(let i=Math.max(1,center-90);i<=Math.min(g.length-1,center+130);i+=2)candidates.add(i);
   for(let i=Math.max(1,coarse-8);i<=Math.min(g.length-1,coarse+8);i++)candidates.add(i);
   const dt=prev.at?Math.min(5,Math.max(.1,(now-prev.at)/1000)):1,expected=(Number(prev.routeDistance)||0)+Math.max(0,Number(raw.speed)||0)*dt;
-  const sigma=Math.max(6,Math.min(35,Number(raw.accuracy)||18)),heading=Number(raw.heading),moving=Number(raw.speed)>2.2;
+  const sigma=Math.max(6,Math.min(35,Number(raw.accuracy)||18)),heading=finiteOrNull(raw.heading),moving=Number(raw.speed)>2.2&&heading!==null;
   let best=null,bestScore=Infinity;
   for(const i of candidates){
     const p0=g[i-1],p1=g[i],proj=projectPointToSegmentDetailed(raw.lng,raw.lat,p0,p1),d=hav(raw.lat,raw.lng,proj.lat,proj.lng),segHeading=bearing(p0[1],p0[0],p1[1],p1[0]),rd=routeDistanceAtSegment(i,proj.t);
@@ -380,6 +380,7 @@ function showDirectionUncertain(){
 }
 function clearUncertainGuidance(){
   state.drivePositionUncertain=true;
+  state.userMarker?.getElement?.()?.classList.add('dangollo-gps-unverified');
   if(state.driveMarkerRaf){cancelAnimationFrame(state.driveMarkerRaf);state.driveMarkerRaf=0;}
   state.driveMarkerTargetDistance=state.driveMarkerRenderedDistance;
   showDirectionUncertain();
@@ -388,7 +389,7 @@ function lockDisplayPositionToRoute(rawLike,now=Date.now(),opts={}){
   if(!state.tripStartedAt||!state.route?.geometry?.length||!state.routeCumulative?.length)return null;
   const raw={
     lng:Number(rawLike?.lng),lat:Number(rawLike?.lat),
-    heading:Number(rawLike?.heading),speed:Number(rawLike?.speed),
+    heading:finiteOrNull(rawLike?.heading),speed:finiteOrNull(rawLike?.speed),
     accuracy:Number(rawLike?.accuracy)||20
   };
   if(!pointValid(raw))return null;
@@ -398,12 +399,12 @@ function lockDisplayPositionToRoute(rawLike,now=Date.now(),opts={}){
   if(state.wrongDirectionActive){state.mapMatch=previousMatch;return null;}
   // 멀리 떨어진 도로 조각(교차/평행 구간)에 순간적으로 붙는 오류 방지
   if(match.distance>Math.max(35,Math.min(70,raw.accuracy*1.8))){state.mapMatch=previousMatch;return null;}
-  const headingMismatch=Number(raw.speed)>2.8&&Number.isFinite(Number(raw.heading))
+  const headingMismatch=Number(raw.speed)>2.8&&finiteOrNull(raw.heading)!==null
     ?angleDiff(Number(raw.heading),Number(match.heading))
     :0;
   // 평행한 반대 차선처럼 GPS 거리는 가까워도 실제 주행방향이 반대라면
   // 기존 경로에 캐릭터를 억지로 붙이지 않는다.
-  if(Number(raw.speed)>2.8&&Number.isFinite(Number(raw.heading))&&headingMismatch>=105){state.mapMatch=previousMatch;return null;}
+  if(Number(raw.speed)>2.8&&finiteOrNull(raw.heading)!==null&&headingMismatch>=105){state.mapMatch=previousMatch;return null;}
 
   // 기차가 레일을 따라가듯 화면 캐릭터 진행거리는 역행하지 않도록 한다.
   // 단, 아래 '재동기화(snap)' 조건에서는 실제 수신 위치로 즉시 맞춘다(따라잡기 애니메이션 없음).
@@ -2829,12 +2830,16 @@ function applyGps(pos,fly=false){
       assessRealDriveDirection(rawLatN,rawLngN,c.heading, nSpeed,Number(c.accuracy)||0,now);
       const physical=routePosOfPoint(rawLngN,rawLatN,state.route.geometry,null,90);
       const rawDistanceValid=Boolean(physical&&physical.distance<=Math.max(35,Math.min(65,(Number(c.accuracy)||15)*1.7)));
+      const physicalDistance=rawDistanceValid?finiteOrNull(physical.routeDistance):null;
+      // 네이티브 엔진이 몇 km 앞의 경로 거리를 보냈더라도 실제 GNSS 투영값과 불일치하면 쓰지 않는다.
+      const nativeProjectionMismatch=nRouteDistance!=null&&physicalDistance!=null&&Math.abs(nRouteDistance-physicalDistance)>Math.max(55,Math.min(110,(Number(c.accuracy)||15)*2.5));
       const impossibleForward=nRouteDistance!=null&&Number.isFinite(Number(state.routeLockedDistance))&&nRouteDistance-Number(state.routeLockedDistance)>Math.max(90,nSpeed*Math.max(1,(now-(state.lastGpsTickAt||now))/1000)*3+35);
-      if(state.wrongDirectionActive||!rawDistanceValid||impossibleForward){
+      if(state.wrongDirectionActive||!rawDistanceValid||nativeProjectionMismatch||impossibleForward){
         state.user={lat:rawLatN,lng:rawLngN,rawLat:rawLatN,rawLng:rawLngN,speed:nSpeed,heading:c.heading,accuracy:Number(c.accuracy)||0,routeDistance:null,mapSnapped:false,estimated:false,native:true};
         clearUncertainGuidance();updateGpsEstimateUi();return;
       }
       state.drivePositionUncertain=false;
+      state.userMarker?.getElement?.()?.classList.remove('dangollo-gps-unverified');
     }
     if(forceN&&state.route?.geometry?.length){
       let fd=finiteOrNull(state.stationaryGpsAnchor?.routeDistance);
@@ -2993,6 +2998,7 @@ function applyGps(pos,fly=false){
     if(locked){
       state.resyncPending=false;
       state.drivePositionUncertain=false;
+      state.userMarker?.getElement?.()?.classList.remove('dangollo-gps-unverified');
       if(locked.snap)snapInfo=locked;
       if(forceStationary&&locked.snap&&state.stationaryGpsAnchor)state.stationaryGpsAnchor.routeDistance=locked.distance;
       if(forceStationary&&!locked.snap){
@@ -3328,13 +3334,18 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
     renderFuelData(state.fuelData);return;
   }
   if(state.fuelLoading)return;
+  if(Date.now()<Number(state.fuelUpstreamCooldownUntil||0)){
+    renderFuelError('오피넷 인증·공급 API가 응답하지 않아 재시도를 잠시 제한합니다. Cloudflare Secret과 오피넷 공개 API 사용 상태를 확인하세요.','OPINET_KEY_OR_UPSTREAM');
+    return;
+  }
   state.fuelLoading=true;
   renderFuelLoading();
   try{
     const driving=Boolean(state.tripStartedAt&&state.route?.geometry?.length);
     // 주행 중에는 현재 위치 주변만이 아니라 앞으로 달릴 경로를 따라 여러 지점에서 조회해 합친다.
     const curM=driving?currentRouteDistanceAt(state.currentRouteIndex||0):0;
-    const probes=driving?[0,4000,8000,12000,16000].map(o=>pointAtRouteDistance(curM+o)).filter(Boolean):[{lat:fuelOrigin.lat,lng:fuelOrigin.lng}];
+    // 오피넷 무료 호출 한도 보호: 주행 중에도 현재 지점 + 전방 6km까지만 조회.
+    const probes=driving?[0,6000].map(o=>pointAtRouteDistance(curM+o)).filter(Boolean):[{lat:fuelOrigin.lat,lng:fuelOrigin.lng}];
     const results=await Promise.all(probes.map(async pt=>{
       const u=new URL('/api/fuel',location.origin);
       if(!pointValid(pt))throw new Error('유가 조회 좌표가 올바르지 않습니다.');
@@ -3348,7 +3359,10 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
       return dd;
     }).map(p=>p.catch(e=>({__err:e}))));
     const okRes=results.filter(r=>!r.__err);
-    if(!okRes.length)throw results[0].__err;
+    if(!okRes.length){
+      const err=results.find(r=>r.__err?.code==='OPINET_KEY_OR_UPSTREAM')?.__err||results[0].__err;
+      throw err;
+    }
     const d={...okRes[0]};
     if(okRes.length>1){
       const seen=new Set(),all=[];
@@ -3362,18 +3376,20 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
       if(state.fuelData?.stations?.length){renderFuelData(state.fuelData);return;}
       {const err=new Error('반경 5km 안에 해당 유종의 판매가격 정보가 없습니다.');err.code='FUEL_EMPTY';throw err}
     }
+    state.fuelUpstreamCooldownUntil=0;
     state.fuelFetchedRouteM=curM;
     d.product=requestedProduct;state.fuelData=d;state.fuelFetchedAt=Date.now();
     try{localStorage.setItem('jofams_fuel_last_success_v1',JSON.stringify({savedAt:Date.now(),payload:d}))}catch{}
     renderFuelData(d);
   }catch(e){
+    if(['OPINET_KEY_OR_UPSTREAM','OPINET_KEY_REJECTED','OPINET_BLOCKED'].includes(e?.code))state.fuelUpstreamCooldownUntil=Date.now()+120000;
     // 일시적인 서버/외부 API 오류라면 마지막 정상 유가를 우선 표시한다.
     let cached=null;
     try{
       const raw=JSON.parse(localStorage.getItem('jofams_fuel_last_success_v1')||'null');
       if(raw?.payload&&Date.now()-Number(raw.savedAt||0)<6*60*60*1000)cached=raw.payload;
     }catch{}
-    if(cached){
+    if(cached&&cached.product===requestedProduct){
       state.fuelData=cached;state.fuelFetchedAt=Number(Date.now()-5*60*1000);
       renderFuelData(cached);
       toast('실시간 유가 연결이 지연되어 최근 정상 유가를 표시합니다.',2400);
@@ -3850,7 +3866,7 @@ function chooseRoutePreference(pref){if(!['recommend','fast','free'].includes(pr
 function updateCameraAlertSetting(kind,value){if(!['speed','signal'].includes(kind))return;state.cameraAlerts[kind]=Boolean(value);saveUserSettingsOptimistic();showPlaceConfirmPopup(`${kind==='speed'?'과속':'신호위반'} 카메라 알림이 ${value?'켜졌습니다.':'꺼졌습니다.'}`)}
 
 /* ---------- ROUTES ---------- */
-async function routeRequest(priority='RECOMMEND',avoid=null,waypointsOverride=null,mode=state.routeMode,originOverride=null){
+async function routeRequest(priority='RECOMMEND',avoid=null,waypointsOverride=null,mode=state.routeMode,originOverride=null,signal=null){
   const o=pointValid(originOverride)?originOverride:(state.originMode==='current'?(currentOriginPoint()||state.user||state.origin):(state.origin||state.user)),wps=Array.isArray(waypointsOverride)?waypointsOverride:state.waypoints;
   if(!pointValid(o))throw new Error('출발 위치를 확인하지 못했습니다. 휴대폰 위치 서비스와 브라우저 위치 권한을 확인하고 다시 시도해 주세요.');
   if(!pointValid(originOverride))state.routeOriginUsed={lat:Number(o.lat),lng:Number(o.lng)};
@@ -3859,7 +3875,7 @@ async function routeRequest(priority='RECOMMEND',avoid=null,waypointsOverride=nu
     :(mode==='car'&&state.originMode==='current'&&Number.isFinite(Number(state.user?.heading))?Number(state.user.heading):null);
   const body={origin:{lng:o.lng,lat:o.lat,heading:originHeading},destination:{lng:state.destination.lng,lat:state.destination.lat},waypoints:(wps||[]).filter(pointValid).map(x=>({lng:x.lng,lat:x.lat,name:x.name||'경유지'})),priority,alternatives:false,mode:mode==='walk'?'walk':'car'};
   if(avoid&&mode==='car')body.avoid=avoid;
-  const rr=await fetch('/api/route',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const rr=await fetch('/api/route',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),...(signal?{signal}:{})});
   if(!rr.ok)throw new Error(mode==='walk'?'도보 경로 조회 실패':'경로 조회 실패');return rr.json();
 }
 function renderRouteModeSwitch(){
@@ -3871,7 +3887,7 @@ function renderRouteModeSwitch(){
   if($('startBtn'))$('startBtn').textContent=state.routeMode==='walk'?'도보 안내 시작':'안내 시작';
 }
 async function selectTravelMode(mode){
-  mode=mode==='walk'?'walk':'car';cancelAutoStart();state.routeMode=mode;renderRouteModeSwitch();
+  mode=mode==='walk'?'walk':'car';if(routeOptionsAbortController)routeOptionsAbortController.abort();cancelAutoStart();state.routeMode=mode;renderRouteModeSwitch();
   if(mode==='walk'){
     if(!state.walkingRoute){
       $('routeCards').innerHTML=''; if($('routePlanEta'))$('routePlanEta').textContent='';
@@ -3886,7 +3902,10 @@ async function selectTravelMode(mode){
   selectRoute(state.selectedRoute,true);renderRouteCards();renderRouteModeSwitch();scheduleAutoStart();
 }
 let routeOptionsRequestToken=0;
+let routeOptionsAbortController=null;
 async function loadRouteOptions(){
+  if(routeOptionsAbortController)routeOptionsAbortController.abort();
+  const controller=new AbortController();routeOptionsAbortController=controller;
   const token=++routeOptionsRequestToken;
   state.routeCalculating=true;
   if(state.originMode==='current'&&!state.tripStartedAt){
@@ -3916,7 +3935,7 @@ async function loadRouteOptions(){
     {label:'무료도로',character:'hunmin',kind:'free',priority:'RECOMMEND',avoid:'toll'}
   ];
   state.carRouteOptions=[];
-  const valid=()=>token===routeOptionsRequestToken&&`${state.destination?.lat}:${state.destination?.lng}`===destinationKey;
+  const valid=()=>!controller.signal.aborted&&token===routeOptionsRequestToken&&`${state.destination?.lat}:${state.destination?.lng}`===destinationKey;
   let firstReady=false,finished=0;
   const publish=(spec,rr)=>{
     if(!valid()||!rr?.geometry?.length)return;
@@ -3950,12 +3969,12 @@ async function loadRouteOptions(){
     }
     renderRouteCards();renderRouteModeSwitch();
   };
-  const jobs=specs.map(spec=>routeRequest(spec.priority,spec.avoid,null,'car')
+  const jobs=specs.map(spec=>routeRequest(spec.priority,spec.avoid,null,'car',null,controller.signal)
     .then(rr=>publish(spec,rr))
-    .catch(err=>console.warn(`${spec.label} 경로 요청 실패`,err))
+    .catch(err=>{if(err?.name!=='AbortError')console.warn(`${spec.label} 경로 요청 실패`,err)})
     .finally(()=>{finished++;if(valid()&&finished===specs.length&&!firstReady){state.routeCalculating=false;$('routeCards').innerHTML='<div class="auto-start-hint">경로를 가져오지 못했습니다. 다시 시도해 주세요.</div>';}}));
   // 도보 경로는 자동차 3종의 렌더링과 완전히 독립적으로 처리한다.
-  const walkJob=routeRequest('RECOMMEND',null,null,'walk').then(rr=>{
+  const walkJob=routeRequest('RECOMMEND',null,null,'walk',null,controller.signal).then(rr=>{
     if(!valid()||!rr?.geometry?.length)return;
     state.walkingRoute={...rr,_label:'도보 추천',_character:state.character,_class:'walk'};
     state.routeModeDurations.walk=rr.duration;
@@ -3964,7 +3983,7 @@ async function loadRouteOptions(){
       state.routeCalculating=false;state.routeOptions=[state.walkingRoute];
       selectRoute(0,false);renderRouteCards();scheduleAutoStart();
     }
-  }).catch(err=>console.warn('도보 경로 요청 실패',err));
+  }).catch(err=>{if(err?.name!=='AbortError')console.warn('도보 경로 요청 실패',err)});
   // 백그라운드 경로 응답을 각각 즉시 반영. Promise.allSettled가 모든 결과를 기다리던 병목 제거.
   await Promise.race([...jobs,walkJob]);
 }
@@ -5860,7 +5879,7 @@ function enforceCameraMinSpacing(events=[],minGap=CAMERA_MIN_SPACING_M){
 }
 /* 7.6.11.5 이미 지나친 카메라 핀은 숨긴다. */
 function updateSafetyMarkerVisibility(){
-  const cur=Number(state.user?.routeDistance);if(!Number.isFinite(cur))return;
+  const cur=finiteOrNull(state.user?.routeDistance);if(cur===null||state.drivePositionUncertain)return;
   for(const m of state.safetyMarkers||[]){
     const rd=Number(m.__rd);if(!Number.isFinite(rd))continue;
     const el=m.getElement?.();if(el)el.classList.toggle('passed',rd<cur-25);
@@ -5966,7 +5985,7 @@ function routeSnappedCameraItems(items){
 function renderSafetyMarkers(){
   if(!state.map||!maplibregl?.Marker)return;
   clearSafetyMarkers();
-  if(!state.tripStartedAt||state.routeMode!=='car'||$('driveView')?.classList.contains('hidden'))return;
+  if(!state.tripStartedAt||state.routeMode!=='car'||$('driveView')?.classList.contains('hidden')||state.wrongDirectionActive)return;
   const skip=['speed_limit','tunnel','curve_left','curve_right','double_curve','chronic_congestion'];
   /* 7.6.11.5 지도에는 안내 팝업이 뜨는 신호·속도·구간단속 카메라만 표시한다(이동식/버스전용차로 및 카메라 외 안전 마커 제거). */
   const cameraTypes=new Set(['speed_camera','signal_speed_camera','signal_camera','traffic_camera','section_speed_camera','section_speed_end']);
@@ -5984,7 +6003,7 @@ function renderSafetyMarkers(){
       const srcOffset=Number(e.matchDistance??e.routeMatchDistance);
       const match=Number.isFinite(rawLng)&&Number.isFinite(rawLat)?routePosOfPoint(rawLng,rawLat,g,null,80):null;
       const offset=Number.isFinite(srcOffset)&&srcOffset>0?srcOffset:Number(match?.distance);
-      if(!match||!Number.isFinite(offset)||offset>60)continue;
+      if(!match||!Number.isFinite(offset)||offset>45)continue;
       // Preserve known official directional checks; unknown heading is not invented.
       if(e.cameraDirectionReliable===true && !cameraEventDirectionCompatible(e,g))continue;
       if(state.wrongDirectionActive&&!state.simulationActive)continue;
@@ -7786,7 +7805,11 @@ async function explainRoutesWithAi(){
   const rows=routeCompareRows();output.hidden=false;
   if(rows.length<2){output.textContent='비교할 경로가 2개 이상 준비되면 사용할 수 있습니다.';return}
   routeAiComparePending=true;button.disabled=true;output.textContent='AI가 표시된 경로 정보를 비교하고 있습니다…';
-  try{const r=await callWorkerAiAssist('route_compare',{destination:String(state.destination?.name||'').slice(0,80),routes:rows},14000);output.textContent=r.answer||'분석 결과가 없습니다.'}
+  try{
+    const r=await callWorkerAiAssist('route_compare',{destination:String(state.destination?.name||'').slice(0,80),routes:rows},14000);
+    const facts=rows.map(x=>`${x.label}: ${x.durationMinutes}분 · ${x.distanceKm}km · 통행료 ${x.tollWon.toLocaleString()}원`).join(' / ');
+    output.textContent=`[경로 API 기준] ${facts}\n\n[AI 설명 · 참고용] ${String(r.answer||'설명 없음').slice(0,600)}\n※ 실제 소요시간과 요금은 달라질 수 있습니다.`;
+  }
   catch(e){const shortest=[...rows].sort((a,b)=>a.durationMinutes-b.durationMinutes)[0];const free=[...rows].sort((a,b)=>a.tollWon-b.tollWon||a.durationMinutes-b.durationMinutes)[0];output.textContent=`AI 연결 없이 비교한 결과: 빠른 경로는 ${shortest.label} (${shortest.durationMinutes}분), 통행료가 적은 경로는 ${free.label} (${free.tollWon.toLocaleString()}원)입니다. 화면의 경로를 직접 선택해 주세요.`}
   finally{routeAiComparePending=false;button.disabled=false}
 }

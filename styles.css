@@ -4301,3 +4301,8 @@ html body #app #driveView #trafficRouteSegments i.blocked{background:#222b3a!imp
 body:not(:has(#driveView:not(.hidden))) .safety-map-marker.camera-pin{display:none!important}
 .maplibregl-marker.character-car-marker{z-index:150!important}
 .maplibregl-marker.camera-pin,.safety-map-marker.camera-pin{z-index:40!important;pointer-events:none!important}
+
+/* v7.6.26.8: uncertain GPS is visually differentiated, not disguised as a verified car position. */
+body:has(#driveView:not(.hidden)) .maplibregl-marker.character-car-marker.dangollo-gps-unverified{opacity:.45!important;filter:grayscale(1)!important}
+body:has(#driveView:not(.hidden)) .maplibregl-marker.camera-pin{pointer-events:none!important}
+@media(prefers-reduced-motion:reduce){body:has(#driveView:not(.hidden)) .maplibregl-marker.character-car-marker{transition:none!important}}
