@@ -5958,7 +5958,7 @@ function ensureFixedCameraLayer(features){
     }
     if(!map.getLayer(ROUTE_CAMERA_LAYER))map.addLayer({
       id:ROUTE_CAMERA_LAYER,type:'symbol',source:ROUTE_CAMERA_SOURCE,
-      layout:{'icon-image':['get','icon'],'icon-size':0.792,'icon-anchor':'center',
+      layout:{'icon-image':['get','icon'],'icon-size':0.8712,'icon-anchor':'center',
         'icon-allow-overlap':true,'icon-ignore-placement':true,'icon-rotation-alignment':'viewport',
         'icon-pitch-alignment':'viewport'},
       paint:{'icon-opacity':1}
