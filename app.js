@@ -990,6 +990,7 @@ function restoreMapOverlaysAfterStyleChange(){
 
       // DOM Marker 계열도 현재 상태를 기준으로 즉시 다시 표시한다.
       if(state.route?.geometry?.length&&state.safetyEvents?.length)renderSafetyMarkers();
+      ensureRouteCameraStackOrder();
 
       // 온누리/지역상품권은 위성/일반 지도 여부와 관계없이 다시 렌더링한다.
       if(!state.tripStartedAt&&!$('homeView')?.classList.contains('hidden')){
@@ -2626,6 +2627,8 @@ function drawRoute(route=state.route,{fit=true}={}){
     if(state.map.getLayer('route-direction-arrows'))state.map.moveLayer('route-direction-arrows');
   }catch(e){console.warn('route arrow layer order failed',e)}
   renderRouteEndpointLayers(route);
+  // 레이어를 다시 추가/갱신한 뒤에도 도로 < 카메라 < 끝점 심볼 순서를 보장.
+  ensureRouteCameraStackOrder();
   if(fit){const b=new maplibregl.LngLatBounds();route.geometry.forEach(p=>b.extend(p));state.map.fitBounds(b,{padding:{top:100,bottom:310,left:36,right:36},duration:650})}
 }
 function clearRouteLayer(){['dangollo-endpoint-pin-label','dangollo-endpoint-pin-icon','dangollo-endpoint-label','dangollo-endpoint-core','dangollo-endpoint-halo','route-direction-arrows','route-traffic','route-main','route-shadow'].forEach(id=>{if(state.map?.getLayer(id))state.map.removeLayer(id)});['dangollo-route-endpoints','route-traffic','route'].forEach(id=>{if(state.map?.getSource(id))state.map.removeSource(id)})}
@@ -5920,6 +5923,20 @@ function cameraIconImageData(speed){
   }
   return c.getImageData(0,0,92,92);
 }
+/* v7.6.27.1: 카메라 심볼은 도로/경로선보다 위, 차량 캐릭터보다 아래에 고정한다.
+   MapLibre symbol layer는 DOM z-index가 아닌 style.layers 순서로 그려진다.
+   끝점(symbol)이 있을 땐 바로 그 아래, 없으면 최상위 WebGL 레이어에 둔다.
+   차량은 DOM MapLibre Marker이므로 WebGL 캔버스보다 항상 위에 남는다. */
+function ensureRouteCameraStackOrder(){
+  const map=state.map;
+  if(!map?.getLayer?.(ROUTE_CAMERA_LAYER))return;
+  try{
+    const endpoint='dangollo-endpoint-pin-icon';
+    if(map.getLayer(endpoint))map.moveLayer(ROUTE_CAMERA_LAYER,endpoint);
+    else map.moveLayer(ROUTE_CAMERA_LAYER);
+    // 외부 CSS z-index로 DOM 차량의 실제 레이어 순서를 변경하지 않는다.
+  }catch(e){console.warn('route camera stack order failed',e)}
+}
 function ensureFixedCameraLayer(features){
   const map=state.map;if(!map?.isStyleLoaded?.())return false;
   try{
@@ -5938,6 +5955,7 @@ function ensureFixedCameraLayer(features){
         'icon-pitch-alignment':'viewport'},
       paint:{'icon-opacity':1}
     });
+    ensureRouteCameraStackOrder();
     fixedRouteCameraMap=map;
     return true;
   }catch(e){console.warn('fixed camera map layer failed',e);return false}
