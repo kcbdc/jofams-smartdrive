@@ -5923,7 +5923,7 @@ function cameraIconImageData(speed){
   }
   return c.getImageData(0,0,92,92);
 }
-/* v7.6.27.1: 카메라 심볼은 도로/경로선보다 위, 차량 캐릭터보다 아래에 고정한다.
+/* v7.6.27.2: 도로/경로선 → 방향 화살표 → 카메라 → 차량 캐릭터 순서를 유지한다.
    MapLibre symbol layer는 DOM z-index가 아닌 style.layers 순서로 그려진다.
    끝점(symbol)이 있을 땐 바로 그 아래, 없으면 최상위 WebGL 레이어에 둔다.
    차량은 DOM MapLibre Marker이므로 WebGL 캔버스보다 항상 위에 남는다. */
@@ -5931,10 +5931,18 @@ function ensureRouteCameraStackOrder(){
   const map=state.map;
   if(!map?.getLayer?.(ROUTE_CAMERA_LAYER))return;
   try{
+    // 1층: 경로선(교통 색상 포함) → 2층: 방향 화살표 → 3층: 카메라.
+    // MapLibre 레이어 순서에서는 나중에 놓은 레이어가 위에 그려진다.
+    const arrows='route-direction-arrows';
     const endpoint='dangollo-endpoint-pin-icon';
+    if(map.getLayer(arrows)){
+      if(map.getLayer(endpoint))map.moveLayer(arrows,endpoint);
+      else map.moveLayer(arrows);
+    }
     if(map.getLayer(endpoint))map.moveLayer(ROUTE_CAMERA_LAYER,endpoint);
     else map.moveLayer(ROUTE_CAMERA_LAYER);
-    // 외부 CSS z-index로 DOM 차량의 실제 레이어 순서를 변경하지 않는다.
+    // 4층 차량 캐릭터는 MapLibre DOM Marker로 WebGL 지도 레이어 위에 유지한다.
+    // 출발·도착 마커는 별도 심볼이므로 기존 가독성 규칙을 보존한다.
   }catch(e){console.warn('route camera stack order failed',e)}
 }
 function ensureFixedCameraLayer(features){
@@ -5950,7 +5958,7 @@ function ensureFixedCameraLayer(features){
     }
     if(!map.getLayer(ROUTE_CAMERA_LAYER))map.addLayer({
       id:ROUTE_CAMERA_LAYER,type:'symbol',source:ROUTE_CAMERA_SOURCE,
-      layout:{'icon-image':['get','icon'],'icon-size':0.72,'icon-anchor':'center',
+      layout:{'icon-image':['get','icon'],'icon-size':0.792,'icon-anchor':'center',
         'icon-allow-overlap':true,'icon-ignore-placement':true,'icon-rotation-alignment':'viewport',
         'icon-pitch-alignment':'viewport'},
       paint:{'icon-opacity':1}
