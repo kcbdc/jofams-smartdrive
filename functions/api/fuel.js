@@ -1,170 +1,237 @@
-const JSON_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'public, max-age=120'};
+/* /api/fuel — 오피넷 주변 주유소 가격 (Cloudflare Pages Function)
+ *
+ * v7.6.26 개선 사항
+ *  1) 반경 검색(aroundAll.do)을 우선 사용: 카카오 지역 키/시군구 코드 매핑 없이도 "현재 위치 주변" 결과를 돌려준다.
+ *     기존 lowTop10.do 는 "시군구 최저가 N개"라 반경 개념이 없고, 지역을 못 찾으면 전국 목록/빈 목록이 나왔다.
+ *  2) 실패 시 단계적 폴백: 반경 5km(가격순→거리순) → 시군구 lowTop10 → 시도 lowTop10 (전국 폴백은 하지 않음: 엉뚱한 지역 가격 방지)
+ *  3) 오류·빈 응답은 캐시하지 않는다(no-store). 기존에는 오류도 public 120초 캐시되어 한 번 실패하면 재시도해도 같은 오류가 나왔다.
+ *  4) 오피넷 호출에 User-Agent/Accept 헤더, certkey+code 두 인증 파라미터, https→http 폴백, 8초 타임아웃.
+ *  5) 좌표(KATEC)를 서버에서 WGS84 로 변환해 lat/lng 를 항상 제공(카카오 지오코딩 불필요).
+ *  6) ?diag=1 : 단계별 상태(키 값은 제외)를 돌려줘 배포 환경 문제를 바로 확인할 수 있다.
+ */
+const OK_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'public, max-age=60, s-maxage=120'};
+const ERR_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'no-store'};
+const UA='Mozilla/5.0 (compatible; DangolroNavi/7.6)';
+const PRODUCTS={B027:'휘발유',D047:'경유',B034:'고급휘발유',K015:'LPG'};
 
 export async function onRequestGet({request,env}){
   const url=new URL(request.url);
-  const latRaw=url.searchParams.get('lat'),lngRaw=url.searchParams.get('lng');
-  const lat=latRaw===null?NaN:Number(latRaw),lng=lngRaw===null?NaN:Number(lngRaw);
-  const prodcd=validProduct(url.searchParams.get('prodcd')||'B027');
+  const lat=Number(url.searchParams.get('lat')),lng=Number(url.searchParams.get('lng'));
+  const prodcd=PRODUCTS[url.searchParams.get('prodcd')]?url.searchParams.get('prodcd'):'B027';
   const cnt=Math.max(1,Math.min(20,Number(url.searchParams.get('cnt'))||8));
-  if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat<-90||lat>90||lng<-180||lng>180)return json({error:'올바른 lat/lng가 필요합니다.',code:'INVALID_COORDINATES'},400);
+  const diag=url.searchParams.get('diag')==='1';
+  const trace=[];
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat<-90||lat>90||lng<-180||lng>180||(lat===0&&lng===0))
+    return json({error:'올바른 lat/lng가 필요합니다.',code:'INVALID_COORDINATES'},400);
 
-  // 기존 배포에서 사용하던 OPINET_CERT_KEY를 최우선으로 유지하되,
-  // 환경변수 이름이 달랐던 과거/별도 배포도 호환한다.
-  const certKey=String(
-    env.OPINET_CERT_KEY||
-    env.OPINET_API_KEY||
-    env.OPINET_KEY||
-    env.OIL_API_KEY||
-    ''
-  ).trim();
-
+  const certKey=String(env.OPINET_CERT_KEY||env.OPINET_API_KEY||env.OPINET_KEY||env.OIL_API_KEY||'').trim();
   if(!certKey)return json({
-    error:'오피넷 인증키가 서버에 연결되지 않았습니다.',
-    code:'OPINET_KEY_MISSING',
-    setup:'Cloudflare Pages/Workers의 Production 환경변수(Secret)에서 OPINET_CERT_KEY를 확인하세요.'
+    error:'오피넷 인증키가 서버에 연결되지 않았습니다.',code:'OPINET_KEY_MISSING',
+    setup:'Cloudflare Pages > Settings > Variables and Secrets (Production)에 OPINET_CERT_KEY 를 등록하고 재배포하세요.'
   },503);
 
   try{
-    // Kakao region may be unavailable or the key may be missing: do not abort Opinet pricing.
-    const region=await kakaoRegion(lat,lng,env.KAKAO_REST_API_KEY).catch(e=>{console.warn('[fuel] region fallback',String(e));return null});
-    const area=await resolveOpinetArea(region,certKey);
-    const areaCode=area.sigunCode||area.sidoCode||'';
-    let [stations,avg]=await Promise.all([
-      opinetLow(areaCode,prodcd,cnt,certKey),
-      area.sidoCode?opinetAverage(area.sidoCode,area.sigunCode,prodcd,certKey):Promise.resolve(null)
-    ]);
-    // A district-only query can return no rows. Retry with province and then nationally.
-    if(!stations.length&&area.sigunCode)stations=await opinetLow(area.sidoCode,prodcd,cnt,certKey);
-    if(!stations.length&&areaCode)stations=await opinetLow('',prodcd,cnt,certKey);
-    // Price display must not wait indefinitely for geocoding enrichment.
+    let stations=[],source='',radius=0,areaName='',upstreamError=null,sawEmptyOk=false;
+    // 1) 반경 검색 — 5km 가격순. 비어 있으면(드문 경우) 같은 반경에서 거리순으로 한 번 더.
+    try{
+      const [x,y]=wgs84ToKatec(lat,lng);
+      for(const sort of ['1','2']){
+        const found=await opinetAround(x,y,prodcd,5000,sort,certKey,trace);
+        if(!found.length)sawEmptyOk=true;
+        if(found.length){
+          stations=found.sort((a,b)=>a.price-b.price).slice(0,cnt);
+          source='aroundAll';radius=5000;break;
+        }
+      }
+    }catch(e){upstreamError=upstreamError||e;trace.push({step:'aroundAll',error:String(e?.message||e).slice(0,160)})}
+
+    // 2) 폴백: 시군구/시도 기준 최저가 (카카오 키가 있어 지역 판별이 가능할 때만)
+    if(!stations.length){
+      const region=await kakaoRegion(lat,lng,env.KAKAO_REST_API_KEY).catch(()=>null);
+      if(region){
+        const area=await resolveOpinetArea(region,certKey,trace).catch(e=>{upstreamError=upstreamError||e;trace.push({step:'area',error:String(e?.message||e).slice(0,160)});return null});
+        if(area){
+          areaName=[region.region1,region.region2].filter(Boolean).join(' ');
+          for(const code of [area.sigunCode,area.sidoCode].filter(Boolean)){
+            const rowsFound=await opinetLow(code,prodcd,cnt,certKey,trace).catch(e=>{upstreamError=upstreamError||e;return []});
+            if(rowsFound.length){stations=rowsFound;source='lowTop10';break}
+          }
+        }
+      }
+    }
+
+    if(!stations.length){
+      // 상류(오피넷) 호출 자체가 실패한 경우와, 정상 응답인데 데이터가 없는 경우를 구분한다.
+      if(upstreamError&&!sawEmptyOk){
+        const msg=String(upstreamError?.message||upstreamError);
+        return json({error:msg,code:classify(msg),...(diag?{trace}:{})},502);
+      }
+      return json({
+        error:'반경 5km 안에 해당 유종의 판매가격 정보가 없습니다.',code:'FUEL_EMPTY',
+        product:prodcd,productName:PRODUCTS[prodcd],stations:[],...(diag?{trace}:{})
+      },200,true);
+    }
+
     const detailed=await Promise.race([
-      enrichStationLocations(stations.slice(0,8),certKey,env.KAKAO_REST_API_KEY),
+      enrichAddresses(stations.slice(0,8),certKey),
       new Promise(resolve=>setTimeout(()=>resolve(stations.slice(0,8)),2200))
     ]);
+    const avg=stations.length?Math.round(stations.reduce((s,x)=>s+x.price,0)/stations.length):null;
     return json({
-      provider:'opinet',
-      product:prodcd,
-      productName:productName(prodcd),
-      areaName:[region?.region1,region?.region2].filter(Boolean).join(' ')||area.sigunName||area.sidoName||'현재 지역',
-      areaCode,
-      averagePrice:avg,
-      updatedAt:new Date().toISOString(),
-      stations:detailed
+      provider:'opinet',source,radius,product:prodcd,productName:PRODUCTS[prodcd],
+      areaName:areaName||(source==='aroundAll'?'현재 위치 주변 5km':'현재 지역'),
+      averagePrice:avg,updatedAt:new Date().toISOString(),stations:detailed,
+      ...(diag?{trace}:{})
     });
   }catch(e){
     const msg=String(e?.message||'오피넷 유가 조회에 실패했습니다.');
-    const keyRelated=/인증|certkey|key|등록되지 않은|access denied|permission/i.test(msg);
-    return json({
-      error:msg,
-      code:keyRelated?'OPINET_KEY_REJECTED':'OPINET_UPSTREAM_ERROR'
-    },502);
+    return json({error:msg,code:classify(msg),...(diag?{trace}:{})},502);
   }
 }
 
-function validProduct(v){return ['B027','D047','B034','K015'].includes(v)?v:'B027'}
-function productName(v){return ({B027:'휘발유',D047:'경유',B034:'고급휘발유',K015:'LPG'})[v]||v}
-async function fetchJson(url,headers={}){
-  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),7500);
-  let r;try{r=await fetch(url,{headers,signal:controller.signal})}finally{clearTimeout(timer)}
-  if(!r.ok)throw new Error(`외부 API 오류 (${r.status})`);
-  const text=await r.text();
-  try{return JSON.parse(text)}catch{throw new Error('외부 API 응답 형식 오류')}
+function classify(msg){
+  if(/시간 초과|timeout|abort/i.test(msg))return 'OPINET_UPSTREAM_ERROR';
+  if(/인증|certkey|등록되지|access denied|permission|invalid/i.test(msg))return 'OPINET_KEY_REJECTED';
+  if(/차단|forbidden|403|html/i.test(msg))return 'OPINET_BLOCKED';
+  return 'OPINET_UPSTREAM_ERROR';
 }
+
+/* ---------------- 오피넷 호출 ---------------- */
+async function fetchOpinetJson(endpoint,params,key,trace){
+  let lastErr=null;
+  for(const scheme of ['https','http']){
+    const u=new URL(`${scheme}://www.opinet.co.kr/api/${endpoint}`);
+    u.searchParams.set('out','json');
+    u.searchParams.set('certkey',key);u.searchParams.set('code',key); // 문서 버전에 따라 인증 파라미터명이 다르다
+    for(const [k,v] of Object.entries(params||{}))if(v!==''&&v!=null)u.searchParams.set(k,String(v));
+    const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),8000);
+    try{
+      const r=await fetch(u,{headers:{'user-agent':UA,accept:'application/json, text/plain, */*'},signal:ctrl.signal});
+      const text=await r.text();
+      trace?.push({step:endpoint,scheme,status:r.status,bytes:text.length});
+      if(!r.ok)throw new Error(`오피넷 응답 오류 (HTTP ${r.status})`);
+      let data;
+      try{data=JSON.parse(text)}
+      catch{throw new Error(/<html|<!doctype/i.test(text)?'오피넷 접속이 차단되었거나 HTML 응답이 반환되었습니다.':'오피넷 응답 형식 오류')}
+      return data;
+    }catch(e){
+      lastErr=e?.name==='AbortError'?new Error('오피넷 응답 시간 초과'):e;
+      trace?.push({step:endpoint,scheme,error:String(lastErr.message).slice(0,120)});
+    }finally{clearTimeout(timer)}
+  }
+  throw lastErr||new Error('오피넷 호출 실패');
+}
+function rows(d){
+  const result=d?.RESULT;
+  if(result&&typeof result==='object'&&!Array.isArray(result)&&result.CODE&&String(result.CODE)!=='00')
+    throw new Error(`오피넷 인증/조회 오류: ${String(result.MESSAGE||result.CODE)}`);
+  const r=d?.RESULT?.OIL??d?.RESULT?.AREA??d?.RESULT??[];
+  return Array.isArray(r)?r:(r&&typeof r==='object'&&!r.CODE?[r]:[]);
+}
+function mapStation(x){
+  const kx=Number(x.GIS_X_COOR),ky=Number(x.GIS_Y_COOR);
+  const pos=Number.isFinite(kx)&&Number.isFinite(ky)&&kx>0&&ky>0?katecToWgs84(kx,ky):null;
+  return{
+    id:x.UNI_ID||x.OS_ID||'',name:x.OS_NM||x.OS_NM_KOR||'주유소',price:Number(x.PRICE)||0,
+    brand:x.POLL_DIV_CD||'',address:x.NEW_ADR||x.VAN_ADR||'',
+    ...(x.DISTANCE!=null&&Number.isFinite(Number(x.DISTANCE))?{distance:Math.round(Number(x.DISTANCE))}:{}),
+    ...(pos?{lat:pos[0],lng:pos[1]}:{})
+  };
+}
+async function opinetAround(x,y,prodcd,radius,sort,key,trace){
+  const d=await fetchOpinetJson('aroundAll.do',{x:x.toFixed(1),y:y.toFixed(1),radius,prodcd,sort},key,trace);
+  return rows(d).map(mapStation).filter(s=>s.price>0);
+}
+async function opinetLow(area,prodcd,cnt,key,trace){
+  const d=await fetchOpinetJson('lowTop10.do',{prodcd,area,cnt},key,trace);
+  return rows(d).map(mapStation).filter(s=>s.price>0).sort((a,b)=>a.price-b.price);
+}
+async function enrichAddresses(items,key){
+  return Promise.all(items.map(async s=>{
+    if(s.address||!s.id)return s;
+    try{
+      const row=rows(await fetchOpinetJson('detailById.do',{id:s.id},key,null))[0]||{};
+      return{...s,name:row.OS_NM||s.name,brand:row.POLL_DIV_CD||s.brand,address:row.NEW_ADR||row.VAN_ADR||s.address};
+    }catch{return s}
+  }));
+}
+
+/* ---------------- 지역 판별(폴백 전용) ---------------- */
 async function kakaoRegion(lat,lng,key){
   if(!key)return null;
   const u=new URL('https://dapi.kakao.com/v2/local/geo/coord2regioncode.json');
   u.searchParams.set('x',lng);u.searchParams.set('y',lat);
-  const d=await fetchJson(u,{Authorization:`KakaoAK ${key}`});
-  const doc=(d.documents||[]).find(x=>x.region_type==='H')||(d.documents||[])[0];
-  if(!doc)return null;
-  return {region1:doc.region_1depth_name||'',region2:doc.region_2depth_name||'',region3:doc.region_3depth_name||''};
-}
-async function opinet(endpoint,params,key){
-  const u=new URL(`https://www.opinet.co.kr/api/${endpoint}`);
-  u.searchParams.set('out','json');u.searchParams.set('certkey',key);
-  for(const [k,v] of Object.entries(params||{}))if(v!==''&&v!=null)u.searchParams.set(k,String(v));
-  return fetchJson(u);
-}
-function rows(d){
-  const result=d?.RESULT;
-  if(result&&typeof result==='object'&&!Array.isArray(result)&&result.CODE&&String(result.CODE)!=='00')throw new Error(String(result.MESSAGE||'오피넷 조회 오류'));
-  const r=d?.RESULT?.OIL??d?.RESULT?.AREA??d?.RESULT??[];
-  return Array.isArray(r)?r:r?[r]:[];
+  const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),4000);
+  try{
+    const r=await fetch(u,{headers:{Authorization:`KakaoAK ${key}`},signal:ctrl.signal});
+    if(!r.ok)return null;
+    const d=await r.json();
+    const doc=(d.documents||[]).find(x=>x.region_type==='H')||(d.documents||[])[0];
+    return doc?{region1:doc.region_1depth_name||'',region2:doc.region_2depth_name||''}:null;
+  }finally{clearTimeout(timer)}
 }
 function normName(s=''){return String(s).replace(/특별자치시|특별자치도|특별시|광역시|도|시|군|구|\s/g,'').toLowerCase()}
-async function resolveOpinetArea(region,key){
-  const sidoRows=rows(await opinet('areaCode.do',{},key));
-  let sido=null,sigun=null;
-  if(region?.region1){
-    const n=normName(region.region1);
-    sido=sidoRows.find(x=>normName(x.AREA_NM)===n)||sidoRows.find(x=>n.includes(normName(x.AREA_NM))||normName(x.AREA_NM).includes(n));
+async function resolveOpinetArea(region,key,trace){
+  const sidoRows=rows(await fetchOpinetJson('areaCode.do',{},key,trace));
+  const n1=normName(region.region1);
+  const sido=sidoRows.find(x=>normName(x.AREA_NM)===n1)||sidoRows.find(x=>n1&&(n1.includes(normName(x.AREA_NM))||normName(x.AREA_NM).includes(n1)));
+  if(!sido)return null;
+  let sigun=null;
+  if(region.region2){
+    const sigunRows=rows(await fetchOpinetJson('areaCode.do',{area:sido.AREA_CD},key,trace));
+    const n2=normName(region.region2);
+    sigun=sigunRows.find(x=>normName(x.AREA_NM)===n2)||sigunRows.find(x=>n2.includes(normName(x.AREA_NM))||normName(x.AREA_NM).includes(n2));
   }
-  if(!sido&&region?.region1){
-    const prefix=normName(region.region1).slice(0,2);
-    if(prefix)sido=sidoRows.find(x=>normName(x.AREA_NM).startsWith(prefix));
-  }
-  if(!sido&&sidoRows.length===1)sido=sidoRows[0];
-  if(sido&&region?.region2){
-    const sigunRows=rows(await opinet('areaCode.do',{area:sido.AREA_CD},key));
-    const n=normName(region.region2);
-    sigun=sigunRows.find(x=>normName(x.AREA_NM)===n)||sigunRows.find(x=>n.includes(normName(x.AREA_NM))||normName(x.AREA_NM).includes(n));
-  }
-  return {
-    sidoCode:sido?.AREA_CD||'',sidoName:sido?.AREA_NM||region?.region1||'',
-    sigunCode:sigun?.AREA_CD||'',sigunName:sigun?.AREA_NM||region?.region2||''
-  };
-}
-async function opinetLow(area,prodcd,cnt,key){
-  const d=await opinet('lowTop10.do',{prodcd,area,cnt},key);
-  return rows(d).map(x=>({
-    id:x.UNI_ID||x.OS_ID||'',
-    name:x.OS_NM||x.OS_NM_KOR||'주유소',
-    price:Number(x.PRICE)||0,
-    brand:x.POLL_DIV_CD||'',
-    address:x.NEW_ADR||x.VAN_ADR||''
-  })).filter(x=>x.price>0).sort((a,b)=>a.price-b.price);
-}
-async function opinetAverage(sido,sigun,prodcd,key){
-  try{
-    const d=await opinet('avgSigunPrice.do',{sido,sigun,prodcd},key);
-    const found=rows(d).find(x=>!x.PRODCD||x.PRODCD===prodcd)||rows(d)[0];
-    return Number(found?.PRICE)||null;
-  }catch{return null}
-}
-async function enrichStationLocations(items,key,kakaoKey){
-  const detailed=await Promise.all(items.map(async x=>{
-    let item=x;
-    if(x.id&&!x.address){
-      try{
-        const d=await opinet('detailById.do',{id:x.id},key);
-        const row=rows(d)[0]||{};
-        item={...x,name:row.OS_NM||x.name,brand:row.POLL_DIV_CD||x.brand,address:row.NEW_ADR||row.VAN_ADR||x.address};
-      }catch{}
-    }
-    if(!kakaoKey)return item;
-
-    const byAddress=item.address?await kakaoPlaceCoordinate(item.address,kakaoKey,'address').catch(()=>null):null;
-    if(byAddress)return {...item,...byAddress};
-
-    const byKeyword=await kakaoPlaceCoordinate(item.name,kakaoKey,'keyword').catch(()=>null);
-    return byKeyword?{...item,...byKeyword}:item;
-  }));
-  return detailed;
+  return{sidoCode:sido.AREA_CD||'',sigunCode:sigun?.AREA_CD||''};
 }
 
-async function kakaoPlaceCoordinate(query,key,mode='address'){
-  const q=String(query||'').trim();
-  if(!q)return null;
-  const endpoint=mode==='address'
-    ?'https://dapi.kakao.com/v2/local/search/address.json'
-    :'https://dapi.kakao.com/v2/local/search/keyword.json';
-  const u=new URL(endpoint);
-  u.searchParams.set(mode==='address'?'query':'query',q);
-  u.searchParams.set('size','1');
-  const d=await fetchJson(u,{Authorization:`KakaoAK ${key}`});
-  const doc=d?.documents?.[0];
-  const lng=Number(doc?.x),lat=Number(doc?.y);
-  if(!Number.isFinite(lng)||!Number.isFinite(lat))return null;
-  return {lng,lat};
+/* ---------------- 좌표 변환: WGS84 <-> KATEC (오피넷 GIS 좌표) ----------------
+   KATEC = Bessel 1841 TM(lat0=38, lon0=128, k=0.9999, FE=400000, FN=600000) + Helmert 7-parameter.
+   PROJ 문자열 "+towgs84=-115.80,474.99,674.11,1.16,-2.31,-1.63,6.43" 과 동일하게 구현(pyproj 와 교차 검증). */
+const D2R=Math.PI/180,ARCSEC=Math.PI/(180*3600);
+const BESSEL={a:6377397.155,f:1/299.1528128},WGS84={a:6378137,f:1/298.257223563};
+const TM={lat0:38*D2R,lon0:128*D2R,k0:0.9999,fe:400000,fn:600000};
+const HELMERT={dx:-115.80,dy:474.99,dz:674.11,rx:1.16*ARCSEC,ry:-2.31*ARCSEC,rz:-1.63*ARCSEC,m:1+6.43e-6};
+function e2(el){return el.f*(2-el.f)}
+function geodeticToEcef(lat,lng,el){const s=Math.sin(lat),c=Math.cos(lat),E=e2(el),N=el.a/Math.sqrt(1-E*s*s);return[N*c*Math.cos(lng),N*c*Math.sin(lng),N*(1-E)*s]}
+function ecefToGeodetic(x,y,z,el){
+  const E=e2(el),p=Math.hypot(x,y);let lat=Math.atan2(z,p*(1-E));
+  for(let i=0;i<8;i++){const s=Math.sin(lat),N=el.a/Math.sqrt(1-E*s*s);lat=Math.atan2(z+E*N*s,p)}
+  return[lat,Math.atan2(y,x)];
 }
-function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:JSON_HEADERS})}
+function besselToWgsEcef([x,y,z]){const H=HELMERT;return[H.dx+H.m*(x-H.rz*y+H.ry*z),H.dy+H.m*(H.rz*x+y-H.rx*z),H.dz+H.m*(-H.ry*x+H.rx*y+z)]}
+function wgsToBesselEcef([X,Y,Z]){const H=HELMERT,x=(X-H.dx)/H.m,y=(Y-H.dy)/H.m,z=(Z-H.dz)/H.m;return[x+H.rz*y-H.ry*z,-H.rz*x+y+H.rx*z,H.ry*x-H.rx*y+z]}
+function meridianArc(phi,el){
+  const E=e2(el),E2=E*E,E3=E2*E;
+  return el.a*((1-E/4-3*E2/64-5*E3/256)*phi-(3*E/8+3*E2/32+45*E3/1024)*Math.sin(2*phi)+(15*E2/256+45*E3/1024)*Math.sin(4*phi)-(35*E3/3072)*Math.sin(6*phi));
+}
+function tmForward(lat,lng,el){
+  const E=e2(el),ep2=E/(1-E),s=Math.sin(lat),c=Math.cos(lat),t=Math.tan(lat),N=el.a/Math.sqrt(1-E*s*s),T=t*t,C=ep2*c*c,A=(lng-TM.lon0)*c;
+  const M=meridianArc(lat,el),M0=meridianArc(TM.lat0,el);
+  const x=TM.fe+TM.k0*N*(A+(1-T+C)*A**3/6+(5-18*T+T*T+72*C-58*ep2)*A**5/120);
+  const y=TM.fn+TM.k0*(M-M0+N*t*(A*A/2+(5-T+9*C+4*C*C)*A**4/24+(61-58*T+T*T+600*C-330*ep2)*A**6/720));
+  return[x,y];
+}
+function tmInverse(x,y,el){
+  const E=e2(el),ep2=E/(1-E),M0=meridianArc(TM.lat0,el),M=M0+(y-TM.fn)/TM.k0;
+  const mu=M/(el.a*(1-E/4-3*E*E/64-5*E**3/256)),e1=(1-Math.sqrt(1-E))/(1+Math.sqrt(1-E));
+  const phi1=mu+(3*e1/2-27*e1**3/32)*Math.sin(2*mu)+(21*e1**2/16-55*e1**4/32)*Math.sin(4*mu)+(151*e1**3/96)*Math.sin(6*mu)+(1097*e1**4/512)*Math.sin(8*mu);
+  const s=Math.sin(phi1),c=Math.cos(phi1),t=Math.tan(phi1),N1=el.a/Math.sqrt(1-E*s*s),R1=el.a*(1-E)/Math.pow(1-E*s*s,1.5),T1=t*t,C1=ep2*c*c,D=(x-TM.fe)/(N1*TM.k0);
+  const lat=phi1-(N1*t/R1)*(D*D/2-(5+3*T1+10*C1-4*C1*C1-9*ep2)*D**4/24+(61+90*T1+298*C1+45*T1*T1-252*ep2-3*C1*C1)*D**6/720);
+  const lng=TM.lon0+(D-(1+2*T1+C1)*D**3/6+(5-2*C1+28*T1-3*C1*C1+8*ep2+24*T1*T1)*D**5/120)/c;
+  return[lat,lng];
+}
+function wgs84ToKatec(latDeg,lngDeg){
+  const ecef=geodeticToEcef(latDeg*D2R,lngDeg*D2R,WGS84);
+  const [la,ln]=ecefToGeodetic(...wgsToBesselEcef(ecef),BESSEL);
+  return tmForward(la,ln,BESSEL);
+}
+function katecToWgs84(x,y){
+  const [la,ln]=tmInverse(x,y,BESSEL);
+  const [lat,lng]=ecefToGeodetic(...besselToWgsEcef(geodeticToEcef(la,ln,BESSEL)),WGS84);
+  return[Number((lat/D2R).toFixed(6)),Number((lng/D2R).toFixed(6))];
+}
+
+function json(data,status=200,noStore=false){
+  return new Response(JSON.stringify(data),{status,headers:(status===200&&!noStore)?OK_HEADERS:ERR_HEADERS});
+}
