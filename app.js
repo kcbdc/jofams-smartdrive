@@ -5878,18 +5878,70 @@ function enforceCameraMinSpacing(events=[],minGap=CAMERA_MIN_SPACING_M){
   return [...rest,...out].sort((a,b)=>(Number.isFinite(Number(a.routeDistance))&&Number.isFinite(Number(b.routeDistance)))?Number(a.routeDistance)-Number(b.routeDistance):(Number(a.routeIndex)||0)-(Number(b.routeIndex)||0));
 }
 /* 7.6.11.5 이미 지나친 카메라 핀은 숨긴다. */
+/* v7.6.27.0: 카메라는 DOM Marker가 아닌 지도 GeoJSON 심볼이다.
+   경로상 실좌표가 지도 타일과 동일한 행렬로 투영되므로 줌/팬/회전 시 고정된다. */
+const ROUTE_CAMERA_SOURCE='dangollo-route-camera-fixed-source';
+const ROUTE_CAMERA_LAYER='dangollo-route-camera-fixed-symbol';
+const ROUTE_CAMERA_PREFIX='dangollo-route-camera-icon-';
+let fixedRouteCameraFeatures=[];
+let fixedRouteCameraMap=null;
+function routeCameraGeojson(features=[]){return {type:'FeatureCollection',features};}
 function updateSafetyMarkerVisibility(){
-  const cur=finiteOrNull(state.user?.routeDistance);if(cur===null||state.drivePositionUncertain)return;
-  for(const m of state.safetyMarkers||[]){
-    const rd=Number(m.__rd);if(!Number.isFinite(rd))continue;
-    const el=m.getElement?.();if(el)el.classList.toggle('passed',rd<cur-25);
-  }
-  // 앞으로 가장 가까운 카메라 핀을 강조해 길 위에서 바로 눈에 띄게 한다.
-  let nextM=null;
-  for(const m of state.safetyMarkers||[]){const rd=Number(m.__rd);if(Number.isFinite(rd)&&rd>=cur-25&&(!nextM||rd<Number(nextM.__rd)))nextM=m}
-  for(const m of state.safetyMarkers||[]){const el=m.getElement?.();if(el)el.classList.toggle('next-camera',m===nextM)}
+  if(!state.map?.getSource?.(ROUTE_CAMERA_SOURCE))return;
+  const current=finiteOrNull(state.user?.routeDistance);
+  const maxAhead=3000;
+  const visible=(!state.tripStartedAt||state.routeMode!=='car'||$('driveView')?.classList.contains('hidden')||state.wrongDirectionActive)?[]:
+    fixedRouteCameraFeatures.filter(f=>current===null||(Number(f.properties.routeM)>=current-35&&Number(f.properties.routeM)<=current+maxAhead));
+  try{state.map.getSource(ROUTE_CAMERA_SOURCE).setData(routeCameraGeojson(visible))}catch(e){console.warn('fixed camera source update failed',e)}
 }
-function clearSafetyMarkers(){for(const m of state.safetyMarkers||[])try{m.remove()}catch{}state.safetyMarkers=[]}
+function clearSafetyMarkers(){
+  // 이전 버전 HTML 마커도 제거해 겹침을 근본적으로 차단한다.
+  for(const m of state.safetyMarkers||[])try{m.remove()}catch{}
+  state.safetyMarkers=[];fixedRouteCameraFeatures=[];
+  try{state.map?.getSource?.(ROUTE_CAMERA_SOURCE)?.setData(routeCameraGeojson())}catch{}
+}
+function cameraIconImageData(speed){
+  const canvas=document.createElement('canvas');canvas.width=92;canvas.height=92;
+  const c=canvas.getContext('2d');if(!c)return null;
+  c.clearRect(0,0,92,92);
+  c.shadowColor='rgba(11,24,37,.28)';c.shadowBlur=7;c.shadowOffsetY=3;
+  c.fillStyle='#ffffff';c.strokeStyle='#d53145';c.lineWidth=5;
+  c.beginPath();c.roundRect(8,8,69,69,17);c.fill();c.shadowColor='transparent';c.stroke();
+  // 직접 그린 카메라 픽토그램: 외부 SVG/CSS·이모지 폰트 의존성 없음.
+  c.fillStyle='#152b43';c.beginPath();c.roundRect(22,30,42,26,5);c.fill();
+  c.beginPath();c.moveTo(28,30);c.lineTo(35,22);c.lineTo(47,22);c.lineTo(53,30);c.closePath();c.fill();
+  c.fillStyle='#ffffff';c.beginPath();c.arc(43,43,9,0,Math.PI*2);c.fill();
+  c.fillStyle='#152b43';c.beginPath();c.arc(43,43,5,0,Math.PI*2);c.fill();
+  if(speed>0){
+    c.fillStyle='#ffffff';c.strokeStyle='#d53145';c.lineWidth=4;
+    c.beginPath();c.arc(71,69,17,0,Math.PI*2);c.fill();c.stroke();
+    c.font='bold 17px sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillStyle='#b31e30';
+    c.fillText(String(speed),71,70);
+  }
+  return c.getImageData(0,0,92,92);
+}
+function ensureFixedCameraLayer(features){
+  const map=state.map;if(!map?.isStyleLoaded?.())return false;
+  try{
+    if(!map.getSource(ROUTE_CAMERA_SOURCE))map.addSource(ROUTE_CAMERA_SOURCE,{type:'geojson',data:routeCameraGeojson()});
+    for(const f of features){
+      const name=f.properties.icon;
+      if(!map.hasImage(name)){
+        const img=cameraIconImageData(Number(f.properties.speed)||0);
+        if(img)map.addImage(name,img,{pixelRatio:2});
+      }
+    }
+    if(!map.getLayer(ROUTE_CAMERA_LAYER))map.addLayer({
+      id:ROUTE_CAMERA_LAYER,type:'symbol',source:ROUTE_CAMERA_SOURCE,
+      layout:{'icon-image':['get','icon'],'icon-size':0.72,'icon-anchor':'center',
+        'icon-allow-overlap':true,'icon-ignore-placement':true,'icon-rotation-alignment':'viewport',
+        'icon-pitch-alignment':'viewport'},
+      paint:{'icon-opacity':1}
+    });
+    fixedRouteCameraMap=map;
+    return true;
+  }catch(e){console.warn('fixed camera map layer failed',e);return false}
+}
 
 function cameraClusterItemsByPixel(items){
   return clusterMapItemsByPixel(items,62);
@@ -5937,7 +5989,7 @@ function renderCameraClusterMarkers(items){
 function cameraDisplayPriority(e){
   return ({signal_speed_camera:0,section_speed_camera:1,section_speed_end:1,speed_camera:2,signal_camera:3,traffic_camera:4,mobile_camera:5,bus_lane_camera:6})[e?.type]??9;
 }
-/* v7.6.26.9 - 지도 카메라 표시의 단일 진실원: 현재 선택 경로의 실제 좌표.
+/* v7.6.27.0 - 지도 카메라 표시의 단일 진실원: 현재 선택 경로의 실제 좌표.
    CSS로 떨어진 핀을 숨기는 대신 원본 좌표→경로 투영을 매번 재검증한다.
    신뢰할 수 없는 카메라는 아예 마커를 생성하지 않는다. */
 function strictCameraProjection(lng,lat,geometry,maxOffset=24){
@@ -6023,32 +6075,17 @@ function renderSafetyMarkers(){
     });
   }
 
-  // 화면 가시폭이 1km 이상이면 CCTV는 숫자 클러스터로 묶는다.
-  {
-    for(const e of routeCameraItems){
-      if(!Number.isFinite(Number(e.lng))||!Number.isFinite(Number(e.lat)))continue;
-      // A route switch during an async calculation must not leave old camera DOM behind.
-      if(!state.tripStartedAt||state.routeMode!=='car')break;
-      const el=document.createElement('div'),limit=Number(e.maxspeed)||0;
-      el.className=`safety-map-marker camera camera-pin dangollo-route-camera camera-${e.type}${e.type==='mobile_camera'?' mobile':''}`;
-      el.dataset.cameraOnRoute='true';
-      el.title=e.type==='signal_speed_camera'?'신호·과속 단속카메라':e.type==='signal_camera'?'신호 단속카메라':e.type==='speed_camera'?'과속 단속카메라':e.type==='section_speed_camera'?'구간단속 시작':e.type==='section_speed_end'?'구간단속 종료':e.type==='bus_lane_camera'?'버스전용차로 단속':e.type==='mobile_camera'?'이동식 단속카메라':'단속 카메라';
-      el.innerHTML=`<span class="camera-pin-icon">${cctvMarkerSvg()}</span>${limit>0?`<small class="camera-pin-speed">${Math.round(limit)}</small>`:''}`;
-      try{
-        const marker=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([e.lng,e.lat]).addTo(state.map);
-        const markerEl=marker.getElement?.();
-        if(markerEl){
-          markerEl.style.zIndex='120';
-          markerEl.style.visibility='visible';
-          markerEl.style.opacity='1';
-          markerEl.style.pointerEvents='none';
-        }
-        marker.__rd=Number(e.__routeM);
-        marker.getElement()?.style.setProperty('z-index','40','important');
-        state.safetyMarkers.push(marker);
-      }catch{}
-    }
-  }
+  // HTML Marker를 생성하지 않는다. 지도 경로선에 정확히 붙는 MapLibre 심볼만 사용.
+  const features=allMatchedCameraItems.map((e,i)=>{
+    const speed=Number(e.maxspeed);
+    // 심볼의 숫자 배지 이미지 재활용. 숫자·속도 오인 방지를 위해 유효한 상식적 범위만 사용.
+    const displayedSpeed=Number.isFinite(speed)&&speed>=20&&speed<=130?Math.round(speed):0;
+    return {type:'Feature',id:i,geometry:{type:'Point',coordinates:[Number(e.lng),Number(e.lat)]},
+      properties:{routeM:Number(e.__routeM),speed:displayedSpeed,icon:ROUTE_CAMERA_PREFIX+displayedSpeed,
+        cameraType:String(e.type||'')}};
+  });
+  fixedRouteCameraFeatures=features;
+  if(ensureFixedCameraLayer(features))updateSafetyMarkerVisibility();
 
 
 }

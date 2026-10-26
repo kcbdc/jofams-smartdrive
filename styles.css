@@ -4317,3 +4317,8 @@ body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-camera[data-
 .maplibregl-marker.dangollo-route-camera.passed{display:none!important}
 
 body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-camera.passed{display:none!important}
+
+/* v7.6.27.0 — 카메라 지도 심볼은 WebGL 레이어로만 그림. 이전 DOM 카메라 마커 잔재 차단. */
+.maplibregl-marker.camera-pin,.maplibregl-marker.dangollo-route-camera,
+.maplibregl-marker .safety-map-marker.camera-pin,.camera-cluster-marker,
+.maplibregl-marker.speed-limit-marker{display:none!important;}
