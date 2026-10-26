@@ -3429,15 +3429,7 @@ html body #app #driveView #driveRecommendBtn .dangollo-recommend-symbol svg path
 @media(max-width:350px){#homeView .home-header{grid-template-columns:46px minmax(0,1fr) 46px!important;gap:5px!important}#homeView .home-header .dangollo-top-action{width:44px!important;height:44px!important;min-width:44px!important}#homeView .home-header>b{font-size:16px!important}}
 #driveArBtn .dangollo-mic-icon{width:28px!important;height:28px!important;display:grid!important;place-items:center;color:#124d42}#driveArBtn .dangollo-mic-icon svg{width:26px;height:26px;display:block}
 .dangollo-voice-recommend{position:fixed;inset:0;z-index:99999;display:grid;place-items:center;padding:12px;box-sizing:border-box;font-family:inherit}.dvr-backdrop{position:absolute;inset:0;background:#07171ab8}.dvr-sheet{position:relative;background:#fff;color:#152c2b;border-radius:22px;width:min(440px,100%);max-height:min(85dvh,700px);box-shadow:0 20px 65px #0005;display:flex;flex-direction:column;overflow:hidden}.dvr-head{display:flex;align-items:center;gap:12px;padding:19px 16px 14px;background:linear-gradient(110deg,#e7f8f0,#f8fcfa)}.dvr-head>div{min-width:0;flex:1}.dvr-head b{display:block;font-size:19px}.dvr-head small{font-size:11px;display:block;margin-top:4px;line-height:1.45}.dvr-head>button{font-size:25px;border:0;background:transparent;padding:6px 10px}.dvr-icon{background:#08795b;color:#fff;border-radius:12px;padding:10px}.dvr-body{overflow:auto;padding:7px 12px}.dvr-row{display:flex;width:100%;gap:9px;align-items:center;text-align:left;border:1px solid #dde9e5;background:#fff;border-radius:13px;margin:7px 0;padding:12px 10px;color:#19302c}.dvr-row>span:nth-child(2){flex:1;min-width:0}.dvr-row b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dvr-row small{display:block;margin-top:5px;color:#647c77;font-size:11px;line-height:1.4}.dvr-tag{flex:none;background:#dcf7e7;border-radius:6px;color:#067044;padding:5px 6px;font-size:10px;font-weight:800}.dvr-tag.onnuri{background:#e5efff;color:#315eb0}.dvr-arrow{font-size:24px;color:#167c60}.dvr-direct{margin:5px 16px 0;border:0;border-radius:12px;background:#08795b;color:white;min-height:46px;font-size:14px;font-weight:800}.dvr-empty{text-align:center;padding:23px 10px;font-size:13px;line-height:1.6;color:#4c6861}.dvr-foot{display:block;text-align:center;margin:12px 14px 15px;font-size:10px;color:#697b79;line-height:1.5}
-#driveView .drive-route-food-marker{display:flex;align-items:center;gap:6px;max-width:166px;min-width:0;padding:6px 8px 6px 6px;background:rgba(255,255,255,.97);border:1.5px solid #0b9e70;border-radius:13px;box-shadow:0 5px 15px rgba(4,30,29,.19);color:#16322d;text-align:left;cursor:pointer;white-space:nowrap}
-#driveView .drive-route-food-marker.onnuri{border-color:#387be6}
-#driveView .drive-route-food-marker .food-symbol{flex:0 0 29px;width:29px;height:29px;border-radius:9px;display:grid;place-items:center;background:#e4f6ec;color:#138255}
-#driveView .drive-route-food-marker.onnuri .food-symbol{background:#e9f1ff;color:#2268c6}
-#driveView .drive-route-food-marker .food-symbol svg{width:18px;height:18px;display:block}
-#driveView .drive-route-food-marker .food-caption{display:flex;flex-direction:column;min-width:0;gap:2px}
-#driveView .drive-route-food-marker .food-caption b{font-size:11px;line-height:1.25;max-width:110px;overflow:hidden;text-overflow:ellipsis}
-#driveView .drive-route-food-marker .food-caption small{font-size:9px;font-weight:700;color:#567369}
-@media(max-width:380px){#driveView .drive-route-food-marker{max-width:130px;padding:4px 6px}#driveView .drive-route-food-marker .food-caption b{max-width:78px}}
+/* Merchant markers: canonical rules consolidated near end of stylesheet. */
 html body #app #routeView .route-header{
   top:calc(var(--safeT) + 10px)!important;left:12px!important;right:12px!important;height:68px!important;
   grid-template-columns:44px 1fr 44px!important;padding:8px 10px!important;border-radius:22px!important;
@@ -4242,116 +4234,39 @@ html body #app #driveView #driveRadioBtn.on .drive-radio-svg .outer-right{animat
 html body #app #driveView #driveRadioBtn.off .drive-radio-svg .dangollo-radio-wave{animation:none!important;opacity:1!important}
 @media(prefers-reduced-motion:reduce){html body #app #driveView #driveRadioBtn.on .drive-radio-svg .dangollo-radio-wave{animation:none!important;opacity:1!important}}
 
-/* v7.6.24.9: allow legitimate driving route voucher merchants through legacy global marker filter. */
-html body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-drive-merchant-marker,
-html body:has(#driveView:not(.hidden)) .maplibregl-marker:has(> .drive-route-food-marker){display:block!important;visibility:visible!important;opacity:1!important;z-index:88!important}
-html body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-drive-merchant-marker .drive-route-food-marker{display:flex!important;visibility:visible!important;opacity:1!important}
-
-/* v7.6.25.0 — map-appropriate, unobtrusive merchant pins. Keep these after legacy selectors. */
-html body #app #driveView .drive-route-food-marker{
+/* v7.6.26.6 MAP MARKERS — canonical driving voucher marker styles.
+   MapLibre custom element IS the button: do not target a nested button or use #driveView descendants.
+   Do not set transform: MapLibre owns the inline transform that fixes geographical position. */
+body:has(#driveView:not(.hidden)) .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker {
   display:flex!important;align-items:center!important;justify-content:center!important;
-  width:31px!important;height:33px!important;min-width:31px!important;max-width:31px!important;
-  min-height:33px!important;max-height:33px!important;padding:0!important;margin:0!important;
-  border:1.5px solid rgba(255,255,255,.95)!important;border-radius:50% 50% 50% 7px!important;
-  background:#fff!important;box-shadow:0 2px 7px rgba(12,36,58,.20)!important;
-  transform:rotate(-45deg)!important;color:#236b53!important;white-space:normal!important;
-  opacity:.89!important;box-sizing:border-box!important;
+  width:34px!important;height:36px!important;min-width:34px!important;min-height:36px!important;
+  max-width:34px!important;max-height:36px!important;box-sizing:border-box!important;
+  margin:0!important;padding:0!important;border:2px solid #fff!important;
+  border-radius:50% 50% 50% 5px!important;background:#e7f5ec!important;
+  color:#21845b!important;box-shadow:0 3px 10px rgba(20,50,40,.22)!important;
+  opacity:1!important;visibility:visible!important;pointer-events:auto!important;
+  font-size:0!important;line-height:1!important;overflow:visible!important;
+  z-index:85!important;
 }
-html body #app #driveView .drive-route-food-marker.onnuri{color:#346ab2!important}
-html body #app #driveView .drive-route-food-marker .food-symbol{
-  display:grid!important;place-items:center!important;width:21px!important;height:21px!important;
-  min-width:21px!important;flex:0 0 21px!important;border-radius:50%!important;
-  font-size:11px!important;font-weight:900!important;line-height:1!important;
- background:#e5f5eb!important;color:#168056!important;
-}
-html body #app #driveView .drive-route-food-marker.onnuri .food-symbol{background:#eaf1ff!important;color:#246ac3!important}
-html body #app #driveView .drive-route-food-marker .food-caption{display:none!important}
-html body #app #driveView .drive-route-food-marker:active{opacity:1!important;box-shadow:0 3px 10px rgba(12,36,58,.25)!important}
-
-
-/* v7.6.25.1: driving voucher merchants use the original home-map storefront SVGs.
-   This block supersedes the old text glyph markers; no letter-based markers remain. */
-html body #app #driveView .drive-route-food-marker .food-symbol{
-  width:23px!important;height:23px!important;min-width:23px!important;
-  flex:0 0 23px!important;display:grid!important;place-items:center!important;
- 
-  background:#e7f5ec!important;color:#21845b!important;
-  border-radius:50%!important;
-}
-html body #app #driveView .drive-route-food-marker.onnuri .food-symbol{
+body:has(#driveView:not(.hidden)) .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker.onnuri {
   background:#fff1df!important;color:#b96b20!important;
 }
-html body #app #driveView .drive-route-food-marker .food-symbol svg{
-  display:block!important;width:19px!important;height:19px!important;
-  max-width:19px!important;max-height:19px!important;
-  overflow:visible!important;stroke:currentColor!important;
-}
-
-/* v7.6.25.3 — Merchant icons live in MapLibre's marker DOM, OUTSIDE #driveView.
-   All old #driveView descendant selectors do not match these nodes. */
-html body .maplibregl-marker.dangollo-drive-merchant-marker{
-  display:block!important;visibility:visible!important;opacity:1!important;
-  z-index:86!important;overflow:visible!important;
-}
-html body .maplibregl-marker.dangollo-drive-merchant-marker > button.drive-route-food-marker{
+body:has(#driveView:not(.hidden)) .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker > .food-symbol {
   display:flex!important;align-items:center!important;justify-content:center!important;
-  width:32px!important;height:34px!important;min-width:32px!important;max-width:32px!important;
-  min-height:34px!important;max-height:34px!important;
-  padding:0!important;margin:0!important;
-  border:2px solid #fff!important;border-radius:50% 50% 50% 6px!important;
-  background:#e7f5ec!important;box-shadow:0 3px 9px rgba(25,50,45,.20)!important;
-  transform:rotate(-45deg)!important;opacity:.96!important;
-  box-sizing:border-box!important;pointer-events:auto!important;
-  color:#21845b!important;font-size:0!important;line-height:1!important;
+  width:26px!important;height:26px!important;min-width:26px!important;min-height:26px!important;
+  padding:0!important;margin:0!important;background:transparent!important;color:inherit!important;
+  border:0!important;
 }
-html body .maplibregl-marker.dangollo-drive-merchant-marker > button.drive-route-food-marker.onnuri{
-  background:#fff1df!important;color:#b96b20!important;
+body:has(#driveView:not(.hidden)) .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker > .food-symbol > svg {
+  display:block!important;position:static!important;width:22px!important;height:22px!important;
+  min-width:22px!important;min-height:22px!important;max-width:22px!important;max-height:22px!important;
+  color:inherit!important;stroke:currentColor!important;opacity:1!important;visibility:visible!important;
+  transform:none!important;filter:none!important;mask:none!important;-webkit-mask:none!important;
 }
-html body .maplibregl-marker.dangollo-drive-merchant-marker .food-symbol{
-  width:25px!important;height:25px!important;min-width:25px!important;min-height:25px!important;
-  flex:0 0 25px!important;padding:0!important;margin:0!important;
-  display:grid!important;place-items:center!important;transform:rotate(45deg)!important;
-  background:transparent!important;color:inherit!important;border:0!important;
+/* Hide map-only POI markers while no car trip is active. */
+body:not(:has(#driveView:not(.hidden))) .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker {
+  display:none!important;
 }
-html body .maplibregl-marker.dangollo-drive-merchant-marker .food-symbol > svg{
-  display:block!important;visibility:visible!important;opacity:1!important;
-  width:21px!important;height:21px!important;min-width:21px!important;min-height:21px!important;
-  max-width:21px!important;max-height:21px!important;
-  stroke:currentColor!important;fill:none!important;
-  transform:none!important;filter:none!important;-webkit-mask:none!important;mask:none!important;
-}
-html body .maplibregl-marker.dangollo-drive-merchant-marker .food-caption{display:none!important}
-
-
-/* v7.6.25.4 — MapLibre's custom marker element IS the button; no nested button exists. */
-html body .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker,
-html body .maplibregl-marker.dangollo-drive-merchant-marker.drive-route-food-marker{
- display:flex!important;align-items:center!important;justify-content:center!important;
- box-sizing:border-box!important;width:34px!important;height:36px!important;min-width:34px!important;min-height:36px!important;max-width:34px!important;max-height:36px!important;
- padding:0!important;margin:0!important;border:2px solid #fff!important;border-radius:50% 50% 50% 5px!important;
- background:#e7f5ec!important;color:#21845b!important;
- box-shadow:0 3px 10px rgba(20,50,40,.22)!important;
-
- opacity:1!important;visibility:visible!important;pointer-events:auto!important;
- font-size:0!important;line-height:1!important;overflow:visible!important;
-}
-html body .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker.onnuri{
- background:#fff1df!important;color:#b96b20!important;
-}
-html body .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker > .food-symbol{
- display:flex!important;align-items:center!important;justify-content:center!important;
- box-sizing:border-box!important;width:26px!important;height:26px!important;min-width:26px!important;min-height:26px!important;
- padding:0!important;margin:0!important;background:transparent!important;color:inherit!important;border:0!important;
-
-}
-html body .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker > .food-symbol > svg{
- display:block!important;position:static!important;box-sizing:border-box!important;
- width:22px!important;height:22px!important;min-width:22px!important;min-height:22px!important;max-width:22px!important;max-height:22px!important;
- stroke:currentColor!important;fill:none!important;color:inherit!important;opacity:1!important;visibility:visible!important;
- transform:none!important;filter:none!important;mask:none!important;-webkit-mask:none!important;
-}
-/* MapLibre controls marker position with inline transform. Keep its translation and only rotate visual child. */
-html body .maplibregl-marker.drive-route-food-marker.dangollo-drive-merchant-marker{transform-origin:center bottom!important}
 
 /* v7.6.25.5 – isolated Cloudflare Workers AI controls in drive recommendation panel */
 html body #app #drivePoiPanel .drive-ai-recommend-box{margin:10px 14px;padding:12px;background:rgba(239,246,255,.97);border:1px solid #c8ddfa;border-radius:14px;color:#183659;}
