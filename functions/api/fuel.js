@@ -1,6 +1,6 @@
 /* /api/fuel — 오피넷 주변 주유소 가격 (Cloudflare Pages Function)
  *
- * v7.6.26 개선 사항
+ * v7.6.26.3 개선 사항
  *  1) 반경 검색(aroundAll.do)을 우선 사용: 카카오 지역 키/시군구 코드 매핑 없이도 "현재 위치 주변" 결과를 돌려준다.
  *     기존 lowTop10.do 는 "시군구 최저가 N개"라 반경 개념이 없고, 지역을 못 찾으면 전국 목록/빈 목록이 나왔다.
  *  2) 실패 시 단계적 폴백: 반경 5km(가격순→거리순) → 시군구 lowTop10 → 시도 lowTop10 (전국 폴백은 하지 않음: 엉뚱한 지역 가격 방지)
@@ -24,185 +24,180 @@ export async function onRequestGet({request,env}){
   if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat<-90||lat>90||lng<-180||lng>180||(lat===0&&lng===0))
     return json({error:'올바른 lat/lng가 필요합니다.',code:'INVALID_COORDINATES'},400);
 
-  const certKey=String(env.OPINET_CERT_KEY||env.OPINET_API_KEY||env.OPINET_KEY||env.OIL_API_KEY||'').trim();
-  if(!certKey)return json({
+  // Do not expose the key or its value in logs, traces, error messages, or returned URLs.
+  const key=normalizeKey(env.OPINET_CERT_KEY||env.OPINET_API_KEY||env.OPINET_KEY||env.OIL_API_KEY||'');
+  if(!key)return json({
     error:'오피넷 인증키가 서버에 연결되지 않았습니다.',code:'OPINET_KEY_MISSING',
-    setup:'Cloudflare Pages > Settings > Variables and Secrets (Production)에 OPINET_CERT_KEY 를 등록하고 재배포하세요.'
+    setup:'Cloudflare Pages > Settings > Variables and secrets 에 OPINET_CERT_KEY 를 등록하고 재배포하세요.'
   },503);
 
+  let stations=[],source='',radius=0,areaName='',upstreamError=null,aroundEmpty=false;
+  const [x,y]=wgs84ToKatec(lat,lng);
   try{
-    let stations=[],source='',radius=0,areaName='',upstreamError=null,sawEmptyOk=false;
-    // 1) 반경 검색 — 5km 가격순. 비어 있으면(드문 경우) 같은 반경에서 거리순으로 한 번 더.
-    try{
-      const [x,y]=wgs84ToKatec(lat,lng);
-      for(const sort of ['1','2']){
-        const found=await opinetAround(x,y,prodcd,5000,sort,certKey,trace);
-        if(!found.length)sawEmptyOk=true;
-        if(found.length){
-          stations=found.sort((a,b)=>a.price-b.price).slice(0,cnt);
-          source='aroundAll';radius=5000;break;
-        }
-      }
-    }catch(e){upstreamError=upstreamError||e;trace.push({step:'aroundAll',error:String(e?.message||e).slice(0,160)})}
+    // Opinet official documentation requires the certkey parameter, not 'code'.
+    // One price-sorted nearby request, then one distance-sorted retry only if it is empty.
+    for(const sort of ['1','2']){
+      try{
+        const found=await opinetAround(x,y,prodcd,5000,sort,key,trace);
+        aroundEmpty ||= found.length===0;
+        if(found.length){stations=found.sort((a,b)=>a.price-b.price).slice(0,cnt);source='aroundAll';radius=5000;break}
+      }catch(e){upstreamError ||= e;trace.push({step:'aroundAll',error:safeError(e)})}
+    }
 
-    // 2) 폴백: 시군구/시도 기준 최저가 (카카오 키가 있어 지역 판별이 가능할 때만)
     if(!stations.length){
       const region=await kakaoRegion(lat,lng,env.KAKAO_REST_API_KEY).catch(()=>null);
       if(region){
-        const area=await resolveOpinetArea(region,certKey,trace).catch(e=>{upstreamError=upstreamError||e;trace.push({step:'area',error:String(e?.message||e).slice(0,160)});return null});
-        if(area){
-          areaName=[region.region1,region.region2].filter(Boolean).join(' ');
-          for(const code of [area.sigunCode,area.sidoCode].filter(Boolean)){
-            const rowsFound=await opinetLow(code,prodcd,cnt,certKey,trace).catch(e=>{upstreamError=upstreamError||e;return []});
-            if(rowsFound.length){stations=rowsFound;source='lowTop10';break}
+        try{
+          const area=await resolveOpinetArea(region,key,trace);
+          if(area){
+            areaName=[region.region1,region.region2].filter(Boolean).join(' ');
+            for(const areaCode of [area.sigunCode,area.sidoCode].filter(Boolean)){
+              try{
+                const found=await opinetLow(areaCode,prodcd,cnt,key,trace);
+                if(found.length){stations=found;source='lowTop10';break}
+              }catch(e){upstreamError ||= e;trace.push({step:'lowTop10.do',error:safeError(e)})}
+            }
           }
-        }
+        }catch(e){upstreamError ||= e;trace.push({step:'area',error:safeError(e)})}
       }
     }
 
     if(!stations.length){
-      // 조회 API 둘 다 빈 배열이면 "5km 내 주유소 없음"으로 단정하면 안 된다.
-      // 전국 시도 목록은 정상 인증/서비스라면 비어 있지 않아야 하므로 독립 점검한다.
-      let catalogOk=false, catalogError=null;
-      try {
-        const catalog=rows(await fetchOpinetJson('areaCode.do',{},certKey,trace));
-        catalogOk=catalog.length>0;
-      }catch(e){catalogError=String(e?.message||e);}
-      if(!catalogOk){
+      // Critical: region lookup being empty is NOT evidence that no petrol station exists.
+      // Verify the same key with coordinate-independent reference endpoints.
+      const check=await checkOpinetCatalog(key,trace);
+      const diagnostic={
+        keySource:'OPINET_CERT_KEY (or configured fallback variable)',
+        aroundEmpty, catalog:check,
+        coordinateSystem:'KATEC',
+        ...(diag?{testedLocation:{lat,lng,katecX:Math.round(x),katecY:Math.round(y)},trace}:{})
+      };
+      if(!check.areaOk && !check.averageOk){
         return json({
-          error:'오피넷 공개 API가 주유소와 지역코드 모두 빈 목록을 반환했습니다. 주변 주유소 부재가 아니라 인증키의 공개 API 권한·이용 상태 또는 오피넷 서비스 응답을 확인해야 합니다.',
-          code:'OPINET_UPSTREAM_EMPTY',
-          product:prodcd,productName:PRODUCTS[prodcd],stations:[],
-          ...(diag?{diagnosis:'aroundAll·areaCode 모두 빈 결과입니다. 오피넷 웹사이트 지도와 공개 API 제공 상태는 별개이며, OPINET_CERT_KEY 발급·승인·사용 권한을 확인하세요.',catalogError,trace}:{})
+          error:'오피넷 공개 API가 반경·지역코드·전국평균유가 조회에서 모두 유효한 데이터를 반환하지 않았습니다. 인증키 발급·활성화·이용량 또는 공급측 응답을 확인하세요.',
+          code:'OPINET_KEY_OR_UPSTREAM',product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic,
+          action:'오피넷 사이트의 공개 API 관리 화면에서 발급한 키가 Cloudflare OPINET_CERT_KEY 와 일치하는지, 일반 API 사용 권한/일일 호출 한도가 남았는지 확인하세요.'
         },502);
       }
-      // 지역코드 목록은 정상이고 반경 결과만 비어 있을 때만 실제 데이터 부재 가능성을 표시한다.
-      if(upstreamError&&!sawEmptyOk){
-        const msg=String(upstreamError?.message||upstreamError);
-        return json({error:msg,code:classify(msg),...(diag?{trace}:{})},502);
+      // Reference endpoints are healthy; do not claim an empty region if all region lookup failed.
+      if(!check.areaOk){
+        return json({
+          error:'전국평균유가는 조회되지만 반경·지역코드 API는 빈 목록을 반환합니다. 반경 좌표/서비스별 이용 권한 또는 공급 응답을 점검하세요.',
+          code:'OPINET_SEARCH_EMPTY_UNVERIFIED',product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic
+        },502);
       }
       return json({
-        error:'반경 5km 안에 해당 유종의 판매가격 정보가 없습니다.',code:'FUEL_EMPTY',
-        product:prodcd,productName:PRODUCTS[prodcd],stations:[],...(diag?{trace}:{})
+        error:'지역코드 API는 정상이나 주변 유가 검색에서 판매가격 자료를 확보하지 못했습니다. 실제 반경 내 주유소가 없다는 뜻은 아닙니다.',
+        code:'OPINET_PRICE_NOT_AVAILABLE',product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic
       },200,true);
     }
 
     const detailed=await Promise.race([
-      enrichAddresses(stations.slice(0,8),certKey),
+      enrichAddresses(stations.slice(0,8),key),
       new Promise(resolve=>setTimeout(()=>resolve(stations.slice(0,8)),2200))
     ]);
-    const avg=stations.length?Math.round(stations.reduce((s,x)=>s+x.price,0)/stations.length):null;
-    return json({
-      provider:'opinet',source,radius,product:prodcd,productName:PRODUCTS[prodcd],
+    const avg=stations.length?Math.round(stations.reduce((sum,row)=>sum+row.price,0)/stations.length):null;
+    return json({provider:'opinet',source,radius,product:prodcd,productName:PRODUCTS[prodcd],
       areaName:areaName||(source==='aroundAll'?'현재 위치 주변 5km':'현재 지역'),
       averagePrice:avg,updatedAt:new Date().toISOString(),stations:detailed,
-      ...(diag?{trace}:{})
-    });
+      ...(diag?{trace,testedLocation:{lat,lng,katecX:Math.round(x),katecY:Math.round(y)}}:{})});
   }catch(e){
-    const msg=String(e?.message||'오피넷 유가 조회에 실패했습니다.');
-    return json({error:msg,code:classify(msg),...(diag?{trace}:{})},502);
+    return json({error:safeError(e),code:classify(String(e?.message||e)),...(diag?{trace}:{})},502);
   }
 }
 
+function normalizeKey(raw){
+  // Support accidental wrapping quotes in Wrangler secrets, but do not mutate valid key content.
+  const value=String(raw||'').trim();
+  return value.length>1 && ((value[0]==='"'&&value.at(-1)==='"')||(value[0]==="'"&&value.at(-1)==="'"))?value.slice(1,-1).trim():value;
+}
+function safeError(e){return String(e?.message||e||'API error').replace(/(?:certkey|code|key)=([^&\s]+)/gi,'$1=[redacted]').slice(0,160)}
 function classify(msg){
   if(/시간 초과|timeout|abort/i.test(msg))return 'OPINET_UPSTREAM_ERROR';
-  if(/인증|certkey|등록되지|승인|만료|제한|초과|access denied|permission|invalid|unauthorized|key/i.test(msg))return 'OPINET_KEY_REJECTED';
+  if(/인증|certkey|등록되지|access denied|permission|invalid/i.test(msg))return 'OPINET_KEY_REJECTED';
   if(/차단|forbidden|403|html/i.test(msg))return 'OPINET_BLOCKED';
   return 'OPINET_UPSTREAM_ERROR';
 }
 
-/* ---------------- 오피넷 호출 ---------------- */
+/* The official API lists certkey as the sole authentication query parameter.
+   Do not use HTTP fallback: an HTTP request leaks the credential. */
 async function fetchOpinetJson(endpoint,params,key,trace){
-  let lastErr=null,emptyResponse=null;
-  // 공식 문서: certkey. 일부 연동 환경에서 code를 쓰므로 빈 목록도 다음 파라미터로 재검증.
-  // 인증키를 암호화되지 않은 HTTP에 보내지 않는다.
-  for(const keyParam of ['certkey','code']){
-    const u=new URL(`https://www.opinet.co.kr/api/${endpoint}`);
-    u.searchParams.set('out','json');u.searchParams.set(keyParam,key);
-    for(const [k,v] of Object.entries(params||{}))if(v!==''&&v!=null)u.searchParams.set(k,String(v));
-    const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),7000);
+  const url=new URL('https://www.opinet.co.kr/api/'+endpoint);
+  url.searchParams.set('out','json');
+  url.searchParams.set('certkey',key);
+  for(const [k,v] of Object.entries(params||{}))if(v!==''&&v!=null)url.searchParams.set(k,String(v));
+  const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),6500);
+  try{
+    const r=await fetch(url,{headers:{accept:'application/json, text/plain, */*','user-agent':UA},signal:ctrl.signal});
+    const body=await r.text();
+    const t={step:endpoint,status:r.status,bytes:body.length};
+    if(!r.ok)throw new Error('오피넷 HTTP '+r.status);
+    let obj;
+    try{obj=JSON.parse(body)}catch{throw new Error(/<html|<!doctype/i.test(body)?'오피넷 HTML 응답':'오피넷 JSON 형식 오류')}
+    const result=obj?.RESULT;
+    if(result?.CODE && !['00','0','200'].includes(String(result.CODE)))throw new Error('오피넷 서비스 오류 '+String(result.CODE));
+    // Log only structural metadata; never a response snippet or key.
+    t.rowCount=Array.isArray(result?.OIL)?result.OIL.length:0;
+    trace?.push(t);
+    return obj;
+  }catch(e){
+    const err=e?.name==='AbortError'?new Error('오피넷 응답 시간 초과'):e;
+    trace?.push({step:endpoint,error:safeError(err)});
+    throw err;
+  }finally{clearTimeout(timer)}
+}
+function rows(data){
+  const obj=data?.RESULT;
+  if(obj?.CODE && !['00','0','200'].includes(String(obj.CODE)))throw new Error('오피넷 서비스 오류 '+String(obj.CODE));
+  const arr=obj?.OIL??obj?.AREA??obj??[];
+  return Array.isArray(arr)?arr:(arr&&typeof arr==='object'&&!arr.CODE?[arr]:[]);
+}
+async function checkOpinetCatalog(key,trace){
+  const result={areaOk:false,averageOk:false,areaCount:0,averageCount:0};
+  for(const [endpoint,field] of [['areaCode.do','area'],['avgAllPrice.do','average']]){
     try{
-      const r=await fetch(u,{headers:{'user-agent':UA,accept:'application/json, text/plain, */*'},signal:ctrl.signal});
-      const body=await r.text();
-      trace?.push({step:endpoint,scheme:'https',keyParam,status:r.status,bytes:body.length,sample:mask(body,key).slice(0,260)});
-      if(!r.ok)throw new Error(`오피넷 응답 오류 (HTTP ${r.status})`);
-      let data;
-      try{data=JSON.parse(body)}
-      catch{throw new Error(/<html|<!doctype/i.test(body)?'오피넷 HTML 응답 (차단 또는 장애)':`오피넷 응답 형식 오류: ${mask(body,key).slice(0,120)}`)}
-      assertOpinetEnvelope(data,key);
-      const list=rows(data);
-      if(list.length)return data;
-      // 정상 JSON 모양의 빈 배열도 인증키 유형·서비스 상태에 따라 반환될 수 있다.
-      // 바로 확정하지 않고 code 인증 방식까지 한 번 더 점검한다.
-      emptyResponse=data;
-    }catch(e){
-      lastErr=e?.name==='AbortError'?new Error('오피넷 응답 시간 초과'):e;
-      trace?.push({step:endpoint,keyParam,error:String(lastErr.message).slice(0,180)});
-    }finally{clearTimeout(timer)}
+      const data=rows(await fetchOpinetJson(endpoint,{},key,trace));
+      result[field+'Count']=data.length;
+      result[field+'Ok']=data.length>0;
+    }catch(e){result[field+'Error']=safeError(e)}
   }
-  if(emptyResponse)return emptyResponse;
-  throw lastErr||new Error('오피넷 호출 실패');
+  return result;
 }
-
-function mask(text,key){const t=String(text||'');return key?t.split(key).join('***'):t}
-/* 정상 응답은 {"RESULT":{"OIL":[...]}} 형태다. 그 외(인증 오류·호출 제한 안내 등)가 200 으로 오면 "데이터 없음"이 아니라 오류로 취급한다. */
-function assertOpinetEnvelope(d,key){
-  if(!d||typeof d!=='object')throw new Error('오피넷 응답 형식 오류');
-  if(!('RESULT' in d)){
-    const msg=mask(JSON.stringify(d),key).slice(0,160);
-    throw new Error(`오피넷 오류 응답: ${msg}`);
-  }
-  const r=d.RESULT;
-  if(r&&typeof r==='object'&&!Array.isArray(r)&&!('OIL' in r)&&!('AREA' in r)&&Object.keys(r).length){
-    throw new Error(`오피넷 오류 응답: ${mask(JSON.stringify(r),key).slice(0,160)}`);
-  }
-}
-function rows(d){
-  const result=d?.RESULT;
-  if(result&&typeof result==='object'&&!Array.isArray(result)&&result.CODE&&String(result.CODE)!=='00')
-    throw new Error(`오피넷 인증/조회 오류: ${String(result.MESSAGE||result.CODE)}`);
-  const r=d?.RESULT?.OIL??d?.RESULT?.AREA??d?.RESULT??[];
-  return Array.isArray(r)?r:(r&&typeof r==='object'&&!r.CODE?[r]:[]);
-}
-function mapStation(x){
-  const kx=Number(x.GIS_X_COOR),ky=Number(x.GIS_Y_COOR);
+function mapStation(row){
+  const kx=Number(row.GIS_X_COOR),ky=Number(row.GIS_Y_COOR);
   const pos=Number.isFinite(kx)&&Number.isFinite(ky)&&kx>0&&ky>0?katecToWgs84(kx,ky):null;
-  return{
-    id:x.UNI_ID||x.OS_ID||'',name:x.OS_NM||x.OS_NM_KOR||'주유소',price:Number(x.PRICE)||0,
-    brand:x.POLL_DIV_CD||x.POLL_DIV_CO||'',address:x.NEW_ADR||x.VAN_ADR||'',
-    ...(x.DISTANCE!=null&&Number.isFinite(Number(x.DISTANCE))?{distance:Math.round(Number(x.DISTANCE))}:{}),
-    ...(pos?{lat:pos[0],lng:pos[1]}:{})
-  };
+  return{id:row.UNI_ID||row.OS_ID||'',name:row.OS_NM||row.OS_NM_KOR||'주유소',
+    price:Number(row.PRICE)||0,brand:row.POLL_DIV_CD||row.POLL_DIV_CO||'',address:row.NEW_ADR||row.VAN_ADR||'',
+    ...(row.DISTANCE!=null&&Number.isFinite(Number(row.DISTANCE))?{distance:Math.round(Number(row.DISTANCE))}:{}),
+    ...(pos?{lat:pos[0],lng:pos[1]}:{})};
 }
 async function opinetAround(x,y,prodcd,radius,sort,key,trace){
-  const d=await fetchOpinetJson('aroundAll.do',{x:x.toFixed(1),y:y.toFixed(1),radius,prodcd,sort},key,trace);
-  return rows(d).map(mapStation).filter(s=>s.price>0);
+  const data=await fetchOpinetJson('aroundAll.do',{x:x.toFixed(1),y:y.toFixed(1),radius,prodcd,sort},key,trace);
+  return rows(data).map(mapStation).filter(s=>s.price>0);
 }
 async function opinetLow(area,prodcd,cnt,key,trace){
-  const d=await fetchOpinetJson('lowTop10.do',{prodcd,area,cnt},key,trace);
-  return rows(d).map(mapStation).filter(s=>s.price>0).sort((a,b)=>a.price-b.price);
+  const data=await fetchOpinetJson('lowTop10.do',{prodcd,area,cnt},key,trace);
+  return rows(data).map(mapStation).filter(s=>s.price>0).sort((a,b)=>a.price-b.price);
 }
 async function enrichAddresses(items,key){
-  return Promise.all(items.map(async s=>{
-    if(s.address||!s.id)return s;
+  return Promise.all(items.map(async station=>{
+    if(station.address||!station.id)return station;
     try{
-      const row=rows(await fetchOpinetJson('detailById.do',{id:s.id},key,null))[0]||{};
-      return{...s,name:row.OS_NM||s.name,brand:row.POLL_DIV_CD||s.brand,address:row.NEW_ADR||row.VAN_ADR||s.address};
-    }catch{return s}
+      const detail=rows(await fetchOpinetJson('detailById.do',{id:station.id},key,null))[0]||{};
+      return {...station,name:detail.OS_NM||station.name,brand:detail.POLL_DIV_CD||detail.POLL_DIV_CO||station.brand,
+        address:detail.NEW_ADR||detail.VAN_ADR||station.address};
+    }catch{return station}
   }));
 }
-
-/* ---------------- 지역 판별(폴백 전용) ---------------- */
 async function kakaoRegion(lat,lng,key){
   if(!key)return null;
   const u=new URL('https://dapi.kakao.com/v2/local/geo/coord2regioncode.json');
   u.searchParams.set('x',lng);u.searchParams.set('y',lat);
   const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),4000);
   try{
-    const r=await fetch(u,{headers:{Authorization:`KakaoAK ${key}`},signal:ctrl.signal});
+    const r=await fetch(u,{headers:{Authorization:'KakaoAK '+key},signal:ctrl.signal});
     if(!r.ok)return null;
-    const d=await r.json();
-    const doc=(d.documents||[]).find(x=>x.region_type==='H')||(d.documents||[])[0];
+    const d=await r.json(),doc=(d.documents||[]).find(v=>v.region_type==='H')||(d.documents||[])[0];
     return doc?{region1:doc.region_1depth_name||'',region2:doc.region_2depth_name||''}:null;
   }finally{clearTimeout(timer)}
 }
@@ -210,13 +205,13 @@ function normName(s=''){return String(s).replace(/특별자치시|특별자치�
 async function resolveOpinetArea(region,key,trace){
   const sidoRows=rows(await fetchOpinetJson('areaCode.do',{},key,trace));
   const n1=normName(region.region1);
-  const sido=sidoRows.find(x=>normName(x.AREA_NM)===n1)||sidoRows.find(x=>n1&&(n1.includes(normName(x.AREA_NM))||normName(x.AREA_NM).includes(n1)));
+  const sido=sidoRows.find(v=>normName(v.AREA_NM)===n1)||sidoRows.find(v=>n1&&(n1.includes(normName(v.AREA_NM))||normName(v.AREA_NM).includes(n1)));
   if(!sido)return null;
   let sigun=null;
   if(region.region2){
     const sigunRows=rows(await fetchOpinetJson('areaCode.do',{area:sido.AREA_CD},key,trace));
     const n2=normName(region.region2);
-    sigun=sigunRows.find(x=>normName(x.AREA_NM)===n2)||sigunRows.find(x=>n2.includes(normName(x.AREA_NM))||normName(x.AREA_NM).includes(n2));
+    sigun=sigunRows.find(v=>normName(v.AREA_NM)===n2)||sigunRows.find(v=>n2.includes(normName(v.AREA_NM))||normName(v.AREA_NM).includes(n2));
   }
   return{sidoCode:sido.AREA_CD||'',sigunCode:sigun?.AREA_CD||''};
 }
