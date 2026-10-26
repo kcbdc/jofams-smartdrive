@@ -25,7 +25,8 @@ export async function onRequestGet({request,env}){
     return json({error:'올바른 lat/lng가 필요합니다.',code:'INVALID_COORDINATES'},400);
 
   // Do not expose the key or its value in logs, traces, error messages, or returned URLs.
-  const key=normalizeKey(env.OPINET_CERT_KEY||env.OPINET_API_KEY||env.OPINET_KEY||env.OIL_API_KEY||'');
+  const selectedKeyName=['OPINET_CERT_KEY','OPINET_API_KEY','OPINET_KEY','OIL_API_KEY'].find(name=>String(env[name]||'').trim())||null;
+  const key=normalizeKey(selectedKeyName?env[selectedKeyName]:'');
   if(!key)return json({
     error:'오피넷 인증키가 서버에 연결되지 않았습니다.',code:'OPINET_KEY_MISSING',
     setup:'Cloudflare Pages > Settings > Variables and secrets 에 OPINET_CERT_KEY 를 등록하고 재배포하세요.'
@@ -67,7 +68,7 @@ export async function onRequestGet({request,env}){
       // Verify the same key with coordinate-independent reference endpoints.
       const check=await checkOpinetCatalog(key,trace);
       const diagnostic={
-        keySource:'OPINET_CERT_KEY (or configured fallback variable)',
+        keySource:selectedKeyName,
         aroundEmpty, catalog:check,
         coordinateSystem:'KATEC',
         ...(diag?{testedLocation:{lat,lng,katecX:Math.round(x),katecY:Math.round(y)},trace}:{})
@@ -76,7 +77,7 @@ export async function onRequestGet({request,env}){
         return json({
           error:'오피넷 공개 API가 반경·지역코드·전국평균유가 조회에서 모두 유효한 데이터를 반환하지 않았습니다. 인증키 발급·활성화·이용량 또는 공급측 응답을 확인하세요.',
           code:'OPINET_KEY_OR_UPSTREAM',product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic,
-          action:'오피넷 사이트의 공개 API 관리 화면에서 발급한 키가 Cloudflare OPINET_CERT_KEY 와 일치하는지, 일반 API 사용 권한/일일 호출 한도가 남았는지 확인하세요.'
+          action:`Cloudflare의 ${selectedKeyName} Secret에 오피넷 공식 공개 API 인증키가 설정되어 있는지 확인하고 재배포하세요. 인증키·일일 이용량·공급 API 응답은 서버 밖에서 확인해야 합니다.`
         },502);
       }
       // Reference endpoints are healthy; do not claim an empty region if all region lookup failed.
