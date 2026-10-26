@@ -91,7 +91,7 @@ export async function onRequestGet({request,env}){
 
 function classify(msg){
   if(/시간 초과|timeout|abort/i.test(msg))return 'OPINET_UPSTREAM_ERROR';
-  if(/인증|certkey|등록되지|access denied|permission|invalid/i.test(msg))return 'OPINET_KEY_REJECTED';
+  if(/인증|certkey|등록되지|승인|만료|제한|초과|access denied|permission|invalid|unauthorized|key/i.test(msg))return 'OPINET_KEY_REJECTED';
   if(/차단|forbidden|403|html/i.test(msg))return 'OPINET_BLOCKED';
   return 'OPINET_UPSTREAM_ERROR';
 }
@@ -99,27 +99,44 @@ function classify(msg){
 /* ---------------- 오피넷 호출 ---------------- */
 async function fetchOpinetJson(endpoint,params,key,trace){
   let lastErr=null;
+  // 오피넷 문서 버전에 따라 인증 파라미터명이 certkey / code 로 다르다 → 한 가지씩 순서대로 시도한다.
   for(const scheme of ['https','http']){
-    const u=new URL(`${scheme}://www.opinet.co.kr/api/${endpoint}`);
-    u.searchParams.set('out','json');
-    u.searchParams.set('certkey',key);u.searchParams.set('code',key); // 문서 버전에 따라 인증 파라미터명이 다르다
-    for(const [k,v] of Object.entries(params||{}))if(v!==''&&v!=null)u.searchParams.set(k,String(v));
-    const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),8000);
-    try{
-      const r=await fetch(u,{headers:{'user-agent':UA,accept:'application/json, text/plain, */*'},signal:ctrl.signal});
-      const text=await r.text();
-      trace?.push({step:endpoint,scheme,status:r.status,bytes:text.length});
-      if(!r.ok)throw new Error(`오피넷 응답 오류 (HTTP ${r.status})`);
-      let data;
-      try{data=JSON.parse(text)}
-      catch{throw new Error(/<html|<!doctype/i.test(text)?'오피넷 접속이 차단되었거나 HTML 응답이 반환되었습니다.':'오피넷 응답 형식 오류')}
-      return data;
-    }catch(e){
-      lastErr=e?.name==='AbortError'?new Error('오피넷 응답 시간 초과'):e;
-      trace?.push({step:endpoint,scheme,error:String(lastErr.message).slice(0,120)});
-    }finally{clearTimeout(timer)}
+    for(const keyParam of ['certkey','code']){
+      const u=new URL(`${scheme}://www.opinet.co.kr/api/${endpoint}`);
+      u.searchParams.set('out','json');u.searchParams.set(keyParam,key);
+      for(const [k,v] of Object.entries(params||{}))if(v!==''&&v!=null)u.searchParams.set(k,String(v));
+      const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),8000);
+      try{
+        const r=await fetch(u,{headers:{'user-agent':UA,accept:'application/json, text/plain, */*'},signal:ctrl.signal});
+        const text=await r.text();
+        trace?.push({step:endpoint,scheme,keyParam,status:r.status,bytes:text.length,sample:mask(text,key).slice(0,300)});
+        if(!r.ok)throw new Error(`오피넷 응답 오류 (HTTP ${r.status})`);
+        let data;
+        try{data=JSON.parse(text)}
+        catch{throw new Error(/<html|<!doctype/i.test(text)?'오피넷 접속이 차단되었거나 HTML 응답이 반환되었습니다.':`오피넷 응답 형식 오류: ${mask(text,key).slice(0,120)}`)}
+        assertOpinetEnvelope(data,key);
+        return data;
+      }catch(e){
+        lastErr=e?.name==='AbortError'?new Error('오피넷 응답 시간 초과'):e;
+        trace?.push({step:endpoint,scheme,keyParam,error:String(lastErr.message).slice(0,200)});
+        if(e?.name==='AbortError')break; // 시간 초과는 같은 scheme 의 다른 파라미터를 시도하지 않는다
+      }finally{clearTimeout(timer)}
+    }
   }
   throw lastErr||new Error('오피넷 호출 실패');
+}
+function mask(text,key){const t=String(text||'');return key?t.split(key).join('***'):t}
+/* 정상 응답은 {"RESULT":{"OIL":[...]}} 형태다. 그 외(인증 오류·호출 제한 안내 등)가 200 으로 오면 "데이터 없음"이 아니라 오류로 취급한다. */
+function assertOpinetEnvelope(d,key){
+  if(!d||typeof d!=='object')throw new Error('오피넷 응답 형식 오류');
+  if(!('RESULT' in d)){
+    const msg=mask(JSON.stringify(d),key).slice(0,160);
+    throw new Error(`오피넷 오류 응답: ${msg}`);
+  }
+  const r=d.RESULT;
+  if(r&&typeof r==='object'&&!Array.isArray(r)&&!('OIL' in r)&&!('AREA' in r)&&Object.keys(r).length){
+    throw new Error(`오피넷 오류 응답: ${mask(JSON.stringify(r),key).slice(0,160)}`);
+  }
 }
 function rows(d){
   const result=d?.RESULT;
