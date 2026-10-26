@@ -61,7 +61,22 @@ export async function onRequestGet({request,env}){
     }
 
     if(!stations.length){
-      // 상류(오피넷) 호출 자체가 실패한 경우와, 정상 응답인데 데이터가 없는 경우를 구분한다.
+      // 조회 API 둘 다 빈 배열이면 "5km 내 주유소 없음"으로 단정하면 안 된다.
+      // 전국 시도 목록은 정상 인증/서비스라면 비어 있지 않아야 하므로 독립 점검한다.
+      let catalogOk=false, catalogError=null;
+      try {
+        const catalog=rows(await fetchOpinetJson('areaCode.do',{},certKey,trace));
+        catalogOk=catalog.length>0;
+      }catch(e){catalogError=String(e?.message||e);}
+      if(!catalogOk){
+        return json({
+          error:'오피넷 공개 API가 주유소와 지역코드 모두 빈 목록을 반환했습니다. 주변 주유소 부재가 아니라 인증키의 공개 API 권한·이용 상태 또는 오피넷 서비스 응답을 확인해야 합니다.',
+          code:'OPINET_UPSTREAM_EMPTY',
+          product:prodcd,productName:PRODUCTS[prodcd],stations:[],
+          ...(diag?{diagnosis:'aroundAll·areaCode 모두 빈 결과입니다. 오피넷 웹사이트 지도와 공개 API 제공 상태는 별개이며, OPINET_CERT_KEY 발급·승인·사용 권한을 확인하세요.',catalogError,trace}:{})
+        },502);
+      }
+      // 지역코드 목록은 정상이고 반경 결과만 비어 있을 때만 실제 데이터 부재 가능성을 표시한다.
       if(upstreamError&&!sawEmptyOk){
         const msg=String(upstreamError?.message||upstreamError);
         return json({error:msg,code:classify(msg),...(diag?{trace}:{})},502);
@@ -98,33 +113,37 @@ function classify(msg){
 
 /* ---------------- 오피넷 호출 ---------------- */
 async function fetchOpinetJson(endpoint,params,key,trace){
-  let lastErr=null;
-  // 오피넷 문서 버전에 따라 인증 파라미터명이 certkey / code 로 다르다 → 한 가지씩 순서대로 시도한다.
-  for(const scheme of ['https','http']){
-    for(const keyParam of ['certkey','code']){
-      const u=new URL(`${scheme}://www.opinet.co.kr/api/${endpoint}`);
-      u.searchParams.set('out','json');u.searchParams.set(keyParam,key);
-      for(const [k,v] of Object.entries(params||{}))if(v!==''&&v!=null)u.searchParams.set(k,String(v));
-      const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),8000);
-      try{
-        const r=await fetch(u,{headers:{'user-agent':UA,accept:'application/json, text/plain, */*'},signal:ctrl.signal});
-        const text=await r.text();
-        trace?.push({step:endpoint,scheme,keyParam,status:r.status,bytes:text.length,sample:mask(text,key).slice(0,300)});
-        if(!r.ok)throw new Error(`오피넷 응답 오류 (HTTP ${r.status})`);
-        let data;
-        try{data=JSON.parse(text)}
-        catch{throw new Error(/<html|<!doctype/i.test(text)?'오피넷 접속이 차단되었거나 HTML 응답이 반환되었습니다.':`오피넷 응답 형식 오류: ${mask(text,key).slice(0,120)}`)}
-        assertOpinetEnvelope(data,key);
-        return data;
-      }catch(e){
-        lastErr=e?.name==='AbortError'?new Error('오피넷 응답 시간 초과'):e;
-        trace?.push({step:endpoint,scheme,keyParam,error:String(lastErr.message).slice(0,200)});
-        if(e?.name==='AbortError')break; // 시간 초과는 같은 scheme 의 다른 파라미터를 시도하지 않는다
-      }finally{clearTimeout(timer)}
-    }
+  let lastErr=null,emptyResponse=null;
+  // 공식 문서: certkey. 일부 연동 환경에서 code를 쓰므로 빈 목록도 다음 파라미터로 재검증.
+  // 인증키를 암호화되지 않은 HTTP에 보내지 않는다.
+  for(const keyParam of ['certkey','code']){
+    const u=new URL(`https://www.opinet.co.kr/api/${endpoint}`);
+    u.searchParams.set('out','json');u.searchParams.set(keyParam,key);
+    for(const [k,v] of Object.entries(params||{}))if(v!==''&&v!=null)u.searchParams.set(k,String(v));
+    const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),7000);
+    try{
+      const r=await fetch(u,{headers:{'user-agent':UA,accept:'application/json, text/plain, */*'},signal:ctrl.signal});
+      const body=await r.text();
+      trace?.push({step:endpoint,scheme:'https',keyParam,status:r.status,bytes:body.length,sample:mask(body,key).slice(0,260)});
+      if(!r.ok)throw new Error(`오피넷 응답 오류 (HTTP ${r.status})`);
+      let data;
+      try{data=JSON.parse(body)}
+      catch{throw new Error(/<html|<!doctype/i.test(body)?'오피넷 HTML 응답 (차단 또는 장애)':`오피넷 응답 형식 오류: ${mask(body,key).slice(0,120)}`)}
+      assertOpinetEnvelope(data,key);
+      const list=rows(data);
+      if(list.length)return data;
+      // 정상 JSON 모양의 빈 배열도 인증키 유형·서비스 상태에 따라 반환될 수 있다.
+      // 바로 확정하지 않고 code 인증 방식까지 한 번 더 점검한다.
+      emptyResponse=data;
+    }catch(e){
+      lastErr=e?.name==='AbortError'?new Error('오피넷 응답 시간 초과'):e;
+      trace?.push({step:endpoint,keyParam,error:String(lastErr.message).slice(0,180)});
+    }finally{clearTimeout(timer)}
   }
+  if(emptyResponse)return emptyResponse;
   throw lastErr||new Error('오피넷 호출 실패');
 }
+
 function mask(text,key){const t=String(text||'');return key?t.split(key).join('***'):t}
 /* 정상 응답은 {"RESULT":{"OIL":[...]}} 형태다. 그 외(인증 오류·호출 제한 안내 등)가 200 으로 오면 "데이터 없음"이 아니라 오류로 취급한다. */
 function assertOpinetEnvelope(d,key){
@@ -150,7 +169,7 @@ function mapStation(x){
   const pos=Number.isFinite(kx)&&Number.isFinite(ky)&&kx>0&&ky>0?katecToWgs84(kx,ky):null;
   return{
     id:x.UNI_ID||x.OS_ID||'',name:x.OS_NM||x.OS_NM_KOR||'주유소',price:Number(x.PRICE)||0,
-    brand:x.POLL_DIV_CD||'',address:x.NEW_ADR||x.VAN_ADR||'',
+    brand:x.POLL_DIV_CD||x.POLL_DIV_CO||'',address:x.NEW_ADR||x.VAN_ADR||'',
     ...(x.DISTANCE!=null&&Number.isFinite(Number(x.DISTANCE))?{distance:Math.round(Number(x.DISTANCE))}:{}),
     ...(pos?{lat:pos[0],lng:pos[1]}:{})
   };
