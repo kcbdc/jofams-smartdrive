@@ -4322,3 +4322,10 @@ body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-camera.passe
 .maplibregl-marker.camera-pin,.maplibregl-marker.dangollo-route-camera,
 .maplibregl-marker .safety-map-marker.camera-pin,.camera-cluster-marker,
 .maplibregl-marker.speed-limit-marker{display:none!important;}
+
+/* v7.6.27.5 — accessible, non-blocking voice destination confirmation */
+.dangollo-ai-confirm-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(12,27,40,.65)}
+.dangollo-ai-confirm-card{max-width:440px;width:100%;border-radius:20px;background:#fff;color:#193044;padding:24px;box-shadow:0 12px 38px #0004;font-family:inherit}
+.dangollo-ai-confirm-card strong{font-size:21px}.dangollo-ai-confirm-card p{font-size:16px;line-height:1.6;margin:16px 0}
+.dangollo-ai-confirm-actions{display:flex;gap:12px}.dangollo-ai-confirm-actions button{flex:1;min-height:52px;border-radius:12px;border:1px solid #aab9c4;background:#f5f8fa;color:#233744;font-size:16px;font-weight:700}
+.dangollo-ai-confirm-actions button:last-child{background:#087e59;border-color:#087e59;color:white}

@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 const CONFIG = window.__APP_CONFIG__ || {};
-const ADMIN_EMAIL='churchoffire@gmail.com';
+// Admin authorization must be verified by /api/admin-access, never by a client-side email allowlist.
 const SETTINGS='jofams-navi.settings.v75';
 const FAVS='jofams-navi.favorites.v75';
 const RECENTS='jofams-navi.recents.v75';
@@ -2597,6 +2597,23 @@ function renderRouteEndpointLayers(route=state.route){
     for(const key of ['originMarker','destMarker']){try{state[key]?.remove()}catch{}state[key]=null}
   }catch(e){console.warn('[endpoints] render failed',e)}
 }
+function routeFitPadding(){
+  const w=Math.max(320,window.innerWidth||360),h=Math.max(240,window.innerHeight||640);
+  const rv=document.getElementById('routeView');
+  const shown=rv&&!rv.classList.contains('hidden');
+  const rect=selector=>{const el=shown?rv.querySelector(selector):null;if(!el)return null;const r=el.getBoundingClientRect();return r.width&&r.height?r:null};
+  const header=rect('.route-header'),sheet=rect('.route-sheet');
+  if(w>h){const left=Math.max(header?.right||0,sheet?.right||0);return {top:88,bottom:Math.max(26,Math.round(h*.1)),left:Math.min(Math.round(left)+22,Math.round(w*.57)),right:32};}
+  const top=Math.min(Math.max(90,Math.round((header?.bottom||0)+78)),Math.round(h*.28));
+  const bottom=Math.min(Math.max(100,Math.round(h-(sheet?.top??(h-260))+24)),Math.round(h*.56));
+  return {top,bottom,left:36,right:36};
+}
+function fitSelectedRoute(route){
+  const geo=route?.geometry;if(!state.map||!Array.isArray(geo)||geo.length<2)return;
+  const bounds=new maplibregl.LngLatBounds();geo.forEach(point=>bounds.extend(point));
+  try{state.map.fitBounds(bounds,{padding:routeFitPadding(),duration:650,maxZoom:17.2})}
+  catch(e){console.warn('route bounds fit fallback',e);state.map.fitBounds(bounds,{padding:36,duration:650,maxZoom:17.2})}
+}
 function drawRoute(route=state.route,{fit=true}={}){
   if(!route?.geometry?.length||!state.map)return;
   if(!state.mapReady||!state.map.isStyleLoaded()){state.pendingRouteDraw={route,options:{fit}};return}
@@ -2641,7 +2658,7 @@ function drawRoute(route=state.route,{fit=true}={}){
   renderRouteEndpointLayers(route);
   // 레이어를 다시 추가/갱신한 뒤에도 도로 < 카메라 < 끝점 심볼 순서를 보장.
   ensureRouteCameraStackOrder();
-  if(fit){const b=new maplibregl.LngLatBounds();route.geometry.forEach(p=>b.extend(p));state.map.fitBounds(b,{padding:{top:100,bottom:310,left:36,right:36},duration:650})}
+  if(fit)fitSelectedRoute(route);
 }
 function clearRouteLayer(){['dangollo-endpoint-pin-label','dangollo-endpoint-pin-icon','dangollo-endpoint-label','dangollo-endpoint-core','dangollo-endpoint-halo','route-direction-arrows','route-traffic','route-main','route-shadow'].forEach(id=>{if(state.map?.getLayer(id))state.map.removeLayer(id)});['dangollo-route-endpoints','route-traffic','route'].forEach(id=>{if(state.map?.getSource(id))state.map.removeSource(id)})}
 
@@ -7879,6 +7896,26 @@ function initRouteAiCompare(){
 async function parseVoiceIntentWithAi(text){
   try{return(await callWorkerAiAssist('voice_parse',{text:text.slice(0,240)},6500)).intent||null}catch{return null}
 }
+function confirmDestinationChange(name){
+  // Non-blocking in-app confirmation. No automatic route switch while driving.
+  return new Promise(resolve=>{
+    const backdrop=document.createElement('div');backdrop.className='dangollo-ai-confirm-overlay';
+    backdrop.setAttribute('role','presentation');
+    const card=document.createElement('section');card.className='dangollo-ai-confirm-card';
+    card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');card.setAttribute('aria-label','목적지 변경 확인');
+    const title=document.createElement('strong');title.textContent='목적지를 변경할까요?';
+    const detail=document.createElement('p');detail.textContent='새 목적지: '+String(name).slice(0,80)+' — 안전한 곳에서 확인해 주세요.';
+    const buttons=document.createElement('div');buttons.className='dangollo-ai-confirm-actions';
+    const cancel=document.createElement('button');cancel.textContent='취소';
+    const accept=document.createElement('button');accept.textContent='변경 확인';
+    const finish=ok=>{document.removeEventListener('keydown',onKey);backdrop.remove();resolve(ok)};
+    const onKey=e=>{if(e.key==='Escape')finish(false)};
+    cancel.onclick=()=>finish(false);accept.onclick=()=>finish(true);
+    backdrop.onclick=e=>{if(e.target===backdrop)finish(false)};
+    buttons.append(cancel,accept);card.append(title,detail,buttons);backdrop.append(card);document.body.append(backdrop);
+    document.addEventListener('keydown',onKey);cancel.focus();
+  });
+}
 async function handleVoiceCommandText(raw){
   const text=String(raw||'').trim();if(!text)return toast('명령을 다시 말씀해 주세요.');
   if(text.includes('재탐색'))return reroute();
@@ -7891,10 +7928,10 @@ async function handleVoiceCommandText(raw){
     if(!$('routeAiCompareResult'))return toast('경로 화면에서 AI 비교 기능을 이용해 주세요.');
     setView('route');return explainRoutesWithAi();
   }
-  if(voiceRecommendationRequested(text))return runVoiceMerchantRecommendation(text);
-  // Complex spoken phrases are resolved via AI only when the simple parser cannot classify them.
+  // Route/stops requests are AI-first; deterministic rules remain the timeout fallback.
+  // Complex spoken phrases are resolved via AI before broad merchant regular expressions.
   // Failure or timeout falls through to existing deterministic destination search.
-  if(/가는\s*길에|근처에서|주변에|상품권|온누리|지역사랑|잠깐\s*들|들렀다/.test(text)){
+  if(voiceRecommendationRequested(text)||/가는\s*길에|근처에서|주변에|상품권|온누리|지역사랑|잠깐\s*들|들렀다/.test(text)){
     const intent=await parseVoiceIntentWithAi(text);
     if(intent?.type==='merchant_recommend'){
       const categoryHint=intent.category==='cafe'?'카페':intent.category==='dessert'?'디저트':intent.category==='meal'?'맛집':'';
@@ -7903,10 +7940,11 @@ async function handleVoiceCommandText(raw){
     if(intent?.type==='route_compare'){setView('route');return explainRoutesWithAi()}
     if(intent?.type==='destination'&&intent.destination){
       const proposed=String(intent.destination).slice(0,80);
-      if(state.tripStartedAt&&!window.confirm(`목적지를 “${proposed}”로 변경하시겠습니까?`))return;
+      if(state.tripStartedAt&&!(await confirmDestinationChange(proposed)))return;
       return handleVoiceCommandText(proposed);
     }
   }
+  if(voiceRecommendationRequested(text))return runVoiceMerchantRecommendation(text);
   const q=normalizeVoiceDestination(text);if(!q)return toast('목적지를 다시 말씀해 주세요.');
   toast(`“${q}” 목적지를 찾고 있습니다...`,2200);
   try{
@@ -7939,7 +7977,7 @@ function localAdminEmail(){
   return normalizedEmail(u?.email||u?.providerData?.find?.(p=>p?.email)?.email||'');
 }
 function isAdminUser(){
-  return localAdminEmail()===normalizedEmail(ADMIN_EMAIL) || state.adminVerified===true;
+  return state.adminVerified===true;
 }
 async function authFetch(url,opt={}){
   const token=await firebaseIdToken();
@@ -7953,12 +7991,6 @@ async function verifyAdminAccess(){
     state.adminVerifiedEmail='';
     updateAdminUI();
     return false;
-  }
-  if(localAdminEmail()===normalizedEmail(ADMIN_EMAIL)){
-    state.adminVerified=true;
-    state.adminVerifiedEmail=localAdminEmail();
-    updateAdminUI();
-    return true;
   }
   try{
     const r=await authFetch('/api/admin-access',{cache:'no-store'});
@@ -8110,7 +8142,7 @@ function updateAdminUI(){
 async function openAdminMode(){
   if(!isAdminUser())await verifyAdminAccess();
   if(!isAdminUser())return toast(`관리자 계정만 이용할 수 있습니다.${localAdminEmail()?` (현재: ${localAdminEmail()})`:''}`);
-  $('adminAccountLabel').textContent=state.adminVerifiedEmail||localAdminEmail()||ADMIN_EMAIL;
+  $('adminAccountLabel').textContent=state.adminVerifiedEmail||localAdminEmail()||'인증 필요';
   $('adminModal').classList.remove('hidden');
   switchAdminTab('notices');
 }
