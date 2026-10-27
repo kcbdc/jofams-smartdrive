@@ -66,6 +66,14 @@ export async function onRequestGet({request,env}){
     if(!stations.length){
       // Critical: region lookup being empty is NOT evidence that no petrol station exists.
       // Verify the same key with coordinate-independent reference endpoints.
+      // Catalog diagnostics are expensive and not product-specific. Run them only on
+      // explicit ?diag=1; otherwise a transient empty result is not 'invalid key'.
+      if(!diag){
+        return json({provider:'opinet',source:'none',product:prodcd,productName:PRODUCTS[prodcd],
+          stations:[],code:'OPINET_PRODUCT_UNAVAILABLE',
+          error:`${PRODUCTS[prodcd]}의 주변 판매가격을 현재 확인하지 못했습니다. 다른 유종의 정상 조회와 인증 오류는 별개입니다.`,
+          retryable:true},200,true);
+      }
       const check=await checkOpinetCatalog(key,trace);
       const diagnostic={
         keySource:selectedKeyName,
@@ -75,7 +83,7 @@ export async function onRequestGet({request,env}){
       };
       if(!check.areaOk && !check.averageOk){
         return json({
-          error:'오피넷 공개 API가 반경·지역코드·전국평균유가 조회에서 모두 유효한 데이터를 반환하지 않았습니다. 인증키 발급·활성화·이용량 또는 공급측 응답을 확인하세요.',
+          error:'오피넷 API가 선택 유종 및 진단 요청에 빈 목록을 반환했습니다. 인증 문제로 확정할 수 없으므로 유종별 가격 게시 여부·일시 응답·호출 한도를 확인하세요.',
           code:'OPINET_KEY_OR_UPSTREAM',product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic,
           action:`Cloudflare의 ${selectedKeyName} Secret에 오피넷 공식 공개 API 인증키가 설정되어 있는지 확인하고 재배포하세요. 인증키·일일 이용량·공급 API 응답은 서버 밖에서 확인해야 합니다.`
         },502);
