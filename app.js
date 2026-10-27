@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 const CONFIG = window.__APP_CONFIG__ || {};
-const ADMIN_EMAIL='churchoffire@gmail.com';
+// Admin authorization must be verified by /api/admin-access, never by a client-side email allowlist.
 const SETTINGS='jofams-navi.settings.v75';
 const FAVS='jofams-navi.favorites.v75';
 const RECENTS='jofams-navi.recents.v75';
@@ -2592,10 +2592,28 @@ function renderRouteEndpointLayers(route=state.route){
       // Avoid map glyph/font loading dependencies: icons render even when text glyph server fails.
       if(state.map.getLayer('dangollo-endpoint-pin-label'))state.map.removeLayer('dangollo-endpoint-pin-label');
       state.map.moveLayer('dangollo-endpoint-pin-icon');
+      if(state.map.getLayer(ROUTE_CAMERA_LAYER))ensureRouteCameraStackOrder();
     }
     // No duplicate DOM markers: keep one source of truth (route GeoJSON endpoints).
     for(const key of ['originMarker','destMarker']){try{state[key]?.remove()}catch{}state[key]=null}
   }catch(e){console.warn('[endpoints] render failed',e)}
+}
+function routeFitPadding(){
+  const w=Math.max(320,window.innerWidth||360),h=Math.max(240,window.innerHeight||640);
+  const rv=document.getElementById('routeView');
+  const shown=rv&&!rv.classList.contains('hidden');
+  const rect=selector=>{const el=shown?rv.querySelector(selector):null;if(!el)return null;const r=el.getBoundingClientRect();return r.width&&r.height?r:null};
+  const header=rect('.route-header'),sheet=rect('.route-sheet');
+  if(w>h){const left=Math.max(header?.right||0,sheet?.right||0);return {top:88,bottom:Math.max(26,Math.round(h*.1)),left:Math.min(Math.round(left)+22,Math.round(w*.57)),right:32};}
+  const top=Math.min(Math.max(90,Math.round((header?.bottom||0)+78)),Math.round(h*.28));
+  const bottom=Math.min(Math.max(100,Math.round(h-(sheet?.top??(h-260))+24)),Math.round(h*.56));
+  return {top,bottom,left:36,right:36};
+}
+function fitSelectedRoute(route){
+  const geo=route?.geometry;if(!state.map||!Array.isArray(geo)||geo.length<2)return;
+  const bounds=new maplibregl.LngLatBounds();geo.forEach(point=>bounds.extend(point));
+  try{state.map.fitBounds(bounds,{padding:routeFitPadding(),duration:650,maxZoom:17.2})}
+  catch(e){console.warn('route bounds fit fallback',e);state.map.fitBounds(bounds,{padding:36,duration:650,maxZoom:17.2})}
 }
 function drawRoute(route=state.route,{fit=true}={}){
   if(!route?.geometry?.length||!state.map)return;
@@ -2639,9 +2657,9 @@ function drawRoute(route=state.route,{fit=true}={}){
     if(state.map.getLayer('route-direction-arrows'))state.map.moveLayer('route-direction-arrows');
   }catch(e){console.warn('route arrow layer order failed',e)}
   renderRouteEndpointLayers(route);
-  // 레이어를 다시 추가/갱신한 뒤에도 도로 < 카메라 < 끝점 심볼 순서를 보장.
+  // 레이어를 다시 추가/갱신한 뒤에도 도로 < 방향 화살표 < 카메라 < 끝점 심볼 순서를 보장.
   ensureRouteCameraStackOrder();
-  if(fit){const b=new maplibregl.LngLatBounds();route.geometry.forEach(p=>b.extend(p));state.map.fitBounds(b,{padding:{top:100,bottom:310,left:36,right:36},duration:650})}
+  if(fit)fitSelectedRoute(route);
 }
 function clearRouteLayer(){['dangollo-endpoint-pin-label','dangollo-endpoint-pin-icon','dangollo-endpoint-label','dangollo-endpoint-core','dangollo-endpoint-halo','route-direction-arrows','route-traffic','route-main','route-shadow'].forEach(id=>{if(state.map?.getLayer(id))state.map.removeLayer(id)});['dangollo-route-endpoints','route-traffic','route'].forEach(id=>{if(state.map?.getSource(id))state.map.removeSource(id)})}
 
@@ -3298,6 +3316,14 @@ function fuelBrandName(code){
   return ({SKE:'SK',GSC:'GS칼텍스',HDO:'HD현대오일뱅크',SOL:'S-OIL',RTE:'알뜰',RTX:'고속도로알뜰',NHO:'농협알뜰',ETC:'자가상표',E1G:'E1',SKG:'SK가스'})[code]||code||'';
 }
 function fuelFreshEnough(){
+  // A recently fetched price list belongs to its original search location.
+  // Navigating to another district must invalidate it without a hard reload.
+  const here=currentOriginPoint(),anchor=state.fuelFetchedOrigin;
+  if(pointValid(here)&&pointValid(anchor)){
+    const latDelta=(Number(here.lat)-Number(anchor.lat))*111200;
+    const lngDelta=(Number(here.lng)-Number(anchor.lng))*111200*Math.cos(Number(here.lat)*Math.PI/180);
+    if(Math.hypot(latDelta,lngDelta)>1300)return false;
+  }
   if(!(state.fuelData&&Date.now()-Number(state.fuelFetchedAt||0)<5*60*1000))return false;
   // 주행 중에는 조회 시점보다 3km 이상 진행했으면 앞쪽 구간 주유소를 다시 조회한다.
   if(state.tripStartedAt&&state.route?.geometry?.length){
@@ -3348,13 +3374,18 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
   if(!force&&fuelFreshEnough()&&state.fuelData?.product===state.fuelProduct){
     renderFuelData(state.fuelData);return;
   }
-  if(state.fuelLoading)return;
-  if(Date.now()<Number(state.fuelUpstreamCooldownUntil||0)){
-    renderFuelError('오피넷 인증·공급 API가 응답하지 않아 재시도를 잠시 제한합니다. Cloudflare Secret과 오피넷 공개 API 사용 상태를 확인하세요.','OPINET_KEY_OR_UPSTREAM');
+  // An in-flight request must not silently swallow a tab/location change.
+  if(state.fuelLoading){state.fuelPendingRequest={product:requestedProduct,force,modal};return;}
+  // Manual refresh always bypasses cooldown; temporary upstream failures never lock
+  // the UI behind a misleading 2-minute authentication warning.
+  if(!force&&Date.now()<Number(state.fuelUpstreamCooldownUntil||0)){
+    if(state.fuelData?.product===requestedProduct){renderFuelData(state.fuelData);return;}
+    // Explicit retry remains available even when no cached result exists.
+    renderFuelError('오피넷 응답이 일시적으로 지연되고 있습니다. 다시 시도할 수 있습니다.','OPINET_UPSTREAM_ERROR');
     return;
   }
   state.fuelLoading=true;
-  renderFuelLoading();
+  if(state.fuelData?.product!==requestedProduct)renderFuelLoading();
   try{
     const driving=Boolean(state.tripStartedAt&&state.route?.geometry?.length);
     // 주행 중에는 현재 위치 주변만이 아니라 앞으로 달릴 경로를 따라 여러 지점에서 조회해 합친다.
@@ -3386,18 +3417,21 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
       d.stations=all;
     }
     if(!Array.isArray(d.stations))throw new Error('오피넷 API 응답 형식 오류');
-    if(requestedProduct!==state.fuelProduct)return;
+    if(requestedProduct!==state.fuelProduct){state.fuelPendingRequest={product:state.fuelProduct,force:true};return;}
     if(!d.stations.length){
       if(state.fuelData?.stations?.length){renderFuelData(state.fuelData);return;}
       {const err=new Error('반경 5km 안에 해당 유종의 판매가격 정보가 없습니다.');err.code='FUEL_EMPTY';throw err}
     }
     state.fuelUpstreamCooldownUntil=0;
     state.fuelFetchedRouteM=curM;
+    state.fuelFetchedOrigin={lat:Number(fuelOrigin.lat),lng:Number(fuelOrigin.lng)};
     d.product=requestedProduct;state.fuelData=d;state.fuelFetchedAt=Date.now();
     try{localStorage.setItem('jofams_fuel_last_success_v1',JSON.stringify({savedAt:Date.now(),payload:d}))}catch{}
     renderFuelData(d);
   }catch(e){
-    if(['OPINET_KEY_OR_UPSTREAM','OPINET_KEY_REJECTED','OPINET_BLOCKED'].includes(e?.code))state.fuelUpstreamCooldownUntil=Date.now()+120000;
+    // A single empty/error response while changing screens is not proof of a bad key.
+    // A manual refresh must always work without a full page reload.
+    state.fuelUpstreamCooldownUntil=0;
     // 일시적인 서버/외부 API 오류라면 마지막 정상 유가를 우선 표시한다.
     let cached=null;
     try{
@@ -3408,11 +3442,18 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
       state.fuelData=cached;state.fuelFetchedAt=Number(Date.now()-5*60*1000);
       renderFuelData(cached);
       toast('실시간 유가 연결이 지연되어 최근 정상 유가를 표시합니다.',2400);
+    }else if(state.fuelData?.product===requestedProduct&&state.fuelData?.stations?.length){
+      renderFuelData(state.fuelData);
+      toast('유가 갱신이 지연되어 마지막 정상 정보를 유지합니다.',2200);
     }else{
       renderFuelError(e?.message||'유가 정보를 불러오지 못했습니다.',e?.code||'');
     }
   }
-  finally{state.fuelLoading=false}
+  finally{
+    state.fuelLoading=false;
+    const pending=state.fuelPendingRequest;state.fuelPendingRequest=null;
+    if(pending)queueMicrotask(()=>loadFuelPrices(pending.product,{force:true,modal:pending.modal}).catch(e=>console.warn('fuel pending request',e)));
+  }
 }
 function syncFuelTabs(){
   document.querySelectorAll('[data-fuel-product],[data-fuel-modal-product]').forEach(b=>{
@@ -5943,20 +5984,14 @@ function ensureRouteCameraStackOrder(){
   const map=state.map;
   if(!map?.getLayer?.(ROUTE_CAMERA_LAYER))return;
   try{
-    // 1층: 경로선(교통 색상 포함) → 2층: 방향 화살표 → 3층: 카메라.
-    // MapLibre 레이어 순서에서는 나중에 놓은 레이어가 위에 그려진다.
-    const arrows='route-direction-arrows';
-    const endpoint='dangollo-endpoint-pin-icon';
-    if(map.getLayer(arrows)){
-      if(map.getLayer(endpoint))map.moveLayer(arrows,endpoint);
-      else map.moveLayer(arrows);
-    }
-    if(map.getLayer(endpoint))map.moveLayer(ROUTE_CAMERA_LAYER,endpoint);
-    else map.moveLayer(ROUTE_CAMERA_LAYER);
-    // 4층 차량 캐릭터는 MapLibre DOM Marker로 WebGL 지도 레이어 위에 유지한다.
-    // 출발·도착 마커는 별도 심볼이므로 기존 가독성 규칙을 보존한다.
+    // MapLibre draws later style layers above earlier ones. Restore all four levels,
+    // including after setStyle(), endpoint refresh, route traffic redraw.
+    const order=['route-shadow','route-main','route-traffic','route-direction-arrows',ROUTE_CAMERA_LAYER,'dangollo-endpoint-pin-icon'];
+    for(const id of order)if(map.getLayer(id))map.moveLayer(id);
+    // Character DOM marker is above WebGL canvas; never alter its transform/z-index.
   }catch(e){console.warn('route camera stack order failed',e)}
 }
+
 function ensureFixedCameraLayer(features){
   const map=state.map;if(!map?.isStyleLoaded?.())return false;
   try{
@@ -5970,7 +6005,7 @@ function ensureFixedCameraLayer(features){
     }
     if(!map.getLayer(ROUTE_CAMERA_LAYER))map.addLayer({
       id:ROUTE_CAMERA_LAYER,type:'symbol',source:ROUTE_CAMERA_SOURCE,
-      layout:{'icon-image':['get','icon'],'icon-size':0.8712,'icon-anchor':'center',
+      layout:{'icon-image':['get','icon'],'icon-size':0.95832,'icon-anchor':'center',
         'icon-allow-overlap':true,'icon-ignore-placement':true,'icon-rotation-alignment':'viewport',
         'icon-pitch-alignment':'viewport'},
       paint:{'icon-opacity':1}
@@ -7879,6 +7914,26 @@ function initRouteAiCompare(){
 async function parseVoiceIntentWithAi(text){
   try{return(await callWorkerAiAssist('voice_parse',{text:text.slice(0,240)},6500)).intent||null}catch{return null}
 }
+function confirmDestinationChange(name){
+  // Non-blocking in-app confirmation. No automatic route switch while driving.
+  return new Promise(resolve=>{
+    const backdrop=document.createElement('div');backdrop.className='dangollo-ai-confirm-overlay';
+    backdrop.setAttribute('role','presentation');
+    const card=document.createElement('section');card.className='dangollo-ai-confirm-card';
+    card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');card.setAttribute('aria-label','목적지 변경 확인');
+    const title=document.createElement('strong');title.textContent='목적지를 변경할까요?';
+    const detail=document.createElement('p');detail.textContent='새 목적지: '+String(name).slice(0,80)+' — 안전한 곳에서 확인해 주세요.';
+    const buttons=document.createElement('div');buttons.className='dangollo-ai-confirm-actions';
+    const cancel=document.createElement('button');cancel.textContent='취소';
+    const accept=document.createElement('button');accept.textContent='변경 확인';
+    const finish=ok=>{document.removeEventListener('keydown',onKey);backdrop.remove();resolve(ok)};
+    const onKey=e=>{if(e.key==='Escape')finish(false)};
+    cancel.onclick=()=>finish(false);accept.onclick=()=>finish(true);
+    backdrop.onclick=e=>{if(e.target===backdrop)finish(false)};
+    buttons.append(cancel,accept);card.append(title,detail,buttons);backdrop.append(card);document.body.append(backdrop);
+    document.addEventListener('keydown',onKey);cancel.focus();
+  });
+}
 async function handleVoiceCommandText(raw){
   const text=String(raw||'').trim();if(!text)return toast('명령을 다시 말씀해 주세요.');
   if(text.includes('재탐색'))return reroute();
@@ -7891,10 +7946,10 @@ async function handleVoiceCommandText(raw){
     if(!$('routeAiCompareResult'))return toast('경로 화면에서 AI 비교 기능을 이용해 주세요.');
     setView('route');return explainRoutesWithAi();
   }
-  if(voiceRecommendationRequested(text))return runVoiceMerchantRecommendation(text);
-  // Complex spoken phrases are resolved via AI only when the simple parser cannot classify them.
+  // Route/stops requests are AI-first; deterministic rules remain the timeout fallback.
+  // Complex spoken phrases are resolved via AI before broad merchant regular expressions.
   // Failure or timeout falls through to existing deterministic destination search.
-  if(/가는\s*길에|근처에서|주변에|상품권|온누리|지역사랑|잠깐\s*들|들렀다/.test(text)){
+  if(voiceRecommendationRequested(text)||/가는\s*길에|근처에서|주변에|상품권|온누리|지역사랑|잠깐\s*들|들렀다/.test(text)){
     const intent=await parseVoiceIntentWithAi(text);
     if(intent?.type==='merchant_recommend'){
       const categoryHint=intent.category==='cafe'?'카페':intent.category==='dessert'?'디저트':intent.category==='meal'?'맛집':'';
@@ -7903,10 +7958,11 @@ async function handleVoiceCommandText(raw){
     if(intent?.type==='route_compare'){setView('route');return explainRoutesWithAi()}
     if(intent?.type==='destination'&&intent.destination){
       const proposed=String(intent.destination).slice(0,80);
-      if(state.tripStartedAt&&!window.confirm(`목적지를 “${proposed}”로 변경하시겠습니까?`))return;
+      if(state.tripStartedAt&&!(await confirmDestinationChange(proposed)))return;
       return handleVoiceCommandText(proposed);
     }
   }
+  if(voiceRecommendationRequested(text))return runVoiceMerchantRecommendation(text);
   const q=normalizeVoiceDestination(text);if(!q)return toast('목적지를 다시 말씀해 주세요.');
   toast(`“${q}” 목적지를 찾고 있습니다...`,2200);
   try{
@@ -7939,7 +7995,7 @@ function localAdminEmail(){
   return normalizedEmail(u?.email||u?.providerData?.find?.(p=>p?.email)?.email||'');
 }
 function isAdminUser(){
-  return localAdminEmail()===normalizedEmail(ADMIN_EMAIL) || state.adminVerified===true;
+  return state.adminVerified===true;
 }
 async function authFetch(url,opt={}){
   const token=await firebaseIdToken();
@@ -7953,12 +8009,6 @@ async function verifyAdminAccess(){
     state.adminVerifiedEmail='';
     updateAdminUI();
     return false;
-  }
-  if(localAdminEmail()===normalizedEmail(ADMIN_EMAIL)){
-    state.adminVerified=true;
-    state.adminVerifiedEmail=localAdminEmail();
-    updateAdminUI();
-    return true;
   }
   try{
     const r=await authFetch('/api/admin-access',{cache:'no-store'});
@@ -8110,7 +8160,7 @@ function updateAdminUI(){
 async function openAdminMode(){
   if(!isAdminUser())await verifyAdminAccess();
   if(!isAdminUser())return toast(`관리자 계정만 이용할 수 있습니다.${localAdminEmail()?` (현재: ${localAdminEmail()})`:''}`);
-  $('adminAccountLabel').textContent=state.adminVerifiedEmail||localAdminEmail()||ADMIN_EMAIL;
+  $('adminAccountLabel').textContent=state.adminVerifiedEmail||localAdminEmail()||'인증 필요';
   $('adminModal').classList.remove('hidden');
   switchAdminTab('notices');
 }
