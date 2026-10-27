@@ -3411,7 +3411,7 @@ async function fuelFetchOnce(product,pt,cnt){
   const dd=await res.json().catch(()=>({}));
   if(!res.ok||dd?.error){const err=new Error(dd?.error||`오피넷 연동 서버 /api/fuel 응답 오류 (HTTP ${res.status})`);err.code=dd?.code||String(res.status);throw err}
   if(!Array.isArray(dd?.stations))throw new Error('오피넷 API 응답에 주유소 목록(stations)이 없습니다.');
-  if(!dd.stations.length){const err=new Error('주변 20km 안에 해당 유종의 판매가격 정보가 없습니다.');err.code='FUEL_EMPTY';throw err}
+  if(!dd.stations.length){const err=new Error('주변 5km 안에 해당 유종의 판매가격 정보가 없습니다.');err.code='FUEL_EMPTY';throw err}
   dd.product=product;
   return dd;
 }
@@ -3557,7 +3557,7 @@ function renderFuelError(message,code=''){
     OPINET_PRODUCT_UNAVAILABLE:'해당 유종의 주변 판매가격을 확인하지 못했습니다. 다른 유종은 정상 조회될 수 있습니다.',
     INVALID_COORDINATES:'현재 위치를 아직 확인하지 못했습니다. 위치 권한과 GPS를 확인해 주세요.'
   };
-  const detail=`<small>${detailByCode[code]||'오피넷 또는 네트워크 연결이 일시적으로 지연되고 있습니다.'}</small>`;
+  const detail=`<small>${detailByCode[code]||'오피넷 또는 네트워크 연결이 일시적으로 지연되고 있습니다.'}${code?` (코드: ${escapeHtml(String(code))})`:''}</small>`;
   const retry='<button type="button" class="fuel-retry-btn" data-fuel-retry>다시 시도</button>';
   const msg=`<div class="fuel-empty fuel-error">${safe}<br>${detail}<br>${retry}</div>`;
   for(const id of ['fuelStationList','fuelModalList']){
