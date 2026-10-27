@@ -3429,7 +3429,7 @@ async function fuelGetCached(product,pt,{cnt=8,manual=false}={}){
       fuelCacheSave(product,origin,data);
       return{data,cached:false,at,origin};
     }catch(e){
-      fuelFailAt.set(failKey,{at:Date.now(),wait:e?.code==='FUEL_EMPTY'?FUEL_EMPTY_COOLDOWN_MS:FUEL_ERROR_COOLDOWN_MS,message:e?.message||'유가 조회 실패',code:e?.code||'',trace:e?.trace});
+      fuelFailAt.set(failKey,{at:Date.now(),wait:e?.code==='OPINET_KEY_QUOTA_SUSPECT'?30*60*1000:e?.code==='FUEL_EMPTY'?FUEL_EMPTY_COOLDOWN_MS:FUEL_ERROR_COOLDOWN_MS,message:e?.message||'유가 조회 실패',code:e?.code||'',trace:e?.trace});
       throw e;
     }finally{fuelInflight.delete(flightKey)}
   })();
@@ -3549,6 +3549,7 @@ function renderFuelError(message,code='',trace=null){
   const safe=escapeHtml(message||'유가 정보를 불러오지 못했습니다.');
   const detailByCode={
     OPINET_KEY_MISSING:'서버에 오피넷 인증키(OPINET_CERT_KEY)가 등록되지 않았습니다.',
+    OPINET_KEY_QUOTA_SUSPECT:'위치·유종 문제가 아닙니다. 오피넷이 이 인증키에 모든 요청을 빈 값으로 응답 중입니다. 일일 호출 한도 초과(다음 날 자동 복구), 키 사용 승인/IP 제한, 키 만료를 오피넷 마이페이지에서 확인하세요.',
     OPINET_KEY_REJECTED:'오피넷이 인증키를 거부했습니다. 키와 사용 승인 상태를 확인해 주세요.',
     OPINET_BLOCKED:'서버에서 오피넷 접속이 차단되었습니다. 잠시 후 다시 시도해 주세요.',
     FUEL_EMPTY:'해당 유종의 판매가격이 확인되지 않습니다. 잠시 후 재조회해 주세요.',

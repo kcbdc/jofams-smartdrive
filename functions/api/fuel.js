@@ -72,6 +72,13 @@ export async function onRequestGet({request,env}){
       if(!diag){
         // 오피넷이 오류를 돌려준 경우(인증 거부/한도 초과/차단 등)를 '가격 없음'으로 숨기지 않는다.
         const summary=trace.map(t=>({step:t.step,status:t.status,rows:t.rowCount,error:t.error})).slice(0,6);
+        // 위치와 무관한 지역코드 조회(areaCode.do)까지 200 + 0건이면 좌표·유종 문제가 아니라
+        // 인증키 단위로 빈 응답이 오는 상태(일일 한도 초과, 키 승인/IP 제한, 키 만료 등)다.
+        if(summary.some(t=>t.step==='areaCode.do'&&t.status===200&&t.rows===0)){
+          return json({provider:'opinet',product:prodcd,productName:PRODUCTS[prodcd],stations:[],
+            error:'오피넷이 인증키 요청에 빈 응답을 반환하고 있습니다(지역코드 조회도 0건).',
+            code:'OPINET_KEY_QUOTA_SUSPECT',trace:summary},502);
+        }
         if(upstreamError){
           const msg=String(upstreamError?.message||upstreamError);
           return json({provider:'opinet',product:prodcd,productName:PRODUCTS[prodcd],stations:[],
