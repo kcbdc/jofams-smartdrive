@@ -29,7 +29,7 @@ const state = {
   map:null,mapReady:false,pendingRouteDraw:null,mapFallbackTried:false,mapWatchdog:0,user:null, destination:null, routeOptions:[], route:null, selectedRoute:0,
   userMarker:null,destMarker:null,originMarker:null,watchId:null,character:'daim',voiceVolume:.8,sound:true,radioVolume:.6,radioPlaying:false,radioIndex:0,radioDucked:false,radioDuckTimer:0,activeGuideSnapshot:null,
   autoStartTimer:null,autoStartSeconds:0,routeCumulative:[],currentRouteIndex:0,lastRerouteAt:0,lastGuideSpoken:'',tripStartedAt:0,
-  savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:(()=>{try{const c=localStorage.getItem('jofams_fuel_product_v1');return ['B027','D047','B034','K015'].includes(c)?c:'B027'}catch{return'B027'}})(),fuelData:null,fuelFetchedAt:0,fuelLoading:false,destinationSearchSort:'accuracy',lastDestinationQuery:'',routeMode:'car',carRouteOptions:[],walkingRoute:null,routeModeDurations:{car:null,walk:null},homeFacilityCategory:'주유소',homeFacilityItems:[],
+  savedPlaces:{home:null,work:null},favorites:[],recentDestinations:[],placeKind:null,placeCandidate:null,origin:null,originMode:'current',placeDbReady:false,waypoints:[],pendingDriveSearchPlace:null,savedWaypointCourses:[],fuelProduct:'B027',fuelData:null,fuelFetchedAt:0,fuelLoading:false,destinationSearchSort:'accuracy',lastDestinationQuery:'',routeMode:'car',carRouteOptions:[],walkingRoute:null,routeModeDurations:{car:null,walk:null},homeFacilityCategory:'주유소',homeFacilityItems:[],
   arStream:null,arFrame:0,arRunning:false,permissionCameraGranted:false,permissionLocationGranted:false,permissionPrefs:{location:true,camera:true},
   tripHistory:[],safetyEvents:[],safetyMarkers:[],lastSafetySpoken:new Set(),activeSafetyId:null,safetyRequestSeq:0,lastTrafficStatus:'',lastTrafficSpokenAt:0,overspeedActive:false,lastOverspeedSpokenAt:0,map3D:false,mapSatellite:false,mapControlsVisible:false,liveRouteTimer:0,lastLiveRouteAt:0,lastVmsKey:'',destinationCycleTimer:0,destinationHideTimer:0,lastDestinationShownAt:0,deadReckoningTimer:0,lastRealGpsAt:0,lastGpsTickAt:0,lastRealSpeedMps:0,lastRealHeading:0,gpsEstimated:false,lastDeadReckoningNoticeAt:0,officialCameraRows:null,officialCameraPromise:null,sectionSpeedState:null,tunnelRouteLock:{active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0},homeSheetCollapsed:false,homeSheetDrag:null,mapPlaceCandidate:null,localVoucherMarkers:[],localVoucherData:null,localVoucherRetryCount:0,localVoucherLastErrorAt:0,localVoucherLoadTimer:0,localVoucherRegionCode:'',localVoucherLoadedAt:0,localVoucherLoadedCenter:null,localVoucherFocus:null,onnuriMarkers:[],onnuriData:null,onnuriLoadedAt:0,onnuriLoadedCenter:null,onnuriLoadTimer:0,homeCameraMarkers:[],homeCameraLoadTimer:0,
   futureOrigin:null,futureDestination:null,futureDateMode:'today',futureAmPm:'AM',offRouteHits:0,routePreference:'recommend',cameraAlerts:{speed:true,signal:true},userSettingsLoaded:false,inquiries:[],adminNotices:[],adminContent:null,adminVerified:false,adminVerifiedEmail:'',loginPending:false,loginStartedAt:0,deadReckoningDistance:null,deadReckoningLastAt:0,arCameraMode:false,lastSpeedSample:null,simulationActive:false,simulationSpeed:1,simulationDistance:null,simulationLastAt:0,simulationRaf:0,
@@ -1129,7 +1129,7 @@ async function initMap(){
       permissionStatus('geolocation').then(async status=>{
         try{
           const u=await locate(status==='granted');
-          if(u&&pointValid(u)&&state.map){state.map.easeTo({center:[u.lng,u.lat],zoom:15.5,duration:450});if(!state.fuelData&&!state.fuelLoading)loadFuelPrices(state.fuelProduct).catch(()=>{});}
+          if(u&&pointValid(u)&&state.map){state.map.easeTo({center:[u.lng,u.lat],zoom:15.5,duration:450});if(!state.fuelData&&!state.fuelLoading)loadFuelPrices(state.fuelProduct,{force:true}).catch(()=>{});}
         }catch(e){console.warn('initial current location failed',e)}
         setTimeout(()=>{scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh()},250);
       });
@@ -3364,125 +3364,120 @@ function refreshFuelWhileDriving(){
   const now=Date.now();if(now-Number(state.lastFuelGuardAt||0)<30000)return;
   state.lastFuelGuardAt=now;
   if(!state.tripStartedAt||state.fuelLoading||!state.route?.geometry?.length)return;
-  loadFuelPrices(state.fuelProduct).catch(()=>{});
+  if(!fuelFreshEnough())loadFuelPrices(state.fuelProduct,{force:true}).catch(()=>{});
 }
-/* ---- 오피넷 호출 최소화: 일일 호출 한도 보호 ----
-   성공한 결과는 유종·위치별로 localStorage 에 저장해 계속 재사용한다.
-   재조회 조건은 딱 두 가지: (1) 저장 당시 위치에서 5km 이상 벗어남, (2) 저장 후 24시간 경과.
-   탭 전환·화면 전환·주행 중 갱신·새로고침 모두 같은 캐시를 쓰며, 실패 시에는 짧은 쿨다운을 둔다. */
-const FUEL_CACHE_KEY='jofams_fuel_cache_v2',FUEL_CACHE_TTL_MS=24*60*60*1000,FUEL_CACHE_RADIUS_M=5000;
-const FUEL_ERROR_COOLDOWN_MS=60*1000,FUEL_EMPTY_COOLDOWN_MS=10*60*1000;
-const fuelInflight=new Map(),fuelFailAt=new Map();
-function fuelDistM(a,b){
-  const la=Number(a.lat),lo=Number(a.lng),lb=Number(b.lat),ln=Number(b.lng);
-  return Math.hypot((la-lb)*111200,(lo-ln)*111200*Math.cos(la*Math.PI/180));
-}
-function fuelCacheLoad(){
-  try{const raw=JSON.parse(localStorage.getItem(FUEL_CACHE_KEY)||'null');return Array.isArray(raw?.entries)?raw.entries:[]}catch{return[]}
-}
-function fuelCacheFind(product,pt,{allowStale=false}={}){
-  if(!pointValid(pt))return null;
-  const now=Date.now();let best=null,bestD=Infinity;
-  for(const e of fuelCacheLoad()){
-    if(e?.product!==product||!pointValid(e.origin)||!e.data?.stations?.length)continue;
-    if(!allowStale&&now-Number(e.at||0)>=FUEL_CACHE_TTL_MS)continue;
-    const d=fuelDistM(pt,e.origin);
-    if(d<=FUEL_CACHE_RADIUS_M&&d<bestD){best=e;bestD=d}
-  }
-  return best;
-}
-function fuelCacheSave(product,pt,data){
-  try{
-    const now=Date.now();
-    const keep=fuelCacheLoad().filter(e=>e&&pointValid(e.origin)&&now-Number(e.at||0)<FUEL_CACHE_TTL_MS&&!(e.product===product&&fuelDistM(pt,e.origin)<1000));
-    keep.push({product,origin:{lat:Number(pt.lat),lng:Number(pt.lng)},at:now,data});
-    localStorage.setItem(FUEL_CACHE_KEY,JSON.stringify({entries:keep.slice(-24)}));
-  }catch{}
-}
-async function fuelFetchOnce(product,pt,cnt){
-  const u=new URL('/api/fuel',location.origin);
-  // 원본과 동일하게 실제 좌표를 그대로 전송(격자 보정은 조회 실패 의심으로 제거).
-  u.searchParams.set('lat',Number(pt.lat).toFixed(7));u.searchParams.set('lng',Number(pt.lng).toFixed(7));
-  u.searchParams.set('prodcd',product);u.searchParams.set('cnt',String(cnt));
-  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),14000);
-  let res;try{res=await fetch(u,{headers:{accept:'application/json'},cache:'no-store',signal:controller.signal})}finally{clearTimeout(timeout)}
-  const dd=await res.json().catch(()=>({}));
-  if(!res.ok||dd?.error){const err=new Error(dd?.error||`오피넷 연동 서버 /api/fuel 응답 오류 (HTTP ${res.status})`);err.code=dd?.code||String(res.status);err.trace=dd?.trace;throw err}
-  if(!Array.isArray(dd?.stations))throw new Error('오피넷 API 응답에 주유소 목록(stations)이 없습니다.');
-  if(!dd.stations.length){const err=new Error('주변 5km 안에 해당 유종의 판매가격 정보가 없습니다.');err.code='FUEL_EMPTY';throw err}
-  dd.product=product;
-  return dd;
-}
-/* 유일한 오피넷 진입점: 유효 캐시가 있으면 네트워크 호출 없이 반환한다. */
-async function fuelGetCached(product,pt,{cnt=8,manual=false}={}){
-  const hit=fuelCacheFind(product,pt);
-  if(hit)return{data:hit.data,cached:true,at:hit.at,origin:hit.origin};
-  const flightKey=`${product}:${Number(pt.lat).toFixed(2)}:${Number(pt.lng).toFixed(2)}`;
-  if(fuelInflight.has(flightKey))return fuelInflight.get(flightKey);
-  const failKey=product,fail=fuelFailAt.get(failKey);
-  if(fail&&!manual&&Date.now()-fail.at<fail.wait){const err=new Error(fail.message);err.code=fail.code;err.trace=fail.trace;err.cooldown=true;throw err}
-  const p=(async()=>{
-    try{
-      const data=await fuelFetchOnce(product,pt,cnt);
-      fuelFailAt.delete(failKey);
-      const origin={lat:Number(pt.lat),lng:Number(pt.lng)},at=Date.now();
-      fuelCacheSave(product,origin,data);
-      return{data,cached:false,at,origin};
-    }catch(e){
-      fuelFailAt.set(failKey,{at:Date.now(),wait:e?.code==='OPINET_KEY_QUOTA_SUSPECT'?30*60*1000:e?.code==='FUEL_EMPTY'?FUEL_EMPTY_COOLDOWN_MS:FUEL_ERROR_COOLDOWN_MS,message:e?.message||'유가 조회 실패',code:e?.code||'',trace:e?.trace});
-      throw e;
-    }finally{fuelInflight.delete(flightKey)}
-  })();
-  fuelInflight.set(flightKey,p);
-  return p;
-}
-async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false,manual=false}={}){
-  // force 는 더 이상 캐시를 우회하지 않는다(호출 한도 보호). 사용자가 직접 누른 새로고침/다시 시도만 manual 로 쿨다운을 건너뛴다.
+async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false}={}){
   state.fuelProduct=FUEL_PRODUCT_NAMES[product]?product:'B027';
   const requestedProduct=state.fuelProduct;
-  try{localStorage.setItem('jofams_fuel_product_v1',requestedProduct)}catch{}
   syncFuelTabs();
+  // Initial display must not block for multiple independent GPS requests.
   let fuelOrigin=currentOriginPoint();
+  if(!pointValid(fuelOrigin))fuelOrigin=await refreshCurrentLocation({maxAgeMs:60000,timeoutMs:2600}).catch(()=>null);
+  if(!pointValid(fuelOrigin))fuelOrigin=currentOriginPoint();
   if(!pointValid(fuelOrigin)){
-    // 위치를 모르는 경우에도 마지막 정상 결과(해당 유종)가 있으면 그대로 보여준다.
-    const last=fuelCacheLoad().filter(e=>e?.product===requestedProduct).sort((x,y)=>Number(y.at)-Number(x.at))[0];
-    if(last?.data){state.fuelData=last.data;renderFuelData(last.data)}
-    else renderFuelLoading();
-    fuelOrigin=await refreshCurrentLocation({maxAgeMs:60000,timeoutMs:2600}).catch(()=>null);
-    if(!pointValid(fuelOrigin))fuelOrigin=currentOriginPoint();
-  }
-  if(requestedProduct!==state.fuelProduct)return;
-  if(!pointValid(fuelOrigin)){
-    if(!state.fuelRetryScheduled){state.fuelRetryScheduled=true;setTimeout(()=>{state.fuelRetryScheduled=false;if(pointValid(currentOriginPoint()))loadFuelPrices(state.fuelProduct).catch(console.warn)},3500)}
-    if(!state.fuelData||state.fuelData.product!==requestedProduct)renderFuelLocationError();
+    if(!state.fuelRetryScheduled){state.fuelRetryScheduled=true;setTimeout(()=>{state.fuelRetryScheduled=false;if(pointValid(currentOriginPoint()))loadFuelPrices(state.fuelProduct,{force:true}).catch(console.warn)},3500)}
+    let cached=null;
+    try{const raw=JSON.parse(localStorage.getItem('jofams_fuel_last_success_v1')||'null');if(raw?.payload)cached=raw.payload}catch{}
+    if(cached?.product===requestedProduct){state.fuelData=cached;renderFuelData(cached);return;}
+    renderFuelLocationError();
     return;
   }
-  // 1) 유효 캐시(5km 이내 & 24시간 이내)면 네트워크 호출 없이 표시
-  const hit=fuelCacheFind(requestedProduct,fuelOrigin);
-  if(hit){
-    state.fuelData=hit.data;state.fuelFetchedAt=Number(hit.at);state.fuelFetchedOrigin=hit.origin;
-    renderFuelData(hit.data);return;
+  if(!force&&fuelFreshEnough()&&state.fuelData?.product===requestedProduct){
+    renderFuelData(state.fuelData);return;
   }
-  // 2) 캐시 없음 → 조회(동시 중복 요청은 하나로 합쳐짐)
-  if(state.fuelData?.product!==requestedProduct)renderFuelLoading();
+  const cachedProduct=usableFuelCache(requestedProduct,fuelOrigin);
+  if(!force&&cachedProduct){
+    state.fuelData=cachedProduct;state.fuelFetchedAt=Date.now();state.fuelFetchedOrigin={lat:fuelOrigin.lat,lng:fuelOrigin.lng};
+    renderFuelData(cachedProduct);return;
+  }
+  // An in-flight request must not silently swallow a tab/location change.
+  if(state.fuelLoading){state.fuelPendingRequest={product:requestedProduct,force,modal};return;}
+  // Manual refresh always bypasses cooldown; temporary upstream failures never lock
+  // the UI behind a misleading 2-minute authentication warning.
+  if(!force&&Date.now()<Number(state.fuelUpstreamCooldownUntil||0)){
+    if(state.fuelData?.product===requestedProduct){renderFuelData(state.fuelData);return;}
+    // Explicit retry remains available even when no cached result exists.
+    renderFuelError('오피넷 응답이 일시적으로 지연되고 있습니다. 다시 시도할 수 있습니다.','OPINET_UPSTREAM_ERROR');
+    return;
+  }
   state.fuelLoading=true;
+  if(state.fuelData?.product!==requestedProduct)renderFuelLoading();
   try{
-    const r=await fuelGetCached(requestedProduct,{lat:fuelOrigin.lat,lng:fuelOrigin.lng},{cnt:(state.tripStartedAt&&state.route?.geometry?.length)?15:8,manual});
-    if(requestedProduct!==state.fuelProduct)return; // 그 사이 다른 탭으로 이동: 결과는 캐시에 저장됐으므로 낭비 없음
-    state.fuelData=r.data;state.fuelFetchedAt=Number(r.at);state.fuelFetchedOrigin=r.origin;
-    renderFuelData(r.data);
+    const driving=Boolean(state.tripStartedAt&&state.route?.geometry?.length);
+    // 주행 중에는 현재 위치 주변만이 아니라 앞으로 달릴 경로를 따라 여러 지점에서 조회해 합친다.
+    const curM=driving?currentRouteDistanceAt(state.currentRouteIndex||0):0;
+    // 오피넷 무료 호출 한도 보호: 주행 중에도 현재 지점 + 전방 6km까지만 조회.
+    const probes=driving?[0,6000].map(o=>pointAtRouteDistance(curM+o)).filter(Boolean):[{lat:fuelOrigin.lat,lng:fuelOrigin.lng}];
+    const results=await Promise.all(probes.map(async pt=>{
+      const u=new URL('/api/fuel',location.origin);
+      if(!pointValid(pt))throw new Error('유가 조회 좌표가 올바르지 않습니다.');
+      u.searchParams.set('lat',Number(pt.lat).toFixed(7));u.searchParams.set('lng',Number(pt.lng).toFixed(7));
+      u.searchParams.set('prodcd',requestedProduct);u.searchParams.set('cnt',driving?'15':'8');
+      const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),14000);
+      let res;try{res=await fetch(u,{headers:{accept:'application/json'},cache:'no-store',signal:controller.signal})}finally{clearTimeout(timeout)}
+      const dd=await res.json().catch(()=>({}));
+      if(!res.ok||dd?.error){const err=new Error(dd?.error||`오피넷 연동 서버 /api/fuel 응답 오류 (HTTP ${res.status})`);err.code=dd?.code||String(res.status);throw err}
+      if(!Array.isArray(dd?.stations))throw new Error('오피넷 API 응답에 주유소 목록(stations)이 없습니다.');
+      return dd;
+    }).map(p=>p.catch(e=>({__err:e}))));
+    const okRes=results.filter(r=>!r.__err);
+    if(!okRes.length){
+      const err=results.find(r=>r.__err?.code==='OPINET_KEY_OR_UPSTREAM')?.__err||results[0].__err;
+      throw err;
+    }
+    const d={...okRes[0]};
+    if(okRes.length>1){
+      const seen=new Set(),all=[];
+      for(const r of okRes)for(const x of (r.stations||[])){const k=String(x.id||x.uni||`${x.name}:${x.lat}:${x.lng}`);if(seen.has(k))continue;seen.add(k);all.push(x)}
+      all.sort((a,b)=>Number(a.price)-Number(b.price));
+      d.stations=all;
+    }
+    if(!Array.isArray(d.stations))throw new Error('오피넷 API 응답 형식 오류');
+    if(requestedProduct!==state.fuelProduct){state.fuelPendingRequest={product:state.fuelProduct,force:true};return;}
+    if(!d.stations.length){
+      if(state.fuelData?.stations?.length){renderFuelData(state.fuelData);return;}
+      {const err=new Error('반경 5km 안에 해당 유종의 판매가격 정보가 없습니다.');err.code='FUEL_EMPTY';throw err}
+    }
+    state.fuelUpstreamCooldownUntil=0;
+    state.fuelFetchedRouteM=curM;
+    state.fuelFetchedOrigin={lat:Number(fuelOrigin.lat),lng:Number(fuelOrigin.lng)};
+    d.product=requestedProduct;
+    fuelProductCache.set(fuelCacheKey(requestedProduct,fuelOrigin),{data:d,at:Date.now()});
+    state.fuelData=d;state.fuelFetchedAt=Date.now();
+    try{localStorage.setItem('jofams_fuel_last_success_v1',JSON.stringify({savedAt:Date.now(),payload:d}))}catch{}
+    renderFuelData(d);
   }catch(e){
-    if(requestedProduct!==state.fuelProduct)return;
-    // 실패해도 같은 유종의 이전 정상 결과(5km 이내, 만료 포함)가 있으면 그것을 사용
-    const stale=fuelCacheFind(requestedProduct,fuelOrigin,{allowStale:true});
-    if(stale){
-      state.fuelData=stale.data;state.fuelFetchedAt=Number(stale.at);state.fuelFetchedOrigin=stale.origin;
-      renderFuelData(stale.data);
-      if(!e?.cooldown)toast('유가 갱신이 지연되어 마지막 정상 정보를 표시합니다.',2200);
+    if(requestedProduct!==state.fuelProduct){state.fuelPendingRequest={product:state.fuelProduct,force:true,modal};return;}
+    // A single empty/error response while changing screens is not proof of a bad key.
+    // A manual refresh must always work without a full page reload.
+    state.fuelUpstreamCooldownUntil=0;
+    // 일시적인 서버/외부 API 오류라면 마지막 정상 유가를 우선 표시한다.
+    let cached=null;
+    try{
+      const raw=JSON.parse(localStorage.getItem('jofams_fuel_last_success_v1')||'null');
+      if(raw?.payload&&Date.now()-Number(raw.savedAt||0)<6*60*60*1000)cached=raw.payload;
+    }catch{}
+    const perProduct=usableFuelCache(requestedProduct,fuelOrigin,6*60*60*1000);
+    if(perProduct){
+      state.fuelData=perProduct;state.fuelFetchedAt=Date.now()-5*60*1000;
+      renderFuelData(perProduct);
+      toast('실시간 갱신이 지연되어 마지막 정상 유가를 표시합니다.',2200);
+    }else if(cached&&cached.product===requestedProduct){
+      state.fuelData=cached;state.fuelFetchedAt=Number(Date.now()-5*60*1000);
+      renderFuelData(cached);
+      toast('실시간 유가 연결이 지연되어 최근 정상 유가를 표시합니다.',2400);
     }else if(state.fuelData?.product===requestedProduct&&state.fuelData?.stations?.length){
       renderFuelData(state.fuelData);
-    }else renderFuelError(e?.message||'유가 정보를 불러오지 못했습니다.',e?.code||'',e?.trace);
-  }finally{state.fuelLoading=false}
+      toast('유가 갱신이 지연되어 마지막 정상 정보를 유지합니다.',2200);
+    }else{
+      renderFuelError(e?.message||'유가 정보를 불러오지 못했습니다.',e?.code||'');
+    }
+  }
+  finally{
+    state.fuelLoading=false;
+    const pending=state.fuelPendingRequest;state.fuelPendingRequest=null;
+    if(pending)queueMicrotask(()=>loadFuelPrices(pending.product,{force:true,modal:pending.modal}).catch(e=>console.warn('fuel pending request',e)));
+  }
 }
 function syncFuelTabs(){
   document.querySelectorAll('[data-fuel-product],[data-fuel-modal-product]').forEach(b=>{
@@ -3523,13 +3518,8 @@ function renderFuelData(data){
   if($('fuelModalArea'))$('fuelModalArea').textContent=`${area} · ${FUEL_PRODUCT_NAMES[state.fuelProduct]||''}`;
   if($('fuelPriceSummary'))$('fuelPriceSummary').innerHTML=`<span>${escapeHtml(area)} ${escapeHtml(FUEL_PRODUCT_NAMES[state.fuelProduct]||'')}</span><b>${min?`최저 ${fuelWon(min)}`:'가격정보 없음'}${avg?` <small>평균 ${fuelWon(avg)}</small>`:''}</b>`;
   const rows=fuelStationRows(data);
-  const best=items.filter(pointValid).sort((a,b)=>Number(a.price)-Number(b.price))[0];
-  const bestBtn=best?`<button type="button" class="fuel-best-nav" data-fuel-best>⛽ 최저가 길안내 · ${escapeHtml(best.name||'주유소')} ${fuelWon(best.price)}</button>`:'';
-  for(const id of ['fuelStationList','fuelModalList']){
-    const el=$(id);if(!el)continue;
-    el.innerHTML=bestBtn+rows;bindFuelStationRowClicks(el,items);
-    el.querySelector('[data-fuel-best]')?.addEventListener('click',()=>{closeFuelModal();chooseDestination(best)});
-  }
+  if($('fuelStationList')){$('fuelStationList').innerHTML=rows;bindFuelStationRowClicks($('fuelStationList'),items)}
+  if($('fuelModalList')){$('fuelModalList').innerHTML=rows;bindFuelStationRowClicks($('fuelModalList'),items)}
   const chip=$('driveFuelChip');
   if(chip)chip.classList.add('hidden');
   try{if(state.tripStartedAt)updateDrivePoiUI()}catch{}
@@ -3544,25 +3534,23 @@ function renderFuelLocationError(){
   if($('fuelStationList'))$('fuelStationList').innerHTML=msg;
   if($('fuelModalList'))$('fuelModalList').innerHTML=msg;
 }
-function renderFuelError(message,code='',trace=null){
+function renderFuelError(message,code=''){
   // 7.6.26: 오류 종류별로 정확한 원인을 안내한다(기존에는 "데이터 없음"도 "네트워크 지연"으로 표시됐다).
   const safe=escapeHtml(message||'유가 정보를 불러오지 못했습니다.');
   const detailByCode={
     OPINET_KEY_MISSING:'서버에 오피넷 인증키(OPINET_CERT_KEY)가 등록되지 않았습니다.',
-    OPINET_KEY_QUOTA_SUSPECT:'위치·유종 문제가 아닙니다. 오피넷이 이 인증키에 모든 요청을 빈 값으로 응답 중입니다. 일일 호출 한도 초과(다음 날 자동 복구), 키 사용 승인/IP 제한, 키 만료를 오피넷 마이페이지에서 확인하세요.',
     OPINET_KEY_REJECTED:'오피넷이 인증키를 거부했습니다. 키와 사용 승인 상태를 확인해 주세요.',
     OPINET_BLOCKED:'서버에서 오피넷 접속이 차단되었습니다. 잠시 후 다시 시도해 주세요.',
     FUEL_EMPTY:'해당 유종의 판매가격이 확인되지 않습니다. 잠시 후 재조회해 주세요.',
     OPINET_PRODUCT_UNAVAILABLE:'해당 유종의 주변 판매가격을 확인하지 못했습니다. 다른 유종은 정상 조회될 수 있습니다.',
     INVALID_COORDINATES:'현재 위치를 아직 확인하지 못했습니다. 위치 권한과 GPS를 확인해 주세요.'
   };
-  const detail=`<small>${detailByCode[code]||'오피넷 또는 네트워크 연결이 일시적으로 지연되고 있습니다.'}${code?` (코드: ${escapeHtml(String(code))})`:''}</small>`;
-  const tr=Array.isArray(trace)&&trace.length?`<br><small>진단: ${escapeHtml(trace.map(t=>[t.step,t.status?'HTTP '+t.status:'',t.rows!=null?t.rows+'건':'',t.error||''].filter(Boolean).join(' ')).join(' / '))}</small>`:'';
+  const detail=`<small>${detailByCode[code]||'오피넷 또는 네트워크 연결이 일시적으로 지연되고 있습니다.'}</small>`;
   const retry='<button type="button" class="fuel-retry-btn" data-fuel-retry>다시 시도</button>';
-  const msg=`<div class="fuel-empty fuel-error">${safe}<br>${detail}${tr}<br>${retry}</div>`;
+  const msg=`<div class="fuel-empty fuel-error">${safe}<br>${detail}<br>${retry}</div>`;
   for(const id of ['fuelStationList','fuelModalList']){
     const el=$(id);if(!el)continue;el.innerHTML=msg;
-    el.querySelector('[data-fuel-retry]')?.addEventListener('click',()=>loadFuelPrices(state.fuelProduct,{manual:true}).catch(()=>{}));
+    el.querySelector('[data-fuel-retry]')?.addEventListener('click',()=>loadFuelPrices(state.fuelProduct,{force:true}).catch(()=>{}));
   }
 }
 function openFuelModal(){
@@ -4125,7 +4113,7 @@ function startPlanningAi(){
   if(!probes.length){renderPlanningPoiSuggestions();return}
   state.planningAi.loading=true;renderPlanningPoiSuggestions();
   const merchant=(path)=>Promise.all(probes.map(pt=>planningFetchJson(path,{lat:pt.lat,lng:pt.lng,...drivePoiRegionBox(pt,2.0)}).then(j=>Array.isArray(j.items)?j.items:[]).catch(()=>[])));
-  const fuel=Promise.all(probes.slice(0,3).map(pt=>fuelGetCached(state.fuelProduct||'B027',{lat:pt.lat,lng:pt.lng},{cnt:8}).then(r=>Array.isArray(r.data?.stations)?r.data.stations:[]).catch(()=>[])));
+  const fuel=Promise.all(probes.slice(0,3).map(pt=>planningFetchJson('/api/fuel',{lat:pt.lat,lng:pt.lng,prodcd:state.fuelProduct||'B027',cnt:8}).then(j=>Array.isArray(j.stations)?j.stations:[]).catch(()=>[])));
   Promise.all([merchant('/api/local-voucher'),merchant('/api/onnuri-voucher'),fuel]).then(([l,o,f])=>{
     if(token!==_planningAiToken||!state.planningAi)return;
     state.planningAi.local=mergeDrivePoiMerchantRows(l.flat());
@@ -7058,7 +7046,7 @@ function ensureDrivePoiData(){
   const probes=drivePoiProbePoints();if(!probes.length)return;
   state.drivePoiFetchedAt=now;state.drivePoiFetchedRouteM=cur;state.drivePoiLoading=true;
   const token=++state.drivePoiFetchToken;
-  if(!state.fuelLoading)loadFuelPrices(state.fuelProduct).catch(()=>{});
+  if(!state.fuelLoading)loadFuelPrices(state.fuelProduct,{force:true}).catch(()=>{});
   Promise.allSettled([
     fetchDrivePoiBatch('local',probes,token),
     fetchDrivePoiBatch('onnuri',probes,token)
@@ -8595,9 +8583,9 @@ function bindUI(){
   }catch(e){console.warn('route endpoint action bind failed',e)}
 
   try{
-    if($('fuelRefreshBtn'))$('fuelRefreshBtn').onclick=()=>loadFuelPrices(state.fuelProduct,{manual:true});
-    document.querySelectorAll('[data-fuel-product]').forEach(b=>b.onclick=()=>loadFuelPrices(b.dataset.fuelProduct));
-    document.querySelectorAll('[data-fuel-modal-product]').forEach(b=>b.onclick=()=>loadFuelPrices(b.dataset.fuelModalProduct,{modal:true}));
+    if($('fuelRefreshBtn'))$('fuelRefreshBtn').onclick=()=>loadFuelPrices(state.fuelProduct,{force:true});
+    document.querySelectorAll('[data-fuel-product]').forEach(b=>b.onclick=()=>loadFuelPrices(b.dataset.fuelProduct,{force:true}));
+    document.querySelectorAll('[data-fuel-modal-product]').forEach(b=>b.onclick=()=>loadFuelPrices(b.dataset.fuelModalProduct,{force:true,modal:true}));
     if($('driveFuelChip'))$('driveFuelChip').onclick=openFuelModal;
     if($('driveRecommendBtn'))$('driveRecommendBtn').onclick=()=>openDrivePoiPanel(state.drivePoiTab||'local');
     if($('drivePoiPanelClose'))$('drivePoiPanelClose').onclick=closeDrivePoiPanel;
