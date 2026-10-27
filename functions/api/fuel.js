@@ -9,7 +9,7 @@
  *  5) 좌표(KATEC)를 서버에서 WGS84 로 변환해 lat/lng 를 항상 제공(카카오 지오코딩 불필요).
  *  6) ?diag=1 : 단계별 상태(키 값은 제외)를 돌려줘 배포 환경 문제를 바로 확인할 수 있다.
  */
-const OK_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'public, max-age=60, s-maxage=120'};
+const OK_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'public, max-age=3600, s-maxage=21600'};
 const ERR_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'no-store'};
 const UA='Mozilla/5.0 (compatible; DangolroNavi/7.6)';
 const PRODUCTS={B027:'휘발유',D047:'경유',B034:'고급휘발유',K015:'LPG'};
@@ -37,12 +37,17 @@ export async function onRequestGet({request,env}){
   try{
     // Opinet official documentation requires the certkey parameter, not 'code'.
     // One price-sorted nearby request, then one distance-sorted retry only if it is empty.
-    for(const sort of ['1','2']){
-      try{
-        const found=await opinetAround(x,y,prodcd,5000,sort,key,trace);
-        aroundEmpty ||= found.length===0;
-        if(found.length){stations=found.sort((a,b)=>a.price-b.price).slice(0,cnt);source='aroundAll';radius=5000;break}
-      }catch(e){upstreamError ||= e;trace.push({step:'aroundAll',error:safeError(e)})}
+    // 경유/고급/LPG는 5km 안에 판매 주유소가 적거나 없을 수 있어 반경을 단계적으로 넓힌다.
+    const radii=prodcd==='B027'?[5000,10000]:[5000,10000,20000];
+    outer:for(const r of radii){
+      for(const sort of ['1','2']){
+        try{
+          const found=await opinetAround(x,y,prodcd,r,sort,key,trace);
+          aroundEmpty ||= found.length===0;
+          if(found.length){stations=found.sort((a,b)=>a.price-b.price).slice(0,cnt);source='aroundAll';radius=r;break outer}
+          break; // 같은 반경에서 빈 결과면 정렬만 바꿔 재시도하지 않고 다음 반경으로
+        }catch(e){upstreamError ||= e;trace.push({step:'aroundAll',error:safeError(e)})}
+      }
     }
 
     if(!stations.length){
@@ -107,7 +112,7 @@ export async function onRequestGet({request,env}){
     ]);
     const avg=stations.length?Math.round(stations.reduce((sum,row)=>sum+row.price,0)/stations.length):null;
     return json({provider:'opinet',source,radius,product:prodcd,productName:PRODUCTS[prodcd],
-      areaName:areaName||(source==='aroundAll'?'현재 위치 주변 5km':'현재 지역'),
+      areaName:areaName||(source==='aroundAll'?`현재 위치 주변 ${Math.round(radius/1000)}km`:'현재 지역'),
       averagePrice:avg,updatedAt:new Date().toISOString(),stations:detailed,
       ...(diag?{trace,testedLocation:{lat,lng,katecX:Math.round(x),katecY:Math.round(y)}}:{})});
   }catch(e){
@@ -134,6 +139,7 @@ async function fetchOpinetJson(endpoint,params,key,trace){
   const url=new URL('https://www.opinet.co.kr/api/'+endpoint);
   url.searchParams.set('out','json');
   url.searchParams.set('certkey',key);
+  url.searchParams.set('code',key);
   for(const [k,v] of Object.entries(params||{}))if(v!==''&&v!=null)url.searchParams.set(k,String(v));
   const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),6500);
   try{
