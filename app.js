@@ -3311,6 +3311,17 @@ function stopWatch(){if(nativeBridgeAvailable())setNativeNavigationActive(false)
 
 /* ---------- LIVE FUEL PRICE / OPINET ---------- */
 const FUEL_PRODUCT_NAMES={B027:'휘발유',D047:'경유',B034:'고급휘발유',K015:'LPG'};
+// Each product/location keeps its own last good list. Never display petrol prices in a diesel/LPG tab.
+const fuelProductCache=new Map();
+function fuelCacheKey(product,origin){
+  if(!pointValid(origin))return null;
+  return `${product}:${Math.round(Number(origin.lat)*1000)}:${Math.round(Number(origin.lng)*1000)}`;
+}
+function usableFuelCache(product,origin,maxAge=15*60*1000){
+  const entry=fuelProductCache.get(fuelCacheKey(product,origin));
+  return entry&&Date.now()-entry.at<maxAge?entry.data:null;
+}
+
 function fuelWon(v){const n=Number(v);return Number.isFinite(n)&&n>0?`${Math.round(n).toLocaleString('ko-KR')}원`:'가격없음'}
 function fuelBrandName(code){
   return ({SKE:'SK',GSC:'GS칼텍스',HDO:'HD현대오일뱅크',SOL:'S-OIL',RTE:'알뜰',RTX:'고속도로알뜰',NHO:'농협알뜰',ETC:'자가상표',E1G:'E1',SKG:'SK가스'})[code]||code||'';
@@ -3356,7 +3367,7 @@ function refreshFuelWhileDriving(){
   if(!fuelFreshEnough())loadFuelPrices(state.fuelProduct,{force:true}).catch(()=>{});
 }
 async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false}={}){
-  state.fuelProduct=product||'B027';
+  state.fuelProduct=FUEL_PRODUCT_NAMES[product]?product:'B027';
   const requestedProduct=state.fuelProduct;
   syncFuelTabs();
   // Initial display must not block for multiple independent GPS requests.
@@ -3367,12 +3378,17 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
     if(!state.fuelRetryScheduled){state.fuelRetryScheduled=true;setTimeout(()=>{state.fuelRetryScheduled=false;if(pointValid(currentOriginPoint()))loadFuelPrices(state.fuelProduct,{force:true}).catch(console.warn)},3500)}
     let cached=null;
     try{const raw=JSON.parse(localStorage.getItem('jofams_fuel_last_success_v1')||'null');if(raw?.payload)cached=raw.payload}catch{}
-    if(cached){state.fuelData=cached;renderFuelData(cached);return;}
+    if(cached?.product===requestedProduct){state.fuelData=cached;renderFuelData(cached);return;}
     renderFuelLocationError();
     return;
   }
-  if(!force&&fuelFreshEnough()&&state.fuelData?.product===state.fuelProduct){
+  if(!force&&fuelFreshEnough()&&state.fuelData?.product===requestedProduct){
     renderFuelData(state.fuelData);return;
+  }
+  const cachedProduct=usableFuelCache(requestedProduct,fuelOrigin);
+  if(!force&&cachedProduct){
+    state.fuelData=cachedProduct;state.fuelFetchedAt=Date.now();state.fuelFetchedOrigin={lat:fuelOrigin.lat,lng:fuelOrigin.lng};
+    renderFuelData(cachedProduct);return;
   }
   // An in-flight request must not silently swallow a tab/location change.
   if(state.fuelLoading){state.fuelPendingRequest={product:requestedProduct,force,modal};return;}
@@ -3396,7 +3412,7 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
       const u=new URL('/api/fuel',location.origin);
       if(!pointValid(pt))throw new Error('유가 조회 좌표가 올바르지 않습니다.');
       u.searchParams.set('lat',Number(pt.lat).toFixed(7));u.searchParams.set('lng',Number(pt.lng).toFixed(7));
-      u.searchParams.set('prodcd',state.fuelProduct);u.searchParams.set('cnt',driving?'15':'8');
+      u.searchParams.set('prodcd',requestedProduct);u.searchParams.set('cnt',driving?'15':'8');
       const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),14000);
       let res;try{res=await fetch(u,{headers:{accept:'application/json'},cache:'no-store',signal:controller.signal})}finally{clearTimeout(timeout)}
       const dd=await res.json().catch(()=>({}));
@@ -3425,10 +3441,13 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
     state.fuelUpstreamCooldownUntil=0;
     state.fuelFetchedRouteM=curM;
     state.fuelFetchedOrigin={lat:Number(fuelOrigin.lat),lng:Number(fuelOrigin.lng)};
-    d.product=requestedProduct;state.fuelData=d;state.fuelFetchedAt=Date.now();
+    d.product=requestedProduct;
+    fuelProductCache.set(fuelCacheKey(requestedProduct,fuelOrigin),{data:d,at:Date.now()});
+    state.fuelData=d;state.fuelFetchedAt=Date.now();
     try{localStorage.setItem('jofams_fuel_last_success_v1',JSON.stringify({savedAt:Date.now(),payload:d}))}catch{}
     renderFuelData(d);
   }catch(e){
+    if(requestedProduct!==state.fuelProduct){state.fuelPendingRequest={product:state.fuelProduct,force:true,modal};return;}
     // A single empty/error response while changing screens is not proof of a bad key.
     // A manual refresh must always work without a full page reload.
     state.fuelUpstreamCooldownUntil=0;
@@ -3438,7 +3457,12 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
       const raw=JSON.parse(localStorage.getItem('jofams_fuel_last_success_v1')||'null');
       if(raw?.payload&&Date.now()-Number(raw.savedAt||0)<6*60*60*1000)cached=raw.payload;
     }catch{}
-    if(cached&&cached.product===requestedProduct){
+    const perProduct=usableFuelCache(requestedProduct,fuelOrigin,6*60*60*1000);
+    if(perProduct){
+      state.fuelData=perProduct;state.fuelFetchedAt=Date.now()-5*60*1000;
+      renderFuelData(perProduct);
+      toast('실시간 갱신이 지연되어 마지막 정상 유가를 표시합니다.',2200);
+    }else if(cached&&cached.product===requestedProduct){
       state.fuelData=cached;state.fuelFetchedAt=Number(Date.now()-5*60*1000);
       renderFuelData(cached);
       toast('실시간 유가 연결이 지연되어 최근 정상 유가를 표시합니다.',2400);
@@ -3517,7 +3541,8 @@ function renderFuelError(message,code=''){
     OPINET_KEY_MISSING:'서버에 오피넷 인증키(OPINET_CERT_KEY)가 등록되지 않았습니다.',
     OPINET_KEY_REJECTED:'오피넷이 인증키를 거부했습니다. 키와 사용 승인 상태를 확인해 주세요.',
     OPINET_BLOCKED:'서버에서 오피넷 접속이 차단되었습니다. 잠시 후 다시 시도해 주세요.',
-    FUEL_EMPTY:'다른 유종을 선택하거나 잠시 후 다시 확인해 주세요.',
+    FUEL_EMPTY:'해당 유종의 판매가격이 확인되지 않습니다. 잠시 후 재조회해 주세요.',
+    OPINET_PRODUCT_UNAVAILABLE:'해당 유종의 주변 판매가격을 확인하지 못했습니다. 다른 유종은 정상 조회될 수 있습니다.',
     INVALID_COORDINATES:'현재 위치를 아직 확인하지 못했습니다. 위치 권한과 GPS를 확인해 주세요.'
   };
   const detail=`<small>${detailByCode[code]||'오피넷 또는 네트워크 연결이 일시적으로 지연되고 있습니다.'}</small>`;
@@ -3530,7 +3555,7 @@ function renderFuelError(message,code=''){
 }
 function openFuelModal(){
   $('fuelModal').classList.remove('hidden');syncFuelTabs();
-  if(state.fuelData)renderFuelData(state.fuelData);else loadFuelPrices(state.fuelProduct,{force:false,modal:true});
+  if(state.fuelData?.product===state.fuelProduct)renderFuelData(state.fuelData);else loadFuelPrices(state.fuelProduct,{force:false,modal:true});
 }
 function closeFuelModal(){$('fuelModal').classList.add('hidden')}
 
