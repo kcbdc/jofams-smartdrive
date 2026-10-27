@@ -3409,7 +3409,7 @@ async function fuelFetchOnce(product,pt,cnt){
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),14000);
   let res;try{res=await fetch(u,{headers:{accept:'application/json'},signal:controller.signal})}finally{clearTimeout(timeout)}
   const dd=await res.json().catch(()=>({}));
-  if(!res.ok||dd?.error){const err=new Error(dd?.error||`오피넷 연동 서버 /api/fuel 응답 오류 (HTTP ${res.status})`);err.code=dd?.code||String(res.status);throw err}
+  if(!res.ok||dd?.error){const err=new Error(dd?.error||`오피넷 연동 서버 /api/fuel 응답 오류 (HTTP ${res.status})`);err.code=dd?.code||String(res.status);err.trace=dd?.trace;throw err}
   if(!Array.isArray(dd?.stations))throw new Error('오피넷 API 응답에 주유소 목록(stations)이 없습니다.');
   if(!dd.stations.length){const err=new Error('주변 5km 안에 해당 유종의 판매가격 정보가 없습니다.');err.code='FUEL_EMPTY';throw err}
   dd.product=product;
@@ -3422,7 +3422,7 @@ async function fuelGetCached(product,pt,{cnt=8,manual=false}={}){
   const flightKey=`${product}:${Number(pt.lat).toFixed(2)}:${Number(pt.lng).toFixed(2)}`;
   if(fuelInflight.has(flightKey))return fuelInflight.get(flightKey);
   const failKey=product,fail=fuelFailAt.get(failKey);
-  if(fail&&!manual&&Date.now()-fail.at<fail.wait){const err=new Error(fail.message);err.code=fail.code;err.cooldown=true;throw err}
+  if(fail&&!manual&&Date.now()-fail.at<fail.wait){const err=new Error(fail.message);err.code=fail.code;err.trace=fail.trace;err.cooldown=true;throw err}
   const p=(async()=>{
     try{
       const data=await fuelFetchOnce(product,pt,cnt);
@@ -3431,7 +3431,7 @@ async function fuelGetCached(product,pt,{cnt=8,manual=false}={}){
       fuelCacheSave(product,origin,data);
       return{data,cached:false,at,origin};
     }catch(e){
-      fuelFailAt.set(failKey,{at:Date.now(),wait:e?.code==='FUEL_EMPTY'?FUEL_EMPTY_COOLDOWN_MS:FUEL_ERROR_COOLDOWN_MS,message:e?.message||'유가 조회 실패',code:e?.code||''});
+      fuelFailAt.set(failKey,{at:Date.now(),wait:e?.code==='FUEL_EMPTY'?FUEL_EMPTY_COOLDOWN_MS:FUEL_ERROR_COOLDOWN_MS,message:e?.message||'유가 조회 실패',code:e?.code||'',trace:e?.trace});
       throw e;
     }finally{fuelInflight.delete(flightKey)}
   })();
@@ -3483,7 +3483,7 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
       if(!e?.cooldown)toast('유가 갱신이 지연되어 마지막 정상 정보를 표시합니다.',2200);
     }else if(state.fuelData?.product===requestedProduct&&state.fuelData?.stations?.length){
       renderFuelData(state.fuelData);
-    }else renderFuelError(e?.message||'유가 정보를 불러오지 못했습니다.',e?.code||'');
+    }else renderFuelError(e?.message||'유가 정보를 불러오지 못했습니다.',e?.code||'',e?.trace);
   }finally{state.fuelLoading=false}
 }
 function syncFuelTabs(){
@@ -3546,7 +3546,7 @@ function renderFuelLocationError(){
   if($('fuelStationList'))$('fuelStationList').innerHTML=msg;
   if($('fuelModalList'))$('fuelModalList').innerHTML=msg;
 }
-function renderFuelError(message,code=''){
+function renderFuelError(message,code='',trace=null){
   // 7.6.26: 오류 종류별로 정확한 원인을 안내한다(기존에는 "데이터 없음"도 "네트워크 지연"으로 표시됐다).
   const safe=escapeHtml(message||'유가 정보를 불러오지 못했습니다.');
   const detailByCode={
@@ -3558,8 +3558,9 @@ function renderFuelError(message,code=''){
     INVALID_COORDINATES:'현재 위치를 아직 확인하지 못했습니다. 위치 권한과 GPS를 확인해 주세요.'
   };
   const detail=`<small>${detailByCode[code]||'오피넷 또는 네트워크 연결이 일시적으로 지연되고 있습니다.'}${code?` (코드: ${escapeHtml(String(code))})`:''}</small>`;
+  const tr=Array.isArray(trace)&&trace.length?`<br><small>진단: ${escapeHtml(trace.map(t=>[t.step,t.status?'HTTP '+t.status:'',t.rows!=null?t.rows+'건':'',t.error||''].filter(Boolean).join(' ')).join(' / '))}</small>`:'';
   const retry='<button type="button" class="fuel-retry-btn" data-fuel-retry>다시 시도</button>';
-  const msg=`<div class="fuel-empty fuel-error">${safe}<br>${detail}<br>${retry}</div>`;
+  const msg=`<div class="fuel-empty fuel-error">${safe}<br>${detail}${tr}<br>${retry}</div>`;
   for(const id of ['fuelStationList','fuelModalList']){
     const el=$(id);if(!el)continue;el.innerHTML=msg;
     el.querySelector('[data-fuel-retry]')?.addEventListener('click',()=>loadFuelPrices(state.fuelProduct,{manual:true}).catch(()=>{}));
