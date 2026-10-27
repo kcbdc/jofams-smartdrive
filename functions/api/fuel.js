@@ -92,6 +92,8 @@ export async function onRequestGet({request,env}){
       const check=await checkOpinetCatalog(key,trace);
       const diagnostic={
         keySource:selectedKeyName,
+        // 서버에 실제 들어 있는 키가 마이페이지 키와 같은지 대조용(전체 값은 노출하지 않음)
+        keyInfo:{length:key.length,looksLikeOpinetKey:/^F\d{9}$/.test(key),last2:key.slice(-2)},
         aroundEmpty, catalog:check,
         coordinateSystem:'KATEC',
         ...(diag?{testedLocation:{lat,lng,katecX:Math.round(x),katecY:Math.round(y)},trace}:{})
@@ -116,10 +118,13 @@ export async function onRequestGet({request,env}){
       },200,true);
     }
 
-    const detailed=await Promise.race([
-      enrichAddresses(stations.slice(0,8),key),
-      new Promise(resolve=>setTimeout(()=>resolve(stations.slice(0,8)),2200))
+    // 호출 한도 보호(일 300건): 주소 상세 조회는 상위 3곳만, 나머지는 그대로 반환.
+    const head=stations.slice(0,3),tail=stations.slice(3);
+    const enriched=await Promise.race([
+      enrichAddresses(head,key),
+      new Promise(resolve=>setTimeout(()=>resolve(head),2200))
     ]);
+    const detailed=[...enriched,...tail];
     const avg=stations.length?Math.round(stations.reduce((sum,row)=>sum+row.price,0)/stations.length):null;
     return json({provider:'opinet',source,radius,product:prodcd,productName:PRODUCTS[prodcd],
       areaName:areaName||(source==='aroundAll'?`현재 위치 주변 ${Math.round(radius/1000)}km`:'현재 지역'),
@@ -148,6 +153,8 @@ function classify(msg){
 async function fetchOpinetJson(endpoint,params,key,trace){
   const url=new URL('https://www.opinet.co.kr/api/'+endpoint);
   url.searchParams.set('out','json');
+  // 신규 발급 키는 certkey 가 아니라 code 파라미터로만 인식된다(직접 호출로 확인). 기존 키 호환을 위해 둘 다 같은 값으로 전송.
+  url.searchParams.set('code',key);
   url.searchParams.set('certkey',key);
   for(const [k,v] of Object.entries(params||{}))if(v!==''&&v!=null)url.searchParams.set(k,String(v));
   const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),6500);
