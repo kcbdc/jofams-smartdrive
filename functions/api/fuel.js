@@ -162,6 +162,9 @@ async function fetchOpinetJson(endpoint,params,key,trace){
     if(result?.CODE && !['00','0','200'].includes(String(result.CODE)))throw new Error('오피넷 서비스 오류 '+String(result.CODE));
     // Log only structural metadata; never a response snippet or key.
     t.rowCount=Array.isArray(result?.OIL)?result.OIL.length:0;
+    // 빈 응답일 때만: 오피넷이 돌려준 본문 앞부분(인증키는 [redacted] 처리)을 진단 trace 에 포함.
+    // 비진단 응답의 summary 는 step/status/rows/error 만 골라 쓰므로 일반 사용자 화면에는 노출되지 않는다.
+    if(t.rowCount===0&&key)t.snippet=body.split(key).join('[redacted]').replace(/\s+/g,' ').slice(0,300);
     trace?.push(t);
     return obj;
   }catch(e){
