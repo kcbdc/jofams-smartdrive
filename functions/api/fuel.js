@@ -37,14 +37,14 @@ export async function onRequestGet({request,env}){
   try{
     // Opinet official documentation requires the certkey parameter, not 'code'.
     // One price-sorted nearby request, then one distance-sorted retry only if it is empty.
-    // aroundAll.do 의 radius 최대값은 5000m. 그 이상은 잘못된 요청이므로 5km로 고정하고,
-    // 비면 정렬만 바꿔 1회 재시도한다. 그래도 비면 아래 시군구/시도 lowTop10 폴백이 처리한다.
-    // 정렬만 다른 재시도는 결과 집합이 같아 호출 한도만 소모하므로 1회만 호출한다.
-    try{
-      const found=await opinetAround(x,y,prodcd,5000,'1',key,trace);
-      aroundEmpty=found.length===0;
-      if(found.length){stations=found.sort((a,b)=>a.price-b.price).slice(0,cnt);source='aroundAll';radius=5000}
-    }catch(e){upstreamError ||= e}
+    // 정상 동작하던 원본(v7.6.27.7)과 동일한 호출: 가격순 → (비면) 거리순 재시도.
+    for(const sort of ['1','2']){
+      try{
+        const found=await opinetAround(x,y,prodcd,5000,sort,key,trace);
+        aroundEmpty ||= found.length===0;
+        if(found.length){stations=found.sort((a,b)=>a.price-b.price).slice(0,cnt);source='aroundAll';radius=5000;break}
+      }catch(e){upstreamError ||= e}
+    }
 
     if(!stations.length){
       const region=await kakaoRegion(lat,lng,env.KAKAO_REST_API_KEY).catch(()=>null);
