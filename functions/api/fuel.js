@@ -9,7 +9,7 @@
  *  5) 좌표(KATEC)를 서버에서 WGS84 로 변환해 lat/lng 를 항상 제공(카카오 지오코딩 불필요).
  *  6) ?diag=1 : 단계별 상태(키 값은 제외)를 돌려줘 배포 환경 문제를 바로 확인할 수 있다.
  */
-const OK_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'public, max-age=3600, s-maxage=21600'};
+const OK_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'public, max-age=60, s-maxage=120'};
 const ERR_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'no-store'};
 const UA='Mozilla/5.0 (compatible; DangolroNavi/7.6)';
 const PRODUCTS={B027:'휘발유',D047:'경유',B034:'고급휘발유',K015:'LPG'};
