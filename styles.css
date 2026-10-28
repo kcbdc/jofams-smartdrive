@@ -4331,3 +4331,20 @@ body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-camera.passe
 .dangollo-ai-confirm-actions button:last-child{background:#087e59;border-color:#087e59;color:white}
 
 .fuel-best-nav{display:block;width:100%;margin:2px 0 8px;padding:12px 14px;border:0;border-radius:12px;background:#1f6bff;color:#fff;font:inherit;font-weight:800;font-size:14px;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}.fuel-best-nav:active{filter:brightness(.92)}
+
+/* v7.6.27.19: Home natural-language assistant, no fuel/map overrides. */
+#homeAiMicBtn{display:inline-flex;align-items:center;justify-content:center;flex:0 0 43px;width:43px;height:43px;border:0;border-radius:14px;background:#e3f4ec;color:#116d50;cursor:pointer;touch-action:manipulation}
+#homeAiMicBtn svg{width:23px;height:23px}
+.home-ai-example{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:9px 4px 12px;font-size:12px;color:#60716f}
+#homeAiExampleBtn{min-width:0;max-width:100%;border:1px solid #abd7c5;border-radius:22px;padding:8px 13px;background:#effaf5;color:#155b44;white-space:normal;text-align:left;font-size:12px;cursor:pointer}
+.ai-trip-overlay{position:fixed;inset:0;background:#0c192b9c;display:flex;align-items:flex-end;justify-content:center;z-index:99999}
+.ai-trip-card{background:#fff;color:#142c2a;border-radius:24px 24px 0 0;width:min(100%,520px);max-height:85dvh;overflow:auto;padding:20px 20px max(24px,env(safe-area-inset-bottom));box-shadow:0 0 26px #142b3d44}
+.ai-trip-card h3{font-size:20px;margin:0 0 10px}.ai-trip-card p{font-size:14px;line-height:1.6;margin:8px 0}.ai-trip-card .ai-trip-sub{font-size:12px;color:#5b686a}
+.ai-trip-card input{width:100%;height:46px;border:1px solid #a8c1b8;border-radius:12px;padding:10px;font-size:16px;box-sizing:border-box}
+.ai-trip-card button{border-radius:12px;min-height:44px;padding:9px 12px;font-size:14px;cursor:pointer}
+.ai-trip-card .ai-trip-actions{display:flex;gap:9px;margin:14px 0}
+.ai-trip-card .ai-trip-primary{background:#14775b;color:#fff;border:0;flex:1}
+.ai-trip-card .ai-trip-secondary{background:#eaf2ef;color:#123d33;border:0}
+.ai-trip-card .ai-trip-list{display:flex;flex-direction:column;gap:8px;margin:10px 0}
+.ai-trip-card .ai-trip-choice{width:100%;border:1px solid #d9e5e1;background:#f8fbfa;text-align:left}
+.ai-trip-card .ai-trip-choice strong,.ai-trip-card .ai-trip-choice small{display:block;line-height:1.5}.ai-trip-card .ai-trip-choice small{color:#527269}

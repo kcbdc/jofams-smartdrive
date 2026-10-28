@@ -7976,6 +7976,138 @@ function confirmDestinationChange(name){
     document.addEventListener('keydown',onKey);cancel.focus();
   });
 }
+
+/* v7.6.27.19: AI-driven constraints -> real merchant search -> actual waypoint route
+ * Never touch /api/fuel, fuel caching, MapLibre/GPS or navigation safety handlers.
+ */
+let aiTripBusy=false;
+const aiTripEl=id=>document.getElementById(id);
+function aiTripDialog(title,description){
+  aiTripEl('aiTripOverlay')?.remove();
+  const root=document.createElement('div');root.id='aiTripOverlay';root.className='ai-trip-overlay';
+  const card=document.createElement('section');card.className='ai-trip-card';card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');
+  const head=document.createElement('h3');head.textContent=title;
+  const desc=document.createElement('p');desc.textContent=description;
+  const body=document.createElement('div');body.className='ai-trip-body';
+  const foot=document.createElement('div');foot.className='ai-trip-actions';
+  const exit=document.createElement('button');exit.className='ai-trip-secondary';exit.textContent='닫기';exit.onclick=()=>root.remove();
+  foot.append(exit);card.append(head,desc,body,foot);root.append(card);root.onclick=e=>{if(e.target===root)root.remove()};document.body.append(root);
+  return{root,card,body,foot,close:()=>root.remove()};
+}
+function aiTripBtn(text,handler,primary=false){const b=document.createElement('button');b.type='button';b.textContent=text;b.className=primary?'ai-trip-primary':'ai-trip-secondary';b.onclick=handler;return b}
+function aiTripRules(text){
+  const q=String(text||'');const m=q.match(/(\d{1,2})\s*분(?:\s*(?:이내|미만|이상))?\s*우회|우회.{0,8}?(\d{1,2})\s*분/);
+  const category=/주유소/.test(q)?'gas_station':/카페|커피/.test(q)?'cafe':/디저트|케이크|빵집/.test(q)?'dessert':/식당|식사|밥|맛집|음식/.test(q)?'meal':'any';
+  return{intent:'plan_stops',category,payment:/온누리/.test(q)?'onnuri':/지역사랑|지역화폐/.test(q)?'local':'any',max_detour_min:Math.max(1,Math.min(15,Number(m?.[1]||m?.[2]||5))),destination:voiceQueryDestination(q)||'',confidence:.5};
+}
+async function aiTripParse(text){
+  try{const r=await callWorkerAiAssist('trip_plan',{text:String(text).slice(0,280)},8500);if(r?.plan?.intent==='plan_stops'&&r.plan.confidence>=.5)return r.plan;}catch(e){console.warn('AI trip_plan fallback',e?.message||e)}
+  return aiTripRules(text);
+}
+function aiTripCategoryMatch(item,category){if(category==='any')return true;if(category==='gas_station')return Number(item?.price)>0;return classifyVoiceMerchant(item)===category}
+function aiTripMerchantPool(plan){
+  const pa=state.planningAi||{},local=mergeDrivePoiMerchantRows([...(pa.local||[]),...(state.localVoucherData?.items||[])]),onnuri=mergeDrivePoiMerchantRows([...(pa.onnuri||[]),...(state.onnuriData?.items||[])]);
+  const groups=plan.payment==='onnuri'?[['onnuri',onnuri]]:plan.payment==='local'?[['local',local]]:[['onnuri',onnuri],['local',local]];
+  const line=state.route?.geometry||[];if(line.length<2)return[];
+  const found=new Set(),rows=[];
+  for(const [payment,items] of groups)for(const item of items){
+    const lat=Number(item.lat),lng=Number(item.lng);if(!Number.isFinite(lat)||!Number.isFinite(lng)||!aiTripCategoryMatch(item,plan.category))continue;
+    const key=lat.toFixed(5)+':'+lng.toFixed(5);if(found.has(key))continue;
+    const hit=routePosOfPoint(lng,lat,line,null,1200);if(!hit||Number(hit.distance)>900)continue;
+    found.add(key);rows.push({...item,payment,offset:Number(hit.distance),ahead:Number(hit.routeDistance)});
+  }
+  return rows.sort((x,y)=>x.offset-y.offset).slice(0,12);
+}
+async function aiTripEnsureRoute(){
+  if(state.route?.geometry?.length&&state.destination)return true;
+  if(!pointValid(state.destination))return false;
+  if(!state.user)await locate(false);
+  if(!state.user)return false;
+  await loadRouteOptions();return Boolean(state.route?.geometry?.length);
+}
+async function aiTripPickDestination(plan,text){
+  return new Promise(resolve=>{
+    const ui=aiTripDialog('어디로 가시나요?','목적지를 선택하면 앞서 말씀하신 상품권·업종·우회시간 조건을 유지합니다.');
+    const inp=document.createElement('input');inp.placeholder='목적지 입력 (예: 세종시청)';inp.value=plan.destination||'';
+    const results=document.createElement('div');results.className='ai-trip-list';
+    const search=aiTripBtn('목적지 검색',async()=>{
+      const q=inp.value.trim();if(!q)return;
+      results.textContent='장소를 검색하고 있습니다…';
+      try{const u=new URL('/api/search',location.origin);u.searchParams.set('q',q);if(state.user){u.searchParams.set('lat',state.user.lat);u.searchParams.set('lng',state.user.lng)}
+        const r=await fetch(u);if(!r.ok)throw Error('SEARCH');const d=await r.json();results.textContent='';
+        const items=(d.items||[]).slice(0,6);if(!items.length){results.textContent='장소 검색 결과가 없습니다.';return}
+        for(const item of items){const b=aiTripBtn(`${item.name||'장소'} · ${item.address||''}`,()=>{ui.close();resolve(item)});b.className='ai-trip-choice';results.append(b)}
+      }catch{results.textContent='장소 검색에 실패했습니다. 다시 시도해 주세요.'}
+    },true);
+    inp.onkeydown=e=>{if(e.key==='Enter')search.click()};ui.body.append(inp,results);ui.foot.prepend(search);
+    ui.foot.querySelector('.ai-trip-secondary').onclick=()=>{ui.close();resolve(null)};
+    ui.root.onclick=e=>{if(e.target===ui.root){ui.close();resolve(null)}};
+    setTimeout(()=>inp.focus(),50);
+  });
+}
+async function aiTripVerifyCandidates(plan){
+  if(!await aiTripEnsureRoute())throw Error('현재 위치와 목적지 경로를 확인할 수 없습니다.');
+  // No fuel calls: respect the known-good Opinet implementation, and do not claim payment at gas stations.
+  if(plan.category==='gas_station')throw Error('상품권 주유소의 결제 가능 여부를 검증할 데이터가 없어 조건을 확정할 수 없습니다.');
+  // Merchant-only lookup: never trigger fuelGetCached or the Opinet API from AI search.
+  if(!state.tripStartedAt){
+    const points=planningProbes(state.route.geometry);
+    const merchant=async path=>(await Promise.all(points.map(pt=>planningFetchJson(path,{lat:pt.lat,lng:pt.lng,...drivePoiRegionBox(pt,2.0)}).then(j=>Array.isArray(j.items)?j.items:[]).catch(()=>[])))).flat();
+    const [local,onnuri]=await Promise.all([merchant('/api/local-voucher'),merchant('/api/onnuri-voucher')]);
+    state.planningAi={...(state.planningAi||{}),local:mergeDrivePoiMerchantRows(local),onnuri:mergeDrivePoiMerchantRows(onnuri)};
+  }
+  const base=Number(state.route?.duration);if(!(base>0))throw Error('기본 경로 소요시간이 없습니다.');
+  const results=[];const candidates=aiTripMerchantPool(plan);
+  const spec=routePreferenceSpec();
+  for(const item of candidates.slice(0,6)){
+    const pt=normalizedPlace({name:item.name||item.market||'가맹점',address:item.address||'',lat:item.lat,lng:item.lng});
+    if(!pointValid(pt))continue;
+    try{
+      const rr=await Promise.race([
+        routeRequest(spec.priority,spec.avoid,[...(state.waypoints||[]),pt],state.routeMode),
+        new Promise((_,reject)=>setTimeout(()=>reject(Error('TIMEOUT')),6000))
+      ]);
+      if(!rr?.geometry?.length)continue;
+      const extra=(Number(rr.duration)-base)/60;
+      if(Number.isFinite(extra)&&extra<=plan.max_detour_min&&extra>=-3){results.push({item,pt,route:rr,extra:Math.max(0,extra)});if(results.length>=3)break}
+    }catch(e){console.warn('AI trip route verification failed',String(e?.message||e))}
+  }
+  return results;
+}
+async function aiTripShowCandidates(plan){
+  const ui=aiTripDialog('AI 조건 분석 중','실제 가맹점과 경유 경로를 확인하고 있습니다.');
+  const summarize=()=>`결제: ${plan.payment==='onnuri'?'온누리':plan.payment==='local'?'지역사랑':'상품권'} · 업종: ${plan.category==='meal'?'식당':plan.category==='cafe'?'카페':plan.category==='dessert'?'디저트':'전체'} · 최대 우회 ${plan.max_detour_min}분`;
+  ui.body.textContent=summarize();
+  try{
+    const items=await aiTripVerifyCandidates(plan);if(!ui.root.isConnected)return;
+    ui.body.textContent='';const fact=document.createElement('p');fact.textContent=summarize();ui.body.append(fact);
+    if(!items.length){const empty=document.createElement('p');empty.textContent='실제 데이터와 경로 API로 확인한 조건 일치 후보가 없습니다. 조건을 완화하거나 다른 경로에서 검색해 주세요.';ui.body.append(empty);return}
+    const list=document.createElement('div');list.className='ai-trip-list';
+    for(const x of items){const button=document.createElement('button');button.className='ai-trip-choice';
+      const strong=document.createElement('strong');strong.textContent=x.pt.name;
+      const small=document.createElement('small');small.textContent=`${x.item.payment==='onnuri'?'온누리':'지역사랑'} · 실제 계산된 추가 우회 약 ${Math.round(x.extra*10)/10}분 · 경로 이탈 약 ${Math.round(x.item.offset)}m`;
+      button.append(strong,small);button.onclick=async()=>{
+        if(state.tripStartedAt){ui.close();toast('운전 중에는 안전한 곳에서 정차한 후 경유지를 확정해 주세요.',3500);return}
+        ui.close();cancelAutoStart();state.waypoints=[...(state.waypoints||[]),x.pt].slice(0,5);renderRouteWaypoints();
+        await loadRouteOptions();cancelAutoStart();toast(`${x.pt.name} 경유지가 추가됐습니다. 경로를 확인하고 안내 시작을 눌러 주세요.`,4200);
+      };list.append(button)
+    }
+    ui.body.append(list);const note=document.createElement('p');note.className='ai-trip-sub';note.textContent='가맹점 업종은 제공 데이터의 표기를 기준으로 필터링했습니다. 실제 상품권 결제 가능 여부·영업시간은 방문 전 확인이 필요합니다.';ui.body.append(note);
+  }catch(e){if(ui.root.isConnected){ui.body.textContent=e?.message||'검색 중 오류가 발생했습니다.'}}
+}
+async function startAiTripSearch(text){
+  if(aiTripBusy)return toast('AI 검색이 진행 중입니다.');aiTripBusy=true;
+  try{
+    const plan=await aiTripParse(text);
+    if(!plan||plan.intent!=='plan_stops'){toast('요청 조건을 이해하지 못했습니다. 업종과 상품권 조건을 다시 말씀해 주세요.');return}
+    if(!pointValid(state.destination)){
+      const place=await aiTripPickDestination(plan,text);if(!place)return;
+      await chooseDestination(place,{autoGuide:false});cancelAutoStart();
+    }
+    await aiTripShowCandidates(plan);
+  }catch(e){console.warn('AI condition search failed',e);toast('AI 조건 검색을 완료하지 못했습니다.')}finally{aiTripBusy=false}
+}
+
 async function handleVoiceCommandText(raw){
   const text=String(raw||'').trim();if(!text)return toast('명령을 다시 말씀해 주세요.');
   if(text.includes('재탐색'))return reroute();
@@ -7988,23 +8120,9 @@ async function handleVoiceCommandText(raw){
     if(!$('routeAiCompareResult'))return toast('경로 화면에서 AI 비교 기능을 이용해 주세요.');
     setView('route');return explainRoutesWithAi();
   }
-  // Route/stops requests are AI-first; deterministic rules remain the timeout fallback.
-  // Complex spoken phrases are resolved via AI before broad merchant regular expressions.
-  // Failure or timeout falls through to existing deterministic destination search.
-  if(voiceRecommendationRequested(text)||/가는\s*길에|근처에서|주변에|상품권|온누리|지역사랑|잠깐\s*들|들렀다/.test(text)){
-    const intent=await parseVoiceIntentWithAi(text);
-    if(intent?.type==='merchant_recommend'){
-      const categoryHint=intent.category==='cafe'?'카페':intent.category==='dessert'?'디저트':intent.category==='meal'?'맛집':'';
-      return runVoiceMerchantRecommendation(`${categoryHint} 추천 ${intent.destination?`${intent.destination} 가는 길`:''}`.trim());
-    }
-    if(intent?.type==='route_compare'){setView('route');return explainRoutesWithAi()}
-    if(intent?.type==='destination'&&intent.destination){
-      const proposed=String(intent.destination).slice(0,80);
-      if(state.tripStartedAt&&!(await confirmDestinationChange(proposed)))return;
-      return handleVoiceCommandText(proposed);
-    }
+  if(voiceRecommendationRequested(text)||/가는\s*길에|상품권|온누리|지역사랑|우회|경유/.test(text)){
+    return startAiTripSearch(text);
   }
-  if(voiceRecommendationRequested(text))return runVoiceMerchantRecommendation(text);
   const q=normalizeVoiceDestination(text);if(!q)return toast('목적지를 다시 말씀해 주세요.');
   toast(`“${q}” 목적지를 찾고 있습니다...`,2200);
   try{
@@ -8017,7 +8135,7 @@ async function handleVoiceCommandText(raw){
 }
 function startVoiceCommand(){
   if(window.JofamsVoiceBridge?.isNativeVoiceAvailable?.()){
-    toast('목적지 또는 “점심 맛집 들러서 안내해 줘”라고 말씀해 주세요.');
+    toast('“가는 길에 온누리 식당, 5분 이내 우회”처럼 말씀해 주세요.');
     try{return window.JofamsVoiceBridge.startRecognition()}catch(e){console.warn('native voice bridge failed',e)}
   }
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -8581,7 +8699,7 @@ function bindHomeCriticalUI(){
 function bindUI(){
   try{bindFutureDepartureUI();}catch(e){console.warn('UI bind section 1 failed',e)}
   try{$('allowLocationBtn').onclick=requestLocationPermission;$('allowCameraBtn').onclick=requestCameraPermission;$('permissionContinueBtn').onclick=closePermissionGate;}catch(e){console.warn('UI bind section 2 failed',e)}
-  try{if($('homeSheetToggle'))$('homeSheetToggle').onclick=toggleHomeSheet;if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=closeMapPlacePrompt;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;if($('voucherBuildingClose'))$('voucherBuildingClose').onclick=closeVoucherBuildingModal;window.addEventListener('online',()=>{state.localVoucherRetryCount=0;loadLocalVoucherMap({force:true})});if($('voucherBuildingModal'))$('voucherBuildingModal').addEventListener('click',e=>{if(e.target===$('voucherBuildingModal'))closeVoucherBuildingModal()});applyIcons();$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
+  try{if($('homeSheetToggle'))$('homeSheetToggle').onclick=toggleHomeSheet;if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=closeMapPlacePrompt;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;if($('voucherBuildingClose'))$('voucherBuildingClose').onclick=closeVoucherBuildingModal;window.addEventListener('online',()=>{state.localVoucherRetryCount=0;loadLocalVoucherMap({force:true})});if($('voucherBuildingModal'))$('voucherBuildingModal').addEventListener('click',e=>{if(e.target===$('voucherBuildingModal'))closeVoucherBuildingModal()});applyIcons();if($('homeAiMicBtn'))$('homeAiMicBtn').onclick=startVoiceCommand;if($('homeAiExampleBtn'))$('homeAiExampleBtn').onclick=()=>startAiTripSearch('가는 길에 온누리상품권으로 결제할 수 있는 식당, 5분 이상 우회하지 마');$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
   try{document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>setCharacter(b.dataset.character));$('homeShortcut').onclick=()=>state.savedPlaces.home?chooseDestination(state.savedPlaces.home):openPlaceModal('home');$('workShortcut').onclick=()=>state.savedPlaces.work?chooseDestination(state.savedPlaces.work):openPlaceModal('work');$('homeManageBtn').onclick=()=>openPlaceModal('home');$('workManageBtn').onclick=()=>openPlaceModal('work');$('favoriteShortcut').onclick=openFavoritesList;}catch(e){console.warn('UI bind section 4 failed',e)}
   try{document.querySelectorAll('[data-my-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.myCharacter);syncCharacterUI();toast(`${characterDefs[state.character].name} 가이드로 변경했습니다.`)});}catch(e){console.warn('UI bind section 5 failed',e)}
   try{document.querySelectorAll('[data-voice-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.voiceCharacter);syncCharacterUI();speak(`${characterDefs[state.character].name} 음성 안내입니다.`)});}catch(e){console.warn('UI bind section 6 failed',e)}
