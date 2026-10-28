@@ -3374,6 +3374,7 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
   let fuelOrigin=currentOriginPoint();
   if(!pointValid(fuelOrigin))fuelOrigin=await refreshCurrentLocation({maxAgeMs:60000,timeoutMs:2600}).catch(()=>null);
   if(!pointValid(fuelOrigin))fuelOrigin=currentOriginPoint();
+  if(requestedProduct!==state.fuelProduct){state.fuelPendingRequest={product:state.fuelProduct,force:true,modal};return;}
   if(!pointValid(fuelOrigin)){
     if(!state.fuelRetryScheduled){state.fuelRetryScheduled=true;setTimeout(()=>{state.fuelRetryScheduled=false;if(pointValid(currentOriginPoint()))loadFuelPrices(state.fuelProduct,{force:true}).catch(console.warn)},3500)}
     let cached=null;
@@ -3420,10 +3421,13 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
       if(!Array.isArray(dd?.stations))throw new Error('오피넷 API 응답에 주유소 목록(stations)이 없습니다.');
       return dd;
     }).map(p=>p.catch(e=>({__err:e}))));
-    const okRes=results.filter(r=>!r.__err);
+    const okRes=results.filter(r=>!r.__err&&Array.isArray(r.stations)&&r.stations.length>0);
+    const emptyRes=results.filter(r=>!r.__err&&Array.isArray(r.stations)&&r.stations.length===0);
     if(!okRes.length){
-      const err=results.find(r=>r.__err?.code==='OPINET_KEY_OR_UPSTREAM')?.__err||results[0].__err;
-      throw err;
+      const err=results.find(r=>r.__err)?.__err;
+      if(err)throw err;
+      if(emptyRes.length){const unavailable=new Error('선택한 유종의 가격정보가 현재 비어 있습니다. 재시도할 수 있습니다.');unavailable.code='OPINET_PRODUCT_UNAVAILABLE';throw unavailable;}
+      throw new Error('오피넷 가격 데이터를 수신하지 못했습니다.');
     }
     const d={...okRes[0]};
     if(okRes.length>1){
@@ -3435,8 +3439,8 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
     if(!Array.isArray(d.stations))throw new Error('오피넷 API 응답 형식 오류');
     if(requestedProduct!==state.fuelProduct){state.fuelPendingRequest={product:state.fuelProduct,force:true};return;}
     if(!d.stations.length){
-      if(state.fuelData?.stations?.length){renderFuelData(state.fuelData);return;}
-      {const err=new Error('반경 5km 안에 해당 유종의 판매가격 정보가 없습니다.');err.code='FUEL_EMPTY';throw err}
+      if(state.fuelData?.product===requestedProduct&&state.fuelData?.stations?.length){renderFuelData(state.fuelData);return;}
+      {const err=new Error('현재 선택 유종의 실시간 가격 목록이 비어 있습니다. 오피넷 이용 한도 초과로 단정할 수 없습니다.');err.code='OPINET_PRODUCT_UNAVAILABLE';throw err}
     }
     state.fuelUpstreamCooldownUntil=0;
     state.fuelFetchedRouteM=curM;
