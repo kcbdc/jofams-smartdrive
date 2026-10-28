@@ -1535,6 +1535,35 @@ function currentWhereItems(){
   const source=state.whereToTab==='onnuri'?state.onnuriData:state.localVoucherData;
   return merchantDistanceSorted(source?.items||[]).slice(0,100);
 }
+/* v7.6.27.27 — reusable honest category art and public search links.
+   Category art is an illustration, NEVER presented as a photo of the actual merchant.
+   Search links expose no private location and never assert review/social counts. */
+function discoverMerchantCategory(item){
+  const t=[item.name,item.category,item.categoryName,item.industry,item.businessType,item.type,item.upjong,item.market].filter(Boolean).join(' ').toLowerCase();
+  if(/카페|커피|다방|에스프레소|coffee|cafe|티룸/.test(t))return 'cafe';
+  if(/빵|제과|베이커리|디저트|케이크|도넛|떡집|마카롱|아이스크림/.test(t))return 'bakery';
+  if(/식당|음식|국밥|한식|중식|일식|분식|김밥|고기|갈비|곱창|치킨|피자|버거|국수|횟집|레스토랑|쌀국수|초밥|탕|찌개|칼국수|족발|보쌈|백반/.test(t))return 'meal';
+  if(/꽃|화원|플라워/.test(t))return 'flower';
+  if(/책|서점|문구|학용품/.test(t))return 'books';
+  if(/마트|슈퍼|시장|상회|청과|정육|식료품|과일|반찬/.test(t))return 'market';
+  return 'local';
+}
+function discoverMerchantImage(item, override){
+  const category=override||discoverMerchantCategory(item);
+  return '/assets/merchant-'+( ['cafe','bakery','meal','flower','books','market'].includes(category)?category:'local')+'.svg';
+}
+function discoverMerchantSearchUrl(item,service){
+  const name=String(item?.name||item?.market||'').trim().slice(0,64);
+  const addr=String(item?.address||item?.matchedAddress||'').trim();
+  const locality=addr.split(/\s+/).slice(0,2).join(' ');
+  const q=[name,locality].filter(Boolean).join(' ');
+  if(service==='instagram')return 'https://www.instagram.com/explore/search/keyword/?q='+encodeURIComponent(q);
+  return 'https://search.naver.com/search.naver?where=view&query='+encodeURIComponent(q+' 방문 후기');
+}
+function discoverMerchantLinks(item,cssClass='discover-links'){
+  const link=(type,label)=>`<a href="${escapeHtml(discoverMerchantSearchUrl(item,type))}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(item.name||'가맹점')} ${label} (새 창)">${label}</a>`;
+  return `<span class="${cssClass}">${link('instagram','◎ 인스타그램')}${link('review','☆ 후기 검색')}</span>`;
+}
 function renderWhereToList(){
   const box=$('whereToList');if(!box)return;
   document.querySelectorAll('[data-where-tab]').forEach(b=>b.classList.toggle('active',b.dataset.whereTab===state.whereToTab));
@@ -1555,36 +1584,38 @@ function renderWhereToList(){
       const tag=approx
         ? (Number(x.fallbackCount)>1?`대표 구역 위치 · 원천 ${Number(x.fallbackCount).toLocaleString()}곳`:'시장·상점가 대표 위치')
         : (x.source==='semas-onnuri-2026-csv8'?'주소보강 8차 · 가맹점 위치':(x.precision==='exact-address-geocode'?'상세주소 위치 확인':'가맹점 위치 확인'));
-      return `<button type="button" class="where-to-item where-to-item-onnuri ${approx?'where-to-zone-item':''}" data-where-index="${i}">
-        <span class="where-to-rank">${i+1}</span>
+      return `<div role="button" tabindex="0" class="where-to-item where-to-item-onnuri ${approx?'where-to-zone-item':''}" data-where-index="${i}">
+        <span class="where-to-visual"><img src="${discoverMerchantImage(x)}" alt="${escapeHtml(discoverMerchantCategory(x))} 업종 일러스트" loading="lazy"><span class="where-to-rank">${i+1}</span></span>
         <span class="where-to-info">
           <b>${escapeHtml(x.name||'온누리상품권 가맹점')}</b>
           <small>${escapeHtml(loc)}</small>
           <em>온누리상품권 · ${escapeHtml(x.market||'상점가 미상')} · ${tag}</em>
-          <span class="where-to-meta-pills">${region?`<i>${escapeHtml(region)}</i>`:''}${use?`<i>${escapeHtml(use)}</i>`:'<i>사용수단 확인</i>'}<i class="where-to-mapbtn" role="button" tabindex="0" data-where-map="${i}">지도에서 보기</i></span>
+          <span class="where-to-meta-pills">${region?`<i>${escapeHtml(region)}</i>`:''}${use?`<i>${escapeHtml(use)}</i>`:'<i>사용수단 확인</i>'}<i class="where-to-mapbtn" role="button" tabindex="0" data-where-map="${i}">지도에서 보기</i></span>${discoverMerchantLinks(x)}
         </span>
         <strong>${whereDistanceLabel(x._distance)}</strong>
-      </button>`;
+      </div>`;
     }
     const use=voucherUseFlags(x).join(' · ');
-    return `<button type="button" class="where-to-item" data-where-index="${i}">
-      <span class="where-to-rank">${i+1}</span>
+    return `<div role="button" tabindex="0" class="where-to-item" data-where-index="${i}">
+      <span class="where-to-visual"><img src="${discoverMerchantImage(x)}" alt="${escapeHtml(discoverMerchantCategory(x))} 업종 일러스트" loading="lazy"><span class="where-to-rank">${i+1}</span></span>
       <span class="where-to-info">
         <b>${escapeHtml(x.name||'가맹점')}</b>
         <small>${escapeHtml(x.address||'주소 정보 없음')}</small>
         <em>${escapeHtml(use||'지역사랑상품권')}</em>
-        <span class="where-to-meta-pills"><i class="where-to-mapbtn" role="button" tabindex="0" data-where-map="${i}">지도에서 보기</i></span>
+        <span class="where-to-meta-pills"><i class="where-to-mapbtn" role="button" tabindex="0" data-where-map="${i}">지도에서 보기</i></span>${discoverMerchantLinks(x)}
       </span>
       <strong>${whereDistanceLabel(x._distance)}</strong>
-    </button>`;
+    </div>`;
   }).join('');
 
+  // SNS/review links do not trigger the enclosing destination choice.
+  box.querySelectorAll('.discover-links a').forEach(a=>a.onclick=e=>e.stopPropagation());
   // 목록의 가맹점을 지도에서 바로 확인: 해당 위치로 이동하고 마커를 강조한다.
   box.querySelectorAll('[data-where-map]').forEach(btn=>{
     const go=e=>{e.preventDefault();e.stopPropagation();const p=currentWhereItems()[Number(btn.dataset.whereMap)];if(!p)return;state.whereToTab==='onnuri'?focusOnnuriItem(p):focusVoucherItem(p)};
     btn.onclick=go;btn.onkeydown=e=>{if(e.key==='Enter'||e.key===' ')go(e)};
   });
-  box.querySelectorAll('[data-where-index]').forEach(btn=>btn.onclick=async()=>{
+  box.querySelectorAll('[data-where-index]').forEach(btn=>{btn.onkeydown=e=>{if((e.key==='Enter'||e.key===' ')&&e.target===btn){e.preventDefault();btn.click()}};btn.onclick=async(e)=>{if(e.target.closest('a,[data-where-map]'))return;
     const p=currentWhereItems()[Number(btn.dataset.whereIndex)];
     if(!p)return;
     closeWhereTo();
@@ -1602,7 +1633,7 @@ function renderWhereToList(){
     }else{
       await chooseDestination({name:p.name||'가맹점',address:p.address||'',lng:Number(p.lng),lat:Number(p.lat)});
     }
-  });
+  };});
 }
 function focusOnnuriItem(item){
   const lng=Number(item?.lng??item?.lon??item?.longitude??item?.x),lat=Number(item?.lat??item?.latitude??item?.y);
@@ -8918,6 +8949,7 @@ function bindUI(){
   try{if($('waypointSearchClose'))$('waypointSearchClose').onclick=()=>closeWaypointSearch(true);if($('waypointSearchSubmit'))$('waypointSearchSubmit').onclick=()=>searchWaypointPlaces($('waypointSearchInput').value);if($('waypointSearchInput'))$('waypointSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchWaypointPlaces(e.target.value)});if($('waypointSearchModal'))$('waypointSearchModal').addEventListener('click',e=>{if(e.target===$('waypointSearchModal'))closeWaypointSearch(true)});if($('drivePlaceChoiceClose'))$('drivePlaceChoiceClose').onclick=closeDrivePlaceChoice;if($('drivePlaceAsWaypoint'))$('drivePlaceAsWaypoint').onclick=()=>applyDrivePlaceChoice('waypoint');if($('drivePlaceAsDestination'))$('drivePlaceAsDestination').onclick=()=>applyDrivePlaceChoice('destination');if($('drivePlaceChoiceModal'))$('drivePlaceChoiceModal').addEventListener('click',e=>{if(e.target===$('drivePlaceChoiceModal'))closeDrivePlaceChoice()});}catch(e){console.warn('UI bind section waypoint/permission failed',e)}
   try{$('originModalClose').onclick=closeOriginModal;$('useCurrentOriginBtn').onclick=useCurrentOrigin;$('originSearchBtn').onclick=()=>searchOrigins($('originSearchInput').value);$('originSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchOrigins(e.target.value)});$('originModal').addEventListener('click',e=>{if(e.target===$('originModal'))closeOriginModal()});$('arCloseBtn').onclick=stopAR;document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.bottomNav;closeBottomPanels(nav);if(nav==='home'){cancelAutoStart();setView('home')}else if(nav==='where'){setView('home');openWhereTo()}else if(nav==='saved'){setView('home');openSavedPlaces()}else if(nav==='my')openMy()});$('placeModalClose').onclick=()=>$('placeModal').classList.add('hidden');if($('useCurrentPlaceBtn'))$('useCurrentPlaceBtn').onclick=saveCurrentLocationAsPlace;if($('placeSaveBtn'))$('placeSaveBtn').onclick=confirmRegisteredPlace;if($('whereToClose'))$('whereToClose').onclick=closeWhereTo;
 if($('whereToRefresh'))$('whereToRefresh').onclick=refreshWhereTo;
+if($('whereToHotspotBtn'))$('whereToHotspotBtn').onclick=()=>{closeWhereTo();hotspotOpen()};
 if($('whereToModal'))$('whereToModal').addEventListener('click',e=>{if(e.target===$('whereToModal'))closeWhereTo()});
 document.querySelectorAll('[data-where-tab]').forEach(b=>b.onclick=()=>{state.whereToTab=b.dataset.whereTab;renderWhereToList();refreshWhereTo()});
 if($('savedPlacesClose'))$('savedPlacesClose').onclick=closeSavedPlaces;
@@ -9086,20 +9118,17 @@ setInterval(()=>{if(!document.hidden)refreshDangolloHomeWeather()},60000);
 /* v7.6.27.26 — 길 위의 핫플: verified voucher locations + legitimate Instagram search link. */
 let hotspotRequestSeq=0;
 const hotspotText=x=>String(x||'').trim().slice(0,160);
-function hotspotInstagramUrl(item){
-  // Open a public Instagram search UI; DO NOT scrape posts or claim Instagram popularity metrics.
-  const name=hotspotText(item.name||item.market||'').slice(0,55);
-  const locality=hotspotText(item.address||'').split(/\\s+/).slice(0,2).join(' ');
-  return 'https://www.instagram.com/explore/search/keyword/?q='+encodeURIComponent([name,locality].filter(Boolean).join(' '));
-}
+function hotspotInstagramUrl(item){return discoverMerchantSearchUrl(item,'instagram')}
 function hotspotRenderRow(host,item,opts={}){
   const row=document.createElement('article');row.className='hotspot-result';
+  const visual=document.createElement('div');visual.className='hotspot-photo';const image=document.createElement('img');image.src=discoverMerchantImage(item,opts.category);image.loading='lazy';image.alt='업종별 대표 일러스트 (해당 가맹점 실사진 아님)';visual.append(image);
   const title=document.createElement('strong');title.textContent=hotspotText(item.name||item.market||'가맹점');
   const meta=document.createElement('small');const distance=opts.distance!=null?` · 약 ${(opts.distance/1000).toFixed(1)}km`:'';
   meta.textContent=`${item.payment==='onnuri'?'온누리':'지역사랑'} 가맹점${distance}${opts.extra!=null?` · 추가 우회 약 ${opts.extra.toFixed(1)}분`:''}`;
   const address=document.createElement('small');address.textContent=hotspotText(item.address||item.matchedAddress||item.market||'주소 상세 확인 필요');
   const actions=document.createElement('div');actions.className='hotspot-actions';
   const insta=document.createElement('a');insta.href=hotspotInstagramUrl(item);insta.target='_blank';insta.rel='noopener noreferrer';insta.textContent='◎ 인스타그램에서 찾기';insta.title='이 장소를 인스타그램에서 검색 (SNS 인기도 미검증)';
+  const review=document.createElement('a');review.href=discoverMerchantSearchUrl(item,'review');review.target='_blank';review.rel='noopener noreferrer';review.textContent='☆ 방문 후기';review.title='외부 방문 후기 검색 (평점·인기도 미검증)';
   const go=document.createElement('button');go.type='button';go.textContent=opts.verified?'경유지로 추가':'목적지로 선택';
   go.onclick=async()=>{
     if(state.tripStartedAt){host.status.textContent='안전한 곳에 정차한 후 장소를 선택해 주세요.';return}
@@ -9119,13 +9148,13 @@ function hotspotRenderRow(host,item,opts={}){
       }
     }catch(e){host.status.textContent='경로 계산에 실패했습니다. 다시 시도해 주세요.';go.disabled=false;console.warn('[hotspot] route failed',e)}
   };
-  actions.append(insta,go);row.append(title,meta,address,actions);return row;
+  actions.append(insta,review,go);row.append(visual,title,meta,address,actions);return row;
 }
 function hotspotOpen(query=""){
   document.getElementById('hotspotOverlay')?.remove();++hotspotRequestSeq;
   const root=document.createElement('div');root.id='hotspotOverlay';root.className='hotspot-overlay';
   const sheet=document.createElement('section');sheet.className='hotspot-sheet';sheet.setAttribute('role','dialog');sheet.setAttribute('aria-modal','true');sheet.setAttribute('aria-label','길 위의 핫플');
-  sheet.innerHTML='<div class="hotspot-title"><div><small>단골로 · 지역 소비 발견</small><h2>🍜 길 위의 핫플</h2></div><button type="button" class="hotspot-close" aria-label="닫기">×</button></div><p class="hotspot-intro">실제 상품권 가맹점 중 맛집과 카페를 찾고 인스타그램 게시물을 직접 살펴보세요.</p><div class="hotspot-filters"><label>종류<select id="hotspotCategory"><option value="meal">맛집</option><option value="cafe">카페</option><option value="dessert">디저트</option></select></label><label>결제 혜택<select id="hotspotPayment"><option value="both">전체</option><option value="onnuri">온누리</option><option value="local">지역사랑</option></select></label><label>최대 우회<select id="hotspotDetour"><option value="5">5분</option><option value="10">10분</option><option value="3">3분</option></select></label></div><p id="hotspotStatus" class="hotspot-status" role="status" aria-live="polite">주변 가맹점을 확인하고 있습니다…</p><div id="hotspotResults" class="hotspot-results"></div><p class="hotspot-disclaimer">SNS 인기 순위·평점은 제공하지 않습니다. 인스타그램 링크는 검색용이며, 상품권 결제 가능 여부와 영업시간은 방문 전 확인하세요.</p>';
+  sheet.innerHTML='<div class="hotspot-title"><div><small>단골로 · 지역 소비 발견</small><h2>🍜 길 위의 핫플</h2></div><button type="button" class="hotspot-close" aria-label="닫기">×</button></div><p class="hotspot-intro">실제 상품권 가맹점 중 맛집과 카페를 찾고 인스타그램 게시물을 직접 살펴보세요.</p><div class="hotspot-filters"><label>종류<select id="hotspotCategory"><option value="meal">맛집</option><option value="cafe">카페</option><option value="dessert">디저트</option></select></label><label>결제 혜택<select id="hotspotPayment"><option value="both">전체</option><option value="onnuri">온누리</option><option value="local">지역사랑</option></select></label><label>최대 우회<select id="hotspotDetour"><option value="5">5분</option><option value="10">10분</option><option value="3">3분</option></select></label></div><p id="hotspotStatus" class="hotspot-status" role="status" aria-live="polite">주변 가맹점을 확인하고 있습니다…</p><div id="hotspotResults" class="hotspot-results"></div><p class="hotspot-disclaimer">이미지는 업종별 대표 일러스트이며 가맹점 실사진이 아닙니다. SNS·후기는 외부 검색으로 연결되며 인기 순위·평점은 검증하지 않습니다. 결제 가능 여부와 영업시간은 방문 전 확인하세요.</p>';
   root.append(sheet);document.body.append(root);const close=()=>{hotspotRequestSeq++;root.remove()};sheet.querySelector('.hotspot-close').onclick=close;root.onclick=e=>{if(e.target===root)close()};
   const host={root,status:sheet.querySelector('#hotspotStatus'),results:sheet.querySelector('#hotspotResults')};
   if(query){
@@ -9148,7 +9177,7 @@ async function hotspotFind(host){
       const rows=await aiTripVerifyCandidates({category,payment,max_detour_min},msg=>{if(seq===hotspotRequestSeq)host.status.textContent=msg});
       if(seq!==hotspotRequestSeq||!host.root.isConnected)return;
       host.status.textContent=rows.length?`실제 경유시간으로 검증된 ${rows.length}곳입니다.`:'해당 조건의 검증된 경유 후보가 없습니다. 조건을 변경해 보세요.';
-      rows.forEach(x=>host.results.append(hotspotRenderRow(host,{...x.item,name:x.pt.name},{verified:true,extra:x.extra})));
+      rows.forEach(x=>host.results.append(hotspotRenderRow(host,{...x.item,name:x.pt.name},{verified:true,extra:x.extra,category})));
       return;
     }catch(e){console.warn('[hotspot] detour validation failed',e);if(seq!==hotspotRequestSeq)return;host.status.textContent='경유시간을 검증할 수 없습니다. 정확한 경로를 먼저 확인해 주세요.';return}
   }
@@ -9167,7 +9196,7 @@ async function hotspotFind(host){
     .map(x=>({...x,_meters:voucherGeoMeters(origin.lat,origin.lng,Number(x.lat),Number(x.lng))})).filter(x=>Number.isFinite(x._meters)&&x._meters<=7500)
     .sort((a,b)=>a._meters-b._meters).slice(0,6);
   host.status.textContent=rows.length?`현 위치 주변 ${rows.length}곳 · 목적지를 설정하면 실제 우회시간을 검증합니다.`:'주변에서 위치와 업종이 확인된 가맹점을 찾지 못했습니다.';
-  rows.forEach(x=>host.results.append(hotspotRenderRow(host,x,{distance:x._meters})));
+  rows.forEach(x=>host.results.append(hotspotRenderRow(host,x,{distance:x._meters,category})));
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{$('hotspotOpenBtn')?.addEventListener('click',hotspotOpen)});
 else $('hotspotOpenBtn')?.addEventListener('click',hotspotOpen);
