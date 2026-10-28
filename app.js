@@ -3374,7 +3374,6 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
   let fuelOrigin=currentOriginPoint();
   if(!pointValid(fuelOrigin))fuelOrigin=await refreshCurrentLocation({maxAgeMs:60000,timeoutMs:2600}).catch(()=>null);
   if(!pointValid(fuelOrigin))fuelOrigin=currentOriginPoint();
-  if(requestedProduct!==state.fuelProduct){state.fuelPendingRequest={product:state.fuelProduct,force:true,modal};return;}
   if(!pointValid(fuelOrigin)){
     if(!state.fuelRetryScheduled){state.fuelRetryScheduled=true;setTimeout(()=>{state.fuelRetryScheduled=false;if(pointValid(currentOriginPoint()))loadFuelPrices(state.fuelProduct,{force:true}).catch(console.warn)},3500)}
     let cached=null;
@@ -3421,13 +3420,10 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
       if(!Array.isArray(dd?.stations))throw new Error('오피넷 API 응답에 주유소 목록(stations)이 없습니다.');
       return dd;
     }).map(p=>p.catch(e=>({__err:e}))));
-    const okRes=results.filter(r=>!r.__err&&Array.isArray(r.stations)&&r.stations.length>0);
-    const emptyRes=results.filter(r=>!r.__err&&Array.isArray(r.stations)&&r.stations.length===0);
+    const okRes=results.filter(r=>!r.__err);
     if(!okRes.length){
-      const err=results.find(r=>r.__err)?.__err;
-      if(err)throw err;
-      if(emptyRes.length){const unavailable=new Error('선택한 유종의 가격정보가 현재 비어 있습니다. 재시도할 수 있습니다.');unavailable.code='OPINET_PRODUCT_UNAVAILABLE';throw unavailable;}
-      throw new Error('오피넷 가격 데이터를 수신하지 못했습니다.');
+      const err=results.find(r=>r.__err?.code==='OPINET_KEY_OR_UPSTREAM')?.__err||results[0].__err;
+      throw err;
     }
     const d={...okRes[0]};
     if(okRes.length>1){
@@ -3439,8 +3435,8 @@ async function loadFuelPrices(product=state.fuelProduct,{force=false,modal=false
     if(!Array.isArray(d.stations))throw new Error('오피넷 API 응답 형식 오류');
     if(requestedProduct!==state.fuelProduct){state.fuelPendingRequest={product:state.fuelProduct,force:true};return;}
     if(!d.stations.length){
-      if(state.fuelData?.product===requestedProduct&&state.fuelData?.stations?.length){renderFuelData(state.fuelData);return;}
-      {const err=new Error('현재 선택 유종의 실시간 가격 목록이 비어 있습니다. 오피넷 이용 한도 초과로 단정할 수 없습니다.');err.code='OPINET_PRODUCT_UNAVAILABLE';throw err}
+      if(state.fuelData?.stations?.length){renderFuelData(state.fuelData);return;}
+      {const err=new Error('반경 5km 안에 해당 유종의 판매가격 정보가 없습니다.');err.code='FUEL_EMPTY';throw err}
     }
     state.fuelUpstreamCooldownUntil=0;
     state.fuelFetchedRouteM=curM;
@@ -7963,148 +7959,8 @@ function confirmDestinationChange(name){
     document.addEventListener('keydown',onKey);cancel.focus();
   });
 }
-/* v7.6.27.9: End-to-end structured trip-plan. AI parses only; route API verifies detours. */
-let tripPlanBusy=false;
-function fallbackTripPlan(raw){
-  const t=String(raw||'');
-  const payment=/온누리/.test(t)?'onnuri':/지역사랑|지역화폐|지역상품권/.test(t)?'local_currency':'any';
-  const category=/주유|기름/.test(t)?'gas_station':/커피|카페/.test(t)?'cafe':/디저트|베이커리/.test(t)?'dessert':/식당|밥|음식|식사|맛집/.test(t)?'restaurant':'any';
-  const m=t.match(/(\d{1,2})\s*분\s*(?:이상|넘게|초과|보다|까지)?\s*(?:우회|돌아|더|걸리)/)||t.match(/우회\s*(\d{1,2})\s*분/);
-  const det=m?Math.max(1,Math.min(30,Number(m[1]))):null;
-  return {intent:'plan_stops',destination:voiceQueryDestination(t),stops:[{category,payment}],max_detour_min:det,confidence:.5};
-}
-function safeTripPlan(plan){
-  const cats=['restaurant','cafe','dessert','gas_station','any'],pays=['onnuri','local_currency','any'];
-  if(!plan||plan.intent!=='plan_stops')return null;
-  const stops=(Array.isArray(plan.stops)?plan.stops:[]).slice(0,2).map(x=>({category:cats.includes(x?.category)?x.category:'any',payment:pays.includes(x?.payment)?x.payment:'any'}));
-  if(!stops.length)return null;
-  const n=Number(plan.max_detour_min);
-  return {destination:String(plan.destination||'').slice(0,80),stops,max_detour_min:plan.max_detour_min==null?null:Number.isFinite(n)?Math.max(1,Math.min(30,n)):null};
-}
-function tripPlanCandidates(stop){
-  const pa=state.planningAi||{}, pools=[];
-  if(stop.payment!=='onnuri')pools.push(...[...(pa.local||[]),...(state.localVoucherData?.items||[])].map(x=>({...x,_payment:'local_currency'})));
-  if(stop.payment!=='local_currency')pools.push(...[...(pa.onnuri||[]),...(state.onnuriData?.items||[])].map(x=>({...x,_payment:'onnuri'})));
-  if(stop.category==='gas_station')return []; // fuel products have no verified voucher acceptance: do not invent it.
-  const line=state.route?.geometry||[], total=Number(state.route?.distance)||planningLineLength(line),seen=new Set(),out=[];
-  for(const x of pools){
-    if(!pointValid(x))continue;
-    const cat=classifyVoiceMerchant(x),match=stop.category==='restaurant'?'meal':stop.category;
-    if(stop.category!=='any'&&cat!==match)continue;
-    const hit=routePosOfPoint(Number(x.lng),Number(x.lat),line,null,1800);
-    if(!hit||hit.distance>1200||hit.routeDistance<100||hit.routeDistance>total-100)continue;
-    const k=[Number(x.lat).toFixed(4),Number(x.lng).toFixed(4),x.name].join('|');if(seen.has(k))continue;seen.add(k);
-    out.push({...x,_offset:hit.distance});
-  }
-  return out.sort((x,y)=>x._offset-y._offset).slice(0,5);
-}
-function showTripPlanResults(plan,results,note){
-  closeVoiceRecommend();cancelAutoStart();
-  const root=document.createElement('section');root.id='voiceRecommendSheet';root.className='dangollo-voice-recommend';root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');
-  const condition=`${plan.stops[0]?.payment==='onnuri'?'온누리':plan.stops[0]?.payment==='local_currency'?'지역사랑':'상품권 조건 없음'} · ${plan.stops[0]?.category==='restaurant'?'식당':plan.stops[0]?.category==='cafe'?'카페':plan.stops[0]?.category==='dessert'?'디저트':'장소'} · ${plan.max_detour_min==null?'우회 상한 미지정':`최대 ${plan.max_detour_min}분 우회`}`;
-  root.innerHTML=`<div class="dvr-backdrop" data-trip-close></div><div class="dvr-sheet"><div class="dvr-head"><div><b>AI가 이해한 조건</b><small>${escapeHtml(condition)} · ${escapeHtml(note||'')}</small></div><button type="button" data-trip-close aria-label="닫기">×</button></div><div class="dvr-body">${results.length?results.map((x,i)=>`<button class="dvr-row" data-trip-pick="${i}" type="button"><span class="dvr-tag ${x._payment==='onnuri'?'onnuri':'local'}">${x._payment==='onnuri'?'온누리':'지역사랑'}</span><span><b>${escapeHtml(x.name||'가맹점')}</b><small>${escapeHtml(x.address||'주소 미제공')} · 경로 API 추가 ${x._extra}분 · 길에서 ${Math.round(x._offset)}m</small></span><span class="dvr-arrow">›</span></button>`).join(''):'<div class="dvr-empty">조건과 실제 경유시간을 모두 만족하는 가맹점이 확인되지 않았습니다. 우회시간을 늘리거나 다른 조건으로 검색해 주세요.</div>'}</div><button type="button" class="dvr-direct" data-trip-close>현재 경로 유지</button><small class="dvr-foot">후보 선택 전에는 경로를 변경하지 않습니다. 결제 가능 여부는 방문 전 확인하세요.</small></div>`;
-  document.body.appendChild(root);
-  root.querySelectorAll('[data-trip-close]').forEach(b=>b.onclick=()=>root.remove());
-  root.querySelectorAll('[data-trip-pick]').forEach(b=>b.onclick=async()=>{
-    const x=results[Number(b.dataset.tripPick)];if(!x)return;
-    root.remove();const pt=normalizedPlace(x);if(!pointValid(pt))return;
-    state.waypoints=[...(state.waypoints||[]),pt].slice(0,5);renderRouteWaypoints();cancelAutoStart();
-    try{
-      if(state.tripStartedAt){state.route={...x._verifiedRoute,_label:'AI 조건 경유',_character:state.character};state.routeOptions=[state.route];state.routeCumulative=buildCumulative(state.route);invalidateDrivePoiRoute();drawRoute(state.route,{fit:false});await loadSafetyEvents(state.route);updateDriving(true);toast('승인한 가맹점을 경유하는 경로로 변경했습니다.');}
-      else{setView('route');await loadRouteOptions();cancelAutoStart();toast('경유지가 추가됐습니다. 경로를 확인한 후 안내를 시작하세요.');}
-    }catch(e){toast('경로를 다시 계산하지 못했습니다. 경유지 목록을 확인해 주세요.');}
-  });
-}
-/* v7.6.28.0: When a compound command has no destination, ask for it
-   without discarding the already-parsed payment/category/detour constraints.
-   Never silently choose the first geocoding result. */
-let tripDestinationVoiceReceiver=null;
-function requestTripPlanDestination(){
-  return new Promise(resolve=>{
-    document.getElementById('dangolloTripDestinationPrompt')?.remove();
-    const overlay=document.createElement('div');
-    overlay.id='dangolloTripDestinationPrompt';overlay.className='dangollo-trip-dest-overlay';
-    overlay.innerHTML=`<section class="dangollo-trip-dest-dialog" role="dialog" aria-modal="true" aria-labelledby="tripDestTitle">
-      <header><strong id="tripDestTitle">어디로 가시나요?</strong><button type="button" data-trip-cancel aria-label="닫기">×</button></header>
-      <p>상품권·업종·우회시간 조건은 유지했습니다. 목적지를 말씀하시거나 검색해 선택해 주세요.</p>
-      <div class="dangollo-trip-dest-search"><input type="search" maxlength="80" placeholder="예: 대전역, 세종시청" aria-label="목적지" /><button type="button" data-trip-voice aria-label="목적지 음성 입력">🎙</button><button type="button" data-trip-search>검색</button></div>
-      <div class="dangollo-trip-dest-results" aria-live="polite"></div>
-      <button type="button" class="dangollo-trip-dest-cancel" data-trip-cancel>취소 · 기존 화면으로</button>
-    </section>`;
-    const input=overlay.querySelector('input'),results=overlay.querySelector('.dangollo-trip-dest-results');
-    let settled=false,seq=0;
-    const finish=value=>{if(settled)return;settled=true;seq++;tripDestinationVoiceReceiver=null;overlay.remove();resolve(value)};
-    const search=async q=>{
-      q=String(q||'').trim();if(!q){results.textContent='목적지를 입력하거나 말씀해 주세요.';return}
-      input.value=q;const token=++seq;
-      results.textContent='목적지를 검색하고 있습니다…';
-      try{
-        const url=new URL('/api/search',location.origin);url.searchParams.set('q',q);
-        if(pointValid(state.user)){url.searchParams.set('lat',state.user.lat);url.searchParams.set('lng',state.user.lng)}
-        const r=await fetch(url);if(!r.ok)throw Error('장소 조회 실패');const body=await r.json();
-        if(settled||token!==seq)return;
-        const items=(Array.isArray(body?.items)?body.items:[]).filter(x=>pointValid(x)).slice(0,6);
-        results.replaceChildren();
-        if(!items.length){results.textContent='검색 결과가 없습니다. 다른 장소명을 말씀해 주세요.';return}
-        for(const item of items){
-          const btn=document.createElement('button');btn.type='button';btn.className='dangollo-trip-dest-result';
-          const title=document.createElement('b');title.textContent=item.name||'장소';
-          const sub=document.createElement('small');sub.textContent=item.address||'';
-          btn.append(title,sub);btn.onclick=()=>finish(item);results.append(btn);
-        }
-      }catch(e){if(!settled&&token===seq)results.textContent='장소 검색이 지연되고 있습니다. 다시 시도해 주세요.'}
-    };
-    overlay.querySelectorAll('[data-trip-cancel]').forEach(b=>b.addEventListener('click',()=>finish(null)));
-    overlay.querySelector('[data-trip-search]').onclick=()=>search(input.value);
-    overlay.querySelector('[data-trip-voice]').onclick=()=>startVoiceCommand();
-    input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();search(input.value)}};
-    tripDestinationVoiceReceiver=text=>{const value=normalizeVoiceDestination(text);if(/^(취소|그만|아니)$/.test(value)){finish(null);return}search(value)};
-    document.body.append(overlay);input.focus();
-    if(state.tripStartedAt)results.textContent='운행 중에는 안전한 곳에 정차한 뒤 목적지를 선택해 주세요.';
-  });
-}
-async function runStructuredTripPlan(input){
-  if(tripPlanBusy)return toast('AI 조건 검색이 진행 중입니다.');tripPlanBusy=true;cancelAutoStart();
-  try{
-    toast('AI가 요청 조건을 해석하고 있습니다…',1800);
-    let raw=null,source='LLM 해석';
-    try{raw=(await callWorkerAiAssist('trip_plan',{text:input},6500)).plan}catch(e){source='규칙 기반 해석 (AI 연결 실패)';raw=fallbackTripPlan(input)}
-    const plan=safeTripPlan(raw)||safeTripPlan(fallbackTripPlan(input));if(!plan)throw Error('요청 조건을 이해하지 못했습니다.');
-    if(plan.destination&&(!state.destination||!String(state.destination.name||'').includes(plan.destination))){
-      const u=new URL('/api/search',location.origin);u.searchParams.set('q',plan.destination);
-      const r=await fetch(u);if(!r.ok)throw Error('목적지 조회 실패');const d=await r.json();const item=(d.items||[])[0];if(!item)throw Error('목적지를 찾지 못했습니다.');
-      await chooseDestination(item,{autoGuide:false});cancelAutoStart();
-    }
-    if(!state.destination){
-      const chosen=await requestTripPlanDestination();
-      if(!chosen)return; // Cancelled: do not change route or discard user intent in-flight.
-      await chooseDestination(chosen,{autoGuide:false});cancelAutoStart();
-    }
-    if(!state.route?.geometry?.length){await loadRouteOptions();cancelAutoStart()}
-    if(!state.route?.geometry?.length)throw Error('기본 경로를 계산하지 못했습니다.');
-    toast('경로상 가맹점과 실제 우회시간을 확인하고 있습니다…',2500);
-    if(!state.tripStartedAt){startPlanningAi();const t=Date.now();while(state.planningAi?.loading&&Date.now()-t<6000)await new Promise(r=>setTimeout(r,150))}
-    let base=Number(state.route.duration);
-    if(state.tripStartedAt){const pref=routePreferenceSpec();const remaining=await routeRequest(pref.priority,pref.avoid);base=Number(remaining.duration)}
-    if(!Number.isFinite(base)||base<=0)throw Error('기본 경로 소요시간이 없어 우회시간을 검증할 수 없습니다.');
-    const results=[],stop=plan.stops[0];
-    for(const item of tripPlanCandidates(stop).slice(0,4)){
-      const point=normalizedPlace(item);if(!pointValid(point))continue;
-      try{
-        const pref=routePreferenceSpec();const rr=await routeRequest(pref.priority,pref.avoid,[...(state.waypoints||[]),point]);
-        if(!Number.isFinite(Number(rr?.duration))||!rr?.geometry?.length)continue;
-        const extra=Math.max(0,Math.ceil((Number(rr.duration)-base)/60));
-        if(plan.max_detour_min!=null&&extra>plan.max_detour_min)continue;
-        results.push({...item,_extra:extra,_verifiedRoute:rr});
-        if(results.length>=3)break;
-      }catch(e){console.warn('AI candidate route verification failed',e)}
-    }
-    showTripPlanResults(plan,results,source);
-  }catch(e){toast(e?.message||'조건 검색에 실패했습니다.',4000)}finally{tripPlanBusy=false;cancelAutoStart()}
-}
 async function handleVoiceCommandText(raw){
   const text=String(raw||'').trim();if(!text)return toast('명령을 다시 말씀해 주세요.');
-  if(tripDestinationVoiceReceiver){tripDestinationVoiceReceiver(text);return;}
   if(text.includes('재탐색'))return reroute();
   if(text.includes('안내 종료')||text.includes('길 안내 종료'))return stopNavigation();
   if(text.includes('다임'))return setCharacter('daim');
@@ -8115,9 +7971,23 @@ async function handleVoiceCommandText(raw){
     if(!$('routeAiCompareResult'))return toast('경로 화면에서 AI 비교 기능을 이용해 주세요.');
     setView('route');return explainRoutesWithAi();
   }
-  if(/가는\s*길에|상품권|온누리|지역사랑|우회|경유|들러|들르|식당|카페|맛집|주유소/.test(text)){
-    return runStructuredTripPlan(text);
+  // Route/stops requests are AI-first; deterministic rules remain the timeout fallback.
+  // Complex spoken phrases are resolved via AI before broad merchant regular expressions.
+  // Failure or timeout falls through to existing deterministic destination search.
+  if(voiceRecommendationRequested(text)||/가는\s*길에|근처에서|주변에|상품권|온누리|지역사랑|잠깐\s*들|들렀다/.test(text)){
+    const intent=await parseVoiceIntentWithAi(text);
+    if(intent?.type==='merchant_recommend'){
+      const categoryHint=intent.category==='cafe'?'카페':intent.category==='dessert'?'디저트':intent.category==='meal'?'맛집':'';
+      return runVoiceMerchantRecommendation(`${categoryHint} 추천 ${intent.destination?`${intent.destination} 가는 길`:''}`.trim());
+    }
+    if(intent?.type==='route_compare'){setView('route');return explainRoutesWithAi()}
+    if(intent?.type==='destination'&&intent.destination){
+      const proposed=String(intent.destination).slice(0,80);
+      if(state.tripStartedAt&&!(await confirmDestinationChange(proposed)))return;
+      return handleVoiceCommandText(proposed);
+    }
   }
+  if(voiceRecommendationRequested(text))return runVoiceMerchantRecommendation(text);
   const q=normalizeVoiceDestination(text);if(!q)return toast('목적지를 다시 말씀해 주세요.');
   toast(`“${q}” 목적지를 찾고 있습니다...`,2200);
   try{
@@ -8130,13 +8000,13 @@ async function handleVoiceCommandText(raw){
 }
 function startVoiceCommand(){
   if(window.JofamsVoiceBridge?.isNativeVoiceAvailable?.()){
-    toast('예: 가는 길에 온누리 식당, 5분 이상 우회하지 마');
+    toast('목적지 또는 “점심 맛집 들러서 안내해 줘”라고 말씀해 주세요.');
     try{return window.JofamsVoiceBridge.startRecognition()}catch(e){console.warn('native voice bridge failed',e)}
   }
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){toast('이 기기에서는 음성 인식을 지원하지 않습니다. 마이크 권한과 HTTPS를 확인해 주세요.');return}
   const rec=new SR();rec.lang='ko-KR';rec.interimResults=false;rec.maxAlternatives=1;
-  toast('예: 가는 길에 온누리 식당, 5분 이상 우회하지 마',3500);
+  toast('“모닝커피 카페 들러서 안내해 줘”처럼 말씀해 주세요...',3500);
   rec.onresult=e=>handleVoiceCommandText((e.results?.[0]?.[0]?.transcript||'').trim());
   rec.onerror=()=>toast('마이크 권한이나 음성 인식을 확인해 주세요.');
   try{rec.start()}catch{toast('음성 인식을 시작하지 못했습니다.')}
@@ -8694,7 +8564,7 @@ function bindHomeCriticalUI(){
 function bindUI(){
   try{bindFutureDepartureUI();}catch(e){console.warn('UI bind section 1 failed',e)}
   try{$('allowLocationBtn').onclick=requestLocationPermission;$('allowCameraBtn').onclick=requestCameraPermission;$('permissionContinueBtn').onclick=closePermissionGate;}catch(e){console.warn('UI bind section 2 failed',e)}
-  try{if($('homeSheetToggle'))$('homeSheetToggle').onclick=toggleHomeSheet;if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=closeMapPlacePrompt;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;if($('voucherBuildingClose'))$('voucherBuildingClose').onclick=closeVoucherBuildingModal;window.addEventListener('online',()=>{state.localVoucherRetryCount=0;loadLocalVoucherMap({force:true})});if($('voucherBuildingModal'))$('voucherBuildingModal').addEventListener('click',e=>{if(e.target===$('voucherBuildingModal'))closeVoucherBuildingModal()});applyIcons();$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);if($('homeAiVoiceBtn'))$('homeAiVoiceBtn').onclick=startVoiceCommand;if($('homeAiExampleBtn'))$('homeAiExampleBtn').onclick=()=>runStructuredTripPlan('가는 길에 온누리상품권으로 결제할 수 있는 식당을 찾되 5분 이상 우회하지 마');$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
+  try{if($('homeSheetToggle'))$('homeSheetToggle').onclick=toggleHomeSheet;if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=closeMapPlacePrompt;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;if($('voucherBuildingClose'))$('voucherBuildingClose').onclick=closeVoucherBuildingModal;window.addEventListener('online',()=>{state.localVoucherRetryCount=0;loadLocalVoucherMap({force:true})});if($('voucherBuildingModal'))$('voucherBuildingModal').addEventListener('click',e=>{if(e.target===$('voucherBuildingModal'))closeVoucherBuildingModal()});applyIcons();$('searchBtn').onclick=()=>searchPlaces($('destinationInput').value);$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlaces(e.target.value)});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
   try{document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>setCharacter(b.dataset.character));$('homeShortcut').onclick=()=>state.savedPlaces.home?chooseDestination(state.savedPlaces.home):openPlaceModal('home');$('workShortcut').onclick=()=>state.savedPlaces.work?chooseDestination(state.savedPlaces.work):openPlaceModal('work');$('homeManageBtn').onclick=()=>openPlaceModal('home');$('workManageBtn').onclick=()=>openPlaceModal('work');$('favoriteShortcut').onclick=openFavoritesList;}catch(e){console.warn('UI bind section 4 failed',e)}
   try{document.querySelectorAll('[data-my-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.myCharacter);syncCharacterUI();toast(`${characterDefs[state.character].name} 가이드로 변경했습니다.`)});}catch(e){console.warn('UI bind section 5 failed',e)}
   try{document.querySelectorAll('[data-voice-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.voiceCharacter);syncCharacterUI();speak(`${characterDefs[state.character].name} 음성 안내입니다.`)});}catch(e){console.warn('UI bind section 6 failed',e)}

@@ -4329,20 +4329,3 @@ body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-camera.passe
 .dangollo-ai-confirm-card strong{font-size:21px}.dangollo-ai-confirm-card p{font-size:16px;line-height:1.6;margin:16px 0}
 .dangollo-ai-confirm-actions{display:flex;gap:12px}.dangollo-ai-confirm-actions button{flex:1;min-height:52px;border-radius:12px;border:1px solid #aab9c4;background:#f5f8fa;color:#233744;font-size:16px;font-weight:700}
 .dangollo-ai-confirm-actions button:last-child{background:#087e59;border-color:#087e59;color:white}
-
-/* v7.6.27.9 home AI hands-free search entry */
-#homeAiVoiceBtn{display:inline-flex;align-items:center;justify-content:center;flex:0 0 42px;min-height:42px;border:0;border-radius:12px;background:#e5f4ee;color:#147656;cursor:pointer;touch-action:manipulation}#homeAiVoiceBtn svg{width:23px;height:23px;display:block}.home-ai-example{display:flex;gap:8px;align-items:center;margin:10px 3px 4px;flex-wrap:wrap;font-size:12px;color:#536779}.home-ai-example button{border:1px solid #b6ded0;border-radius:16px;background:#f0faf5;padding:7px 11px;color:#126f54;text-align:left;font-size:12px;cursor:pointer;touch-action:manipulation}
-
-/* v7.6.28.0 | AI condition search destination follow-up; independent of map DOM. */
-.dangollo-trip-dest-overlay{position:fixed;inset:0;z-index:2147483200;display:flex;align-items:center;justify-content:center;background:rgba(7,24,31,.68);padding:16px}
-.dangollo-trip-dest-dialog{box-sizing:border-box;width:min(94vw,520px);max-height:min(82dvh,680px);overflow:auto;background:#fff;color:#17352e;border-radius:22px;box-shadow:0 18px 42px #0005;padding:20px;font-family:inherit}
-.dangollo-trip-dest-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:21px}
-.dangollo-trip-dest-dialog header button{border:0;background:#e9f2ef;border-radius:12px;width:42px;height:42px;font-size:26px;color:#124839}
-.dangollo-trip-dest-dialog p{font-size:14px;line-height:1.55;margin:12px 0;color:#4c6660}
-.dangollo-trip-dest-search{display:flex;align-items:center;gap:7px;margin:14px 0}
-.dangollo-trip-dest-search input{min-width:0;flex:1;height:46px;padding:0 12px;border:1px solid #bfd2cd;border-radius:12px;font-size:16px;color:#17352e;background:white}
-.dangollo-trip-dest-search button{flex:none;min-height:44px;border:0;border-radius:12px;padding:0 12px;background:#e2f2e9;color:#125b43;font-size:15px;font-weight:700}
-.dangollo-trip-dest-results{min-height:45px;display:grid;gap:7px;font-size:13px;color:#647a73}
-.dangollo-trip-dest-result{text-align:left;display:flex;flex-direction:column;gap:3px;padding:12px;border:1px solid #d9e8e1;border-radius:12px;background:#f6fbf8;color:#183c30}
-.dangollo-trip-dest-result b{font-size:15px}.dangollo-trip-dest-result small{font-size:12px;color:#657b73}
-.dangollo-trip-dest-cancel{margin-top:12px;width:100%;height:44px;border:1px solid #cbd8d2;border-radius:12px;background:white;color:#4d6660}
