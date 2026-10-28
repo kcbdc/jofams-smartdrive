@@ -5,6 +5,43 @@ const MODELS=Object.freeze({
 });
 const json=(obj,status=200)=>new Response(JSON.stringify(obj),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 const clean=(v,n=90)=>String(v??'').replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,n);
+// Gemma 4 can spend its completion budget on reasoning; disable thinking for short UI answers.
+function aiArgs(model,messages,maxTokens,temperature){
+  const args={messages,temperature,max_tokens:maxTokens};
+  if(model==='gemma'){
+    args.chat_template_kwargs={enable_thinking:false};
+    delete args.max_tokens; // Gemma 4 uses the completion-token field (avoid duplicate token limits).
+    args.max_completion_tokens=maxTokens;
+  }
+  return args;
+}
+function readAiText(result){
+  const r=result?.result??result;
+  const first=r?.choices?.[0]?.message??r?.output?.[0]??null;
+  const raw=r?.response??r?.output_text??first?.content??first?.text??r?.result?.response??'';
+  if(typeof raw==='string')return raw.trim();
+  if(Array.isArray(raw))return raw.map(v=>typeof v==='string'?v:(v?.text??v?.content??'')).join('').trim();
+  if(typeof raw?.text==='string')return raw.text.trim();
+  return '';
+}
+async function generateAi(env,choice,messages,maxTokens,temperature){
+  let lastError;
+  for(let attempt=0;attempt<2;attempt++){
+    try{
+      const tokens=attempt?Math.min(1400,maxTokens+350):maxTokens;
+      const result=await env.AI.run(MODELS[choice],aiArgs(choice,messages,tokens,temperature));
+      const text=readAiText(result);
+      if(text)return {text,attempts:attempt+1};
+      lastError=new Error('EMPTY_MODEL_OUTPUT');
+    }catch(e){lastError=e;
+      const msg=String(e?.message||e);
+      // Do not retry a missing binding, invalid model, quota or authorization errors.
+      if(/quota|limit exceeded|invalid model|not found|unauthoriz|forbidden|binding/i.test(msg))break;
+    }
+  }
+  throw lastError||new Error('EMPTY_MODEL_OUTPUT');
+}
+
 export async function onRequestPost({request,env}){
   if(!env?.AI?.run)return json({ok:false,error:'AI_BINDING_MISSING',message:'Cloudflare Pages 설정에서 Workers AI binding AI를 연결해 주세요.'},503);
   const origin=request.headers.get('Origin');
@@ -30,13 +67,13 @@ export async function onRequestPost({request,env}){
     {role:'user',content:JSON.stringify({task:'제공된 후보 가운데 사용자에게 도움이 될 곳 2~3곳을 골라 장단점과 확인 사항을 설명',destination,category:kind,candidates})}
   ];
   try{
-    const result=await env.AI.run(MODELS[choice],{messages,max_tokens:440,temperature:0.25});
-    const answer=typeof result?.response==='string'?result.response:(typeof result?.result?.response==='string'?result.result.response:'');
+    const generated=await generateAi(env,choice,messages,850,0.25);
+    const answer=generated.text;
     if(!answer.trim())return json({ok:false,error:'EMPTY_AI_RESPONSE',message:'모델 응답을 해석하지 못했습니다.'},502);
     return json({ok:true,model:choice,answer:answer.slice(0,2600),groundedCandidateCount:candidates.length});
   }catch(err){
     console.error('Workers AI recommendation failed',err?.message||err);
-    return json({ok:false,error:'AI_UNAVAILABLE',message:'AI 실행에 실패했습니다. 무료 할당량, 모델 지원 및 바인딩을 확인해 주세요.'},503);
+    return json({ok:false,error:'AI_UNAVAILABLE',model:choice,message:'선택한 AI 모델 실행에 실패했습니다. 모델 상태와 무료 할당량을 확인해 주세요.'},503);
   }
 }
 export async function onRequestGet(){return json({ok:false,error:'METHOD_NOT_ALLOWED'},405)}

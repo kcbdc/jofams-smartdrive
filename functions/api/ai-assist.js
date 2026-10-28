@@ -2,7 +2,43 @@
 const MODELS={llama:'@cf/meta/llama-3.1-8b-instruct-fp8',gemma:'@cf/google/gemma-4-26b-a4b-it'};
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 const clean=(v,max=120)=>String(v??'').replace(/[\u0000-\u001f\u007f]/g,' ').slice(0,max).trim();
-const content=(response)=>{const raw=response?.response??response?.result?.response??response?.result??'';return typeof raw==='string'?raw:Array.isArray(raw)?raw.map(x=>x?.text||'').join(''):''};
+// Gemma 4 can spend its completion budget on reasoning; disable thinking for short UI answers.
+function aiArgs(model,messages,maxTokens,temperature){
+  const args={messages,temperature,max_tokens:maxTokens};
+  if(model==='gemma'){
+    args.chat_template_kwargs={enable_thinking:false};
+    delete args.max_tokens; // Gemma 4 uses the completion-token field (avoid duplicate token limits).
+    args.max_completion_tokens=maxTokens;
+  }
+  return args;
+}
+function readAiText(result){
+  const r=result?.result??result;
+  const first=r?.choices?.[0]?.message??r?.output?.[0]??null;
+  const raw=r?.response??r?.output_text??first?.content??first?.text??r?.result?.response??'';
+  if(typeof raw==='string')return raw.trim();
+  if(Array.isArray(raw))return raw.map(v=>typeof v==='string'?v:(v?.text??v?.content??'')).join('').trim();
+  if(typeof raw?.text==='string')return raw.text.trim();
+  return '';
+}
+async function generateAi(env,choice,messages,maxTokens,temperature){
+  let lastError;
+  for(let attempt=0;attempt<2;attempt++){
+    try{
+      const tokens=attempt?Math.min(1400,maxTokens+350):maxTokens;
+      const result=await env.AI.run(MODELS[choice],aiArgs(choice,messages,tokens,temperature));
+      const text=readAiText(result);
+      if(text)return {text,attempts:attempt+1};
+      lastError=new Error('EMPTY_MODEL_OUTPUT');
+    }catch(e){lastError=e;
+      const msg=String(e?.message||e);
+      // Do not retry a missing binding, invalid model, quota or authorization errors.
+      if(/quota|limit exceeded|invalid model|not found|unauthoriz|forbidden|binding/i.test(msg))break;
+    }
+  }
+  throw lastError||new Error('EMPTY_MODEL_OUTPUT');
+}
+
 export async function onRequestPost({request,env}){
   const origin=request.headers.get('origin');if(origin){try{if(new URL(origin).origin!==new URL(request.url).origin)return json({ok:false,error:'ORIGIN'},403)}catch{return json({ok:false,error:'ORIGIN'},403)}}
   if(Number(request.headers.get('content-length')||0)>8000)return json({ok:false,error:'TOO_LARGE'},413);
@@ -28,20 +64,20 @@ export async function onRequestPost({request,env}){
     user=JSON.stringify({destination:clean(data?.destination,80),routes});
   }
   try{
-    const result=await env.AI.run(MODELS[data.model],{messages:[{role:'system',content:system},{role:'user',content:user}],temperature:0.1,max_tokens:420});
-    const output=content(result).trim();if(!output)return json({ok:false,message:'AI 응답이 비어 있습니다.'},502);
-    if(task==='route_compare')return json({ok:true,answer:output.slice(0,2000)});
+    const generated=await generateAi(env,data.model,[{role:'system',content:system},{role:'user',content:user}],780,0.1);
+    const output=generated.text;if(!output)return json({ok:false,message:'AI 응답이 비어 있습니다.'},502);
+    if(task==='route_compare')return json({ok:true,model:data.model,answer:output.slice(0,2000)});
     if(task==='trip_plan'){
       const start=output.indexOf('{'),end=output.lastIndexOf('}');let obj;
       try{obj=JSON.parse(output.slice(start,end+1))}catch{return json({ok:false,error:'PLAN_JSON'},502)}
       const allowed=(v,list,d)=>list.includes(v)?v:d;
       const n=Number(obj?.max_detour_min);
-      return json({ok:true,plan:{intent:allowed(obj?.intent,['plan_stops','navigate','unknown'],'unknown'),destination:clean(obj?.destination,80),category:allowed(obj?.category,['meal','cafe','dessert','gas_station','any'],'any'),payment:allowed(obj?.payment,['onnuri','local','any'],'any'),max_detour_min:Math.max(1,Math.min(15,Number.isFinite(n)?n:5)),confidence:Math.max(0,Math.min(1,Number(obj?.confidence)||0)),clarify:clean(obj?.clarify,80)}});
+      return json({ok:true,model:data.model,plan:{intent:allowed(obj?.intent,['plan_stops','navigate','unknown'],'unknown'),destination:clean(obj?.destination,80),category:allowed(obj?.category,['meal','cafe','dessert','gas_station','any'],'any'),payment:allowed(obj?.payment,['onnuri','local','any'],'any'),max_detour_min:Math.max(1,Math.min(15,Number.isFinite(n)?n:5)),confidence:Math.max(0,Math.min(1,Number(obj?.confidence)||0)),clarify:clean(obj?.clarify,80)}});
     }
     const start=output.indexOf('{'),end=output.lastIndexOf('}');let parsed;try{parsed=JSON.parse(output.slice(start,end+1))}catch{return json({ok:false,message:'JSON 해석 실패'},502)}
     const type=['merchant_recommend','destination','route_compare','unknown'].includes(parsed?.type)?parsed.type:'unknown';
     const category=['cafe','dessert','meal','unknown'].includes(parsed?.category)?parsed.category:'unknown';
-    return json({ok:true,intent:{type,destination:clean(parsed?.destination,80),category}});
-  }catch(e){console.error('Workers AI assist failed',String(e?.message||e).slice(0,200));return json({ok:false,message:'AI 모델이 응답하지 않았습니다.'},503)}
+    return json({ok:true,model:data.model,intent:{type,destination:clean(parsed?.destination,80),category}});
+  }catch(e){console.error('Workers AI assist failed',String(e?.message||e).slice(0,200));return json({ok:false,error:'AI_MODEL_FAILED',model:data.model,message:'선택한 AI 모델의 응답에 실패했습니다. 잠시 후 다시 시도하거나 다른 모델을 선택하세요.'},503)}
 }
 export function onRequestGet(){return json({ok:false,error:'METHOD_NOT_ALLOWED'},405)}
