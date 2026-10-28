@@ -1547,14 +1547,16 @@ function discoverMerchantCategory(item){
   if(/카페|커피|다방|에스프레소|coffee|cafe|티룸/.test(t))return 'cafe';
   if(/빵|제과|베이커리|디저트|케이크|도넛|떡집|마카롱|아이스크림/.test(t))return 'bakery';
   if(/식당|음식|국밥|한식|중식|일식|분식|김밥|고기|갈비|곱창|치킨|피자|버거|국수|횟집|레스토랑|쌀국수|초밥|탕|찌개|칼국수|족발|보쌈|백반/.test(t))return 'meal';
-  if(/꽃|화원|플라워/.test(t))return 'flower';
-  if(/책|서점|문구|학용품/.test(t))return 'books';
-  if(/마트|슈퍼|시장|상회|청과|정육|식료품|과일|반찬/.test(t))return 'market';
+  if(/정육|축산물|식육|고깃간|푸줏간|미트샵|meat shop|butcher/.test(t))return 'butcher';
+  if(/꽃집|꽃가게|화원|플라워|꽃배달|생화|flower|플로리스트/.test(t))return 'flower';
+  if(/서점|책방|도서판매|북스토어|bookstore|도서점/.test(t))return 'bookstore';
+  if(/문구|문방구|학용품|사무용품|팬시|stationery/.test(t))return 'stationery';
+  if(/마트|슈퍼|시장|상회|청과|식료품|과일|반찬|식자재|잡화|할인점|편의점|supermarket|grocery/.test(t))return 'market';
   return 'local';
 }
 function discoverMerchantImage(item, override){
   const category=override||discoverMerchantCategory(item);
-  return '/assets/merchant-'+( ['cafe','bakery','meal','flower','books','market','academy','pharmacy','hospital','laundry'].includes(category)?category:'local')+'.svg';
+  return '/assets/merchant-'+( ['cafe','bakery','meal','flower','books','market','academy','pharmacy','hospital','laundry','butcher','bookstore','stationery'].includes(category)?category:'local')+'.svg';
 }
 function discoverMerchantSearchUrl(item,service){
   const name=String(item?.name||item?.market||'').trim().slice(0,64);
@@ -9127,10 +9129,10 @@ function hotspotCategoryMatch(item,category){
   const type=discoverMerchantCategory(item);
   if(category==='meal')return type==='meal'||classifyVoiceMerchant(item)==='meal';
   if(category==='cafe')return type==='cafe';
-  if(category==='dessert')return type==='bakery'||classifyVoiceMerchant(item)==='dessert';
+  if(category==='dessert'||category==='bakery')return type==='bakery'||classifyVoiceMerchant(item)==='dessert';
   return type===category;
 }
-const hotspotCategoryLabel={meal:'식당',cafe:'카페',dessert:'디저트',academy:'학원',pharmacy:'약국',hospital:'병원',laundry:'세탁소'};
+const hotspotCategoryLabel={meal:'식당',cafe:'카페',dessert:'디저트',market:'마트',bakery:'베이커리',butcher:'정육점',flower:'꽃집',bookstore:'서점',stationery:'문구',academy:'학원',pharmacy:'약국',hospital:'병원',laundry:'세탁소'};
 
 function hotspotRenderRow(host,item,opts={}){
   const row=document.createElement('article');row.className='hotspot-result';
@@ -9169,11 +9171,11 @@ function hotspotOpen(query=""){
   document.getElementById('hotspotOverlay')?.remove();++hotspotRequestSeq;
   const root=document.createElement('div');root.id='hotspotOverlay';root.className='hotspot-overlay';
   const sheet=document.createElement('section');sheet.className='hotspot-sheet';sheet.setAttribute('role','dialog');sheet.setAttribute('aria-modal','true');sheet.setAttribute('aria-label','길 위의 핫플');
-  sheet.innerHTML='<div class="hotspot-title"><div><small>단골로 · 지역 소비 발견</small><h2>🍜 길 위의 핫플</h2></div><button type="button" class="hotspot-close" aria-label="닫기">×</button></div><p class="hotspot-intro">맛집·카페·학원·약국·병원·세탁소 등 실제 상품권 가맹점을 찾아보세요. SNS 게시물은 외부에서 검색합니다.</p><div class="hotspot-filters"><label>종류<select id="hotspotCategory"><option value="meal">맛집</option><option value="cafe">카페</option><option value="dessert">디저트</option><option value="academy">학원</option><option value="pharmacy">약국</option><option value="hospital">병원</option><option value="laundry">세탁소</option></select></label><label>결제 혜택<select id="hotspotPayment"><option value="both">전체</option><option value="onnuri">온누리</option><option value="local">지역사랑</option></select></label><label>최대 우회<select id="hotspotDetour"><option value="5">5분</option><option value="10">10분</option><option value="3">3분</option></select></label></div><p id="hotspotStatus" class="hotspot-status" role="status" aria-live="polite">주변 가맹점을 확인하고 있습니다…</p><div id="hotspotResults" class="hotspot-results"></div><p class="hotspot-disclaimer">이미지는 업종별 대표 일러스트이며 가맹점 실사진이 아닙니다. SNS·후기는 외부 검색으로 연결되며 인기 순위·평점은 검증하지 않습니다. 결제 가능 여부와 영업시간은 방문 전 확인하세요.</p>';
+  sheet.innerHTML='<div class="hotspot-title"><div><small>단골로 · 지역 소비 발견</small><h2>🍜 길 위의 핫플</h2></div><button type="button" class="hotspot-close" aria-label="닫기">×</button></div><p class="hotspot-intro">맛집·카페·마트·베이커리·정육점·꽃집·서점·문구 등 실제 상품권 가맹점을 찾아보세요. SNS 게시물은 외부에서 검색합니다.</p><div class="hotspot-filters"><label>종류<select id="hotspotCategory"><option value="meal">맛집</option><option value="cafe">카페</option><option value="dessert">디저트</option><option value="market">마트</option><option value="bakery">베이커리</option><option value="butcher">정육점</option><option value="flower">꽃집</option><option value="bookstore">서점</option><option value="stationery">문구</option><option value="academy">학원</option><option value="pharmacy">약국</option><option value="hospital">병원</option><option value="laundry">세탁소</option></select></label><label>결제 혜택<select id="hotspotPayment"><option value="both">전체</option><option value="onnuri">온누리</option><option value="local">지역사랑</option></select></label><label>최대 우회<select id="hotspotDetour"><option value="5">5분</option><option value="10">10분</option><option value="3">3분</option></select></label></div><p id="hotspotStatus" class="hotspot-status" role="status" aria-live="polite">주변 가맹점을 확인하고 있습니다…</p><div id="hotspotResults" class="hotspot-results"></div><p class="hotspot-disclaimer">이미지는 업종별 대표 일러스트이며 가맹점 실사진이 아닙니다. SNS·후기는 외부 검색으로 연결되며 인기 순위·평점은 검증하지 않습니다. 결제 가능 여부와 영업시간은 방문 전 확인하세요.</p>';
   root.append(sheet);document.body.append(root);const close=()=>{hotspotRequestSeq++;root.remove()};sheet.querySelector('.hotspot-close').onclick=close;root.onclick=e=>{if(e.target===root)close()};
   const host={root,status:sheet.querySelector('#hotspotStatus'),results:sheet.querySelector('#hotspotResults')};
   if(query){
-    const category=/학원|교습소|입시/i.test(query)?'academy':/약국|약사/i.test(query)?'pharmacy':/병원|의원|진료/i.test(query)?'hospital':/세탁|크리닝/i.test(query)?'laundry':/카페|커피/i.test(query)?'cafe':/디저트|빵|케이크/i.test(query)?'dessert':'meal';
+    const category=/정육|축산|식육/i.test(query)?'butcher':/서점|책방/i.test(query)?'bookstore':/문구|문방구|학용품|사무용품/i.test(query)?'stationery':/꽃집|꽃가게|화원|플라워/i.test(query)?'flower':/마트|슈퍼|시장|식료품/i.test(query)?'market':/베이커리|빵집|제과점/i.test(query)?'bakery':/학원|교습소|입시/i.test(query)?'academy':/약국|약사/i.test(query)?'pharmacy':/병원|의원|진료/i.test(query)?'hospital':/세탁|크리닝/i.test(query)?'laundry':/카페|커피/i.test(query)?'cafe':/디저트|빵|케이크/i.test(query)?'dessert':'meal';
     sheet.querySelector('#hotspotCategory').value=category;
     if(/온누리/.test(query))sheet.querySelector('#hotspotPayment').value='onnuri';
     else if(/지역사랑|지역화폐/.test(query))sheet.querySelector('#hotspotPayment').value='local';
