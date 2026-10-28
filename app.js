@@ -9182,46 +9182,89 @@ function hotspotOpen(query=""){
   for(const el of sheet.querySelectorAll('select'))el.onchange=()=>void hotspotFind(host).catch(e=>{console.error('[hotspot] filter query',e);if(host.root.isConnected)host.status.textContent='조회 중 오류가 발생했습니다. 다시 시도해 주세요.'});
   void hotspotFind(host).catch(e=>{console.error('[hotspot] initial query',e);if(host.root.isConnected)host.status.textContent='조회 중 오류가 발생했습니다. 필터를 바꾸거나 다시 시도해 주세요.'});
 }
-async function hotspotFind(host){
-  try{
-  const seq=++hotspotRequestSeq;const sel=id=>host.root.querySelector(id)?.value;
-  const category=sel('#hotspotCategory')||'meal',payment=sel('#hotspotPayment')||'both',max_detour_min=Number(sel('#hotspotDetour'))||5;
-  host.results.replaceChildren();host.status.textContent='상품권 가맹점 데이터를 검색하고 있습니다…';
-  const hasRoute=Boolean(state.destination&&state.route?.geometry?.length>1);
-  let routeMessage='';
-  if(hasRoute){
-    try{
-      const rows=await aiTripVerifyCandidates({category:category==='dessert'?'dessert':category,payment,max_detour_min},msg=>{if(seq===hotspotRequestSeq)host.status.textContent=msg});
-      if(seq!==hotspotRequestSeq||!host.root.isConnected)return;
-      if(rows.length){host.status.textContent=`실제 경유시간으로 검증된 ${rows.length}곳입니다.`;rows.forEach(x=>host.results.append(hotspotRenderRow(host,{...x.item,name:x.pt.name},{verified:true,extra:x.extra,category})));return;}
-      routeMessage='조건에 맞는 경유시간 검증 후보가 없습니다. 주변 가맹점은 거리 기준으로 표시하며 우회시간은 보장하지 않습니다.';
-    }catch(e){console.warn('[hotspot] detour validation failed',e);if(seq!==hotspotRequestSeq)return;routeMessage='경유시간을 계산하지 못했습니다. 아래는 현 위치 근처 가맹점이며 우회시간은 검증되지 않았습니다.';}
+/* 7.6.27.29: Home / 어디갈까 share one initial merchant-data pipeline.
+   Paint existing region-matching data immediately; then refresh asynchronously.
+   Every request is sequence-checked, and loading always settles visibly. */
+function hotspotGetSources(payment){
+  const groups=payment==='onnuri'?['onnuri']:payment==='local'?['local']:['onnuri','local'];
+  const found=[];
+  for(const kind of groups){
+    const stateData=kind==='onnuri'?state.onnuriData:state.localVoucherData;
+    const cached=kind==='onnuri'?readOnnuriStaleCache():readVoucherStaleCache();
+    const planning=kind==='onnuri'?state.planningAi?.onnuri:state.planningAi?.local;
+    // Cache is only a fallback. Filter by actual current-location radius below;
+    // never imply an old cache is current or freshly validated.
+    for(const [source,items] of [['memory',stateData?.items],['cache',cached?.items],['planning',planning]]){
+      if(!Array.isArray(items))continue;
+      for(const item of items)found.push({...item,payment:kind,_hotspotSource:source});
+    }
   }
-  // No active route: show distance ONLY, never claim five-minute detour.
-  let origin=state.user;
-  if(!pointValid(origin))origin=await refreshCurrentLocation({maxAgeMs:30000,timeoutMs:4500}).catch(()=>null);
-  if(!pointValid(origin)){if(seq===hotspotRequestSeq)host.status.textContent='현 위치를 확인하지 못했습니다. 위치 권한을 확인해 주세요.';return}
-  const sources=payment==='onnuri'?['onnuri']:payment==='local'?['local']:['onnuri','local'];
-  const fetchOne=async kind=>{
-    const path=kind==='onnuri'?'/api/onnuri-voucher':'/api/local-voucher';
-    const d=await planningFetchJson(path,{lat:origin.lat,lng:origin.lng,...drivePoiRegionBox(origin,2.0)},4500).catch(()=>({items:[]}));
-    return (Array.isArray(d.items)?d.items:[]).map(x=>({...x,payment:kind}));
-  };
-  const all=(await Promise.all(sources.map(fetchOne))).flat();if(seq!==hotspotRequestSeq||!host.root.isConnected)return;
-  const positioned=all.filter(x=>pointValid(x)&&!x.approximate&&x.precision!=='market-zone'&&x.precision!=='admin-zone')
+  return found;
+}
+function hotspotPositioned(rows,origin){
+  const seen=new Set();
+  return rows.filter(x=>pointValid(x)&&!x.approximate&&x.precision!=='market-zone'&&x.precision!=='admin-zone')
     .map(x=>({...x,_meters:voucherGeoMeters(origin.lat,origin.lng,Number(x.lat),Number(x.lng))}))
-    .filter(x=>Number.isFinite(x._meters)&&x._meters<=7500).sort((a,b)=>a._meters-b._meters);
+    .filter(x=>Number.isFinite(x._meters)&&x._meters<=7500)
+    .filter(x=>{const key=[x.payment,String(x.name||x.market||'').trim(),Number(x.lat).toFixed(5),Number(x.lng).toFixed(5)].join('|');if(seen.has(key))return false;seen.add(key);return true})
+    .sort((a,b)=>a._meters-b._meters);
+}
+function hotspotPaintCandidates(host,positioned,category,context={}){
+  if(!host.root.isConnected)return false;
   const rows=positioned.filter(x=>hotspotCategoryMatch(x,category)).slice(0,6);
+  host.results.replaceChildren();
   if(rows.length){
-    host.status.textContent=routeMessage||`현 위치 주변 ${hotspotCategoryLabel[category]||'가맹점'} ${rows.length}곳 · 실제 거리 기준입니다.`;
+    host.status.textContent=`현 위치 주변 ${hotspotCategoryLabel[category]||'가맹점'} ${rows.length}곳 · 직선거리 기준${context.preview?' · 정보 갱신 중…':''}${context.routeMessage?' · 우회시간 미검증':''}`;
     rows.forEach(x=>host.results.append(hotspotRenderRow(host,x,{distance:x._meters,category})));
-  }else if(positioned.length){
-    host.status.textContent=`${hotspotCategoryLabel[category]||'선택 업종'}으로 확인된 가맹점은 없습니다. 업종을 확인할 수 없는 곳을 포함한 주변 상품권 가맹점 ${Math.min(6,positioned.length)}곳을 참고용으로 표시합니다.`;
-    positioned.slice(0,6).forEach(x=>host.results.append(hotspotRenderRow(host,x,{distance:x._meters,category:undefined})));
-  }else{
-    host.status.textContent='위치가 확인된 주변 가맹점이 없습니다. 지역·위치 권한 또는 제공 데이터 범위를 확인해 주세요.';
+    return true;
   }
-  }catch(e){console.warn('[hotspot] search failed',e);if(host.root.isConnected)host.status.textContent='가맹점 조회에 실패했습니다. 잠시 후 다시 선택해 주세요.';}
+  if(positioned.length){
+    host.status.textContent=`${hotspotCategoryLabel[category]||'선택 업종'}으로 확인된 가맹점이 없습니다. 다른 업종의 주변 가맹점 ${Math.min(6,positioned.length)}곳을 참고용으로 표시합니다.${context.preview?' 데이터 갱신 중…':''}`;
+    positioned.slice(0,6).forEach(x=>host.results.append(hotspotRenderRow(host,x,{distance:x._meters,category:undefined})));
+    return true;
+  }
+  host.status.textContent=context.preview?'현재 위치의 가맹점 정보를 새로 확인하고 있습니다…':'위치가 확인된 주변 가맹점이 없습니다. 다른 업종 또는 위치를 확인해 주세요.';
+  return false;
+}
+async function hotspotFind(host){
+  const seq=++hotspotRequestSeq,valid=()=>seq===hotspotRequestSeq&&host.root.isConnected;
+  const sel=id=>host.root.querySelector(id)?.value;
+  const category=sel('#hotspotCategory')||'meal',payment=sel('#hotspotPayment')||'both',max_detour_min=Number(sel('#hotspotDetour'))||5;
+  host.results.replaceChildren();host.status.textContent='현 위치 주변 가맹점을 확인하고 있습니다…';
+  try{
+    let origin=currentOriginPoint();
+    if(!pointValid(origin))origin=await refreshCurrentLocation({maxAgeMs:30000,timeoutMs:3500}).catch(()=>null);
+    if(!valid())return;
+    if(!pointValid(origin)){host.status.textContent='현 위치를 확인하지 못했습니다. 위치 권한을 확인한 뒤 다시 열어 주세요.';return}
+    const memory=hotspotPositioned(hotspotGetSources(payment,origin),origin);
+    const previewShown=hotspotPaintCandidates(host,memory,category,{preview:true});
+    const kinds=payment==='onnuri'?['onnuri']:payment==='local'?['local']:['onnuri','local'];
+    const request=async kind=>{
+      const path=kind==='onnuri'?'/api/onnuri-voucher':'/api/local-voucher';
+      try{
+        const d=await planningFetchJson(path,{lat:origin.lat,lng:origin.lng,...drivePoiRegionBox(origin,2)},5000);
+        return {kind,ok:true,items:Array.isArray(d?.items)?d.items:[]};
+      }catch(e){console.warn('[hotspot] voucher fetch failed',kind,String(e?.message||e));return {kind,ok:false,items:[]}}
+    };
+    // Update in parallel, but use cache immediately instead of blocking on the slowest endpoint.
+    const responses=await Promise.all(kinds.map(request));if(!valid())return;
+    const available=responses.flatMap(x=>x.items.map(item=>({...item,payment:x.kind,_hotspotSource:'live'})));
+    const positioned=hotspotPositioned([...available,...hotspotGetSources(payment,origin)],origin);
+    // Avoid claiming that an empty successful server response means a transport error.
+    const hasRoute=Boolean(state.destination&&state.route?.geometry?.length>1);
+    if(hasRoute){
+      host.status.textContent='경로상 가맹점의 실제 우회시간을 확인하고 있습니다…';
+      try{
+        const rows=await aiTripVerifyCandidates({category,payment,max_detour_min},msg=>{if(valid())host.status.textContent=msg});
+        if(!valid())return;
+        if(rows.length){host.results.replaceChildren();host.status.textContent=`실제 우회시간으로 확인한 ${rows.length}곳 · ${max_detour_min}분 이내`;rows.forEach(x=>host.results.append(hotspotRenderRow(host,{...x.item,name:x.pt.name},{verified:true,extra:x.extra,category})));return;}
+      }catch(e){console.warn('[hotspot] detour validation skipped',e)}
+    }
+    if(!valid())return;
+    const shown=hotspotPaintCandidates(host,positioned,category,{routeMessage:hasRoute});
+    if(!shown&&!responses.some(x=>x.ok))host.status.textContent='가맹점 서버 연결에 실패했습니다. 잠시 후 다시 선택해 주세요.';
+    else if(!shown&&previewShown)hotspotPaintCandidates(host,memory,category,{routeMessage:hasRoute});
+  }catch(e){console.warn('[hotspot] query failed',e);if(valid())host.status.textContent=host.results.childElementCount?'일부 가맹점 정보만 표시했습니다.':'가맹점 조회 중 오류가 발생했습니다. 다시 시도해 주세요.'}
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{$('hotspotOpenBtn')?.addEventListener('click',()=>hotspotOpen())});
 else $('hotspotOpenBtn')?.addEventListener('click',()=>hotspotOpen());
