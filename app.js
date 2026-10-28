@@ -8015,6 +8015,54 @@ function showTripPlanResults(plan,results,note){
     }catch(e){toast('경로를 다시 계산하지 못했습니다. 경유지 목록을 확인해 주세요.');}
   });
 }
+/* v7.6.28.0: When a compound command has no destination, ask for it
+   without discarding the already-parsed payment/category/detour constraints.
+   Never silently choose the first geocoding result. */
+let tripDestinationVoiceReceiver=null;
+function requestTripPlanDestination(){
+  return new Promise(resolve=>{
+    document.getElementById('dangolloTripDestinationPrompt')?.remove();
+    const overlay=document.createElement('div');
+    overlay.id='dangolloTripDestinationPrompt';overlay.className='dangollo-trip-dest-overlay';
+    overlay.innerHTML=`<section class="dangollo-trip-dest-dialog" role="dialog" aria-modal="true" aria-labelledby="tripDestTitle">
+      <header><strong id="tripDestTitle">어디로 가시나요?</strong><button type="button" data-trip-cancel aria-label="닫기">×</button></header>
+      <p>상품권·업종·우회시간 조건은 유지했습니다. 목적지를 말씀하시거나 검색해 선택해 주세요.</p>
+      <div class="dangollo-trip-dest-search"><input type="search" maxlength="80" placeholder="예: 대전역, 세종시청" aria-label="목적지" /><button type="button" data-trip-voice aria-label="목적지 음성 입력">🎙</button><button type="button" data-trip-search>검색</button></div>
+      <div class="dangollo-trip-dest-results" aria-live="polite"></div>
+      <button type="button" class="dangollo-trip-dest-cancel" data-trip-cancel>취소 · 기존 화면으로</button>
+    </section>`;
+    const input=overlay.querySelector('input'),results=overlay.querySelector('.dangollo-trip-dest-results');
+    let settled=false,seq=0;
+    const finish=value=>{if(settled)return;settled=true;seq++;tripDestinationVoiceReceiver=null;overlay.remove();resolve(value)};
+    const search=async q=>{
+      q=String(q||'').trim();if(!q){results.textContent='목적지를 입력하거나 말씀해 주세요.';return}
+      input.value=q;const token=++seq;
+      results.textContent='목적지를 검색하고 있습니다…';
+      try{
+        const url=new URL('/api/search',location.origin);url.searchParams.set('q',q);
+        if(pointValid(state.user)){url.searchParams.set('lat',state.user.lat);url.searchParams.set('lng',state.user.lng)}
+        const r=await fetch(url);if(!r.ok)throw Error('장소 조회 실패');const body=await r.json();
+        if(settled||token!==seq)return;
+        const items=(Array.isArray(body?.items)?body.items:[]).filter(x=>pointValid(x)).slice(0,6);
+        results.replaceChildren();
+        if(!items.length){results.textContent='검색 결과가 없습니다. 다른 장소명을 말씀해 주세요.';return}
+        for(const item of items){
+          const btn=document.createElement('button');btn.type='button';btn.className='dangollo-trip-dest-result';
+          const title=document.createElement('b');title.textContent=item.name||'장소';
+          const sub=document.createElement('small');sub.textContent=item.address||'';
+          btn.append(title,sub);btn.onclick=()=>finish(item);results.append(btn);
+        }
+      }catch(e){if(!settled&&token===seq)results.textContent='장소 검색이 지연되고 있습니다. 다시 시도해 주세요.'}
+    };
+    overlay.querySelectorAll('[data-trip-cancel]').forEach(b=>b.addEventListener('click',()=>finish(null)));
+    overlay.querySelector('[data-trip-search]').onclick=()=>search(input.value);
+    overlay.querySelector('[data-trip-voice]').onclick=()=>startVoiceCommand();
+    input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();search(input.value)}};
+    tripDestinationVoiceReceiver=text=>{const value=normalizeVoiceDestination(text);if(/^(취소|그만|아니)$/.test(value)){finish(null);return}search(value)};
+    document.body.append(overlay);input.focus();
+    if(state.tripStartedAt)results.textContent='운행 중에는 안전한 곳에 정차한 뒤 목적지를 선택해 주세요.';
+  });
+}
 async function runStructuredTripPlan(input){
   if(tripPlanBusy)return toast('AI 조건 검색이 진행 중입니다.');tripPlanBusy=true;cancelAutoStart();
   try{
@@ -8027,7 +8075,11 @@ async function runStructuredTripPlan(input){
       const r=await fetch(u);if(!r.ok)throw Error('목적지 조회 실패');const d=await r.json();const item=(d.items||[])[0];if(!item)throw Error('목적지를 찾지 못했습니다.');
       await chooseDestination(item,{autoGuide:false});cancelAutoStart();
     }
-    if(!state.destination)throw Error('먼저 목적지를 선택해 주세요. 홈 검색에서 목적지를 정한 후 AI 조건을 말씀하시면 됩니다.');
+    if(!state.destination){
+      const chosen=await requestTripPlanDestination();
+      if(!chosen)return; // Cancelled: do not change route or discard user intent in-flight.
+      await chooseDestination(chosen,{autoGuide:false});cancelAutoStart();
+    }
     if(!state.route?.geometry?.length){await loadRouteOptions();cancelAutoStart()}
     if(!state.route?.geometry?.length)throw Error('기본 경로를 계산하지 못했습니다.');
     toast('경로상 가맹점과 실제 우회시간을 확인하고 있습니다…',2500);
@@ -8052,6 +8104,7 @@ async function runStructuredTripPlan(input){
 }
 async function handleVoiceCommandText(raw){
   const text=String(raw||'').trim();if(!text)return toast('명령을 다시 말씀해 주세요.');
+  if(tripDestinationVoiceReceiver){tripDestinationVoiceReceiver(text);return;}
   if(text.includes('재탐색'))return reroute();
   if(text.includes('안내 종료')||text.includes('길 안내 종료'))return stopNavigation();
   if(text.includes('다임'))return setCharacter('daim');
