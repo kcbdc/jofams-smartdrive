@@ -13,6 +13,7 @@ const OK_HEADERS={'content-type':'application/json; charset=utf-8','cache-contro
 const ERR_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'no-store'};
 const UA='Mozilla/5.0 (compatible; DangolroNavi/7.6)';
 const PRODUCTS={B027:'휘발유',D047:'경유',B034:'고급휘발유',K015:'LPG'};
+const FUEL_API_VERSION='7.6.27.8';
 
 export async function onRequestGet({request,env}){
   const url=new URL(request.url);
@@ -20,6 +21,7 @@ export async function onRequestGet({request,env}){
   const prodcd=PRODUCTS[url.searchParams.get('prodcd')]?url.searchParams.get('prodcd'):'B027';
   const cnt=Math.max(1,Math.min(20,Number(url.searchParams.get('cnt'))||8));
   const diag=url.searchParams.get('diag')==='1';
+  const includeVersion={apiVersion:FUEL_API_VERSION};
   const trace=[];
   if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat<-90||lat>90||lng<-180||lng>180||(lat===0&&lng===0))
     return json({error:'올바른 lat/lng가 필요합니다.',code:'INVALID_COORDINATES'},400);
@@ -37,13 +39,12 @@ export async function onRequestGet({request,env}){
   try{
     // Opinet official documentation requires the certkey parameter, not 'code'.
     // One price-sorted nearby request, then one distance-sorted retry only if it is empty.
-    // 정상 동작하던 원본(v7.6.27.7)과 동일한 호출: 가격순 → (비면) 거리순 재시도.
     for(const sort of ['1','2']){
       try{
         const found=await opinetAround(x,y,prodcd,5000,sort,key,trace);
         aroundEmpty ||= found.length===0;
         if(found.length){stations=found.sort((a,b)=>a.price-b.price).slice(0,cnt);source='aroundAll';radius=5000;break}
-      }catch(e){upstreamError ||= e}
+      }catch(e){upstreamError ||= e;trace.push({step:'aroundAll',error:safeError(e)})}
     }
 
     if(!stations.length){
@@ -70,38 +71,22 @@ export async function onRequestGet({request,env}){
       // Catalog diagnostics are expensive and not product-specific. Run them only on
       // explicit ?diag=1; otherwise a transient empty result is not 'invalid key'.
       if(!diag){
-        // 오피넷이 오류를 돌려준 경우(인증 거부/한도 초과/차단 등)를 '가격 없음'으로 숨기지 않는다.
-        const summary=trace.map(t=>({step:t.step,status:t.status,rows:t.rowCount,error:t.error})).slice(0,6);
-        // 위치와 무관한 지역코드 조회(areaCode.do)까지 200 + 0건이면 좌표·유종 문제가 아니라
-        // 인증키 단위로 빈 응답이 오는 상태(일일 한도 초과, 키 승인/IP 제한, 키 만료 등)다.
-        if(summary.some(t=>t.step==='areaCode.do'&&t.status===200&&t.rows===0)){
-          return json({provider:'opinet',product:prodcd,productName:PRODUCTS[prodcd],stations:[],
-            error:'오피넷이 인증키 요청에 빈 응답을 반환하고 있습니다(지역코드 조회도 0건).',
-            code:'OPINET_KEY_QUOTA_SUSPECT',trace:summary},502);
-        }
-        if(upstreamError){
-          const msg=String(upstreamError?.message||upstreamError);
-          return json({provider:'opinet',product:prodcd,productName:PRODUCTS[prodcd],stations:[],
-            error:'오피넷 응답 오류: '+safeError(upstreamError),code:classify(msg),trace:summary},502);
-        }
         return json({provider:'opinet',source:'none',product:prodcd,productName:PRODUCTS[prodcd],
-          stations:[],code:'OPINET_PRODUCT_UNAVAILABLE',trace:summary,
+          stations:[],...includeVersion,code:'OPINET_PRODUCT_UNAVAILABLE',
           error:`${PRODUCTS[prodcd]}의 주변 판매가격을 현재 확인하지 못했습니다. 다른 유종의 정상 조회와 인증 오류는 별개입니다.`,
           retryable:true},200,true);
       }
       const check=await checkOpinetCatalog(key,trace);
       const diagnostic={
         keySource:selectedKeyName,
-        // 서버에 실제 들어 있는 키가 마이페이지 키와 같은지 대조용(전체 값은 노출하지 않음)
-        keyInfo:{length:key.length,looksLikeOpinetKey:/^F\d{9}$/.test(key),last2:key.slice(-2)},
         aroundEmpty, catalog:check,
         coordinateSystem:'KATEC',
         ...(diag?{testedLocation:{lat,lng,katecX:Math.round(x),katecY:Math.round(y)},trace}:{})
       };
       if(!check.areaOk && !check.averageOk){
         return json({
-          error:'오피넷 API가 선택 유종 및 진단 요청에 빈 목록을 반환했습니다. 인증 문제로 확정할 수 없으므로 유종별 가격 게시 여부·일시 응답·호출 한도를 확인하세요.',
-          code:'OPINET_KEY_OR_UPSTREAM',product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic,
+          error:'오피넷 API가 빈 목록을 반환했습니다. 이것만으로 인증키 만료 또는 일일 한도 초과를 판정할 수 없습니다. 정상 조회되는 다른 유종이 있다면 유종별 API 응답을 별도로 확인하세요.',
+          code:'OPINET_UPSTREAM_EMPTY_UNVERIFIED',...includeVersion,product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic,
           action:`Cloudflare의 ${selectedKeyName} Secret에 오피넷 공식 공개 API 인증키가 설정되어 있는지 확인하고 재배포하세요. 인증키·일일 이용량·공급 API 응답은 서버 밖에서 확인해야 합니다.`
         },502);
       }
@@ -109,25 +94,22 @@ export async function onRequestGet({request,env}){
       if(!check.areaOk){
         return json({
           error:'전국평균유가는 조회되지만 반경·지역코드 API는 빈 목록을 반환합니다. 반경 좌표/서비스별 이용 권한 또는 공급 응답을 점검하세요.',
-          code:'OPINET_SEARCH_EMPTY_UNVERIFIED',product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic
+          code:'OPINET_SEARCH_EMPTY_UNVERIFIED',...includeVersion,product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic
         },502);
       }
       return json({
         error:'지역코드 API는 정상이나 주변 유가 검색에서 판매가격 자료를 확보하지 못했습니다. 실제 반경 내 주유소가 없다는 뜻은 아닙니다.',
-        code:'OPINET_PRICE_NOT_AVAILABLE',product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic
+        code:'OPINET_PRICE_NOT_AVAILABLE',...includeVersion,product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic
       },200,true);
     }
 
-    // 호출 한도 보호(일 300건): 주소 상세 조회는 상위 3곳만, 나머지는 그대로 반환.
-    const head=stations.slice(0,3),tail=stations.slice(3);
-    const enriched=await Promise.race([
-      enrichAddresses(head,key),
-      new Promise(resolve=>setTimeout(()=>resolve(head),2200))
+    const detailed=await Promise.race([
+      enrichAddresses(stations.slice(0,8),key),
+      new Promise(resolve=>setTimeout(()=>resolve(stations.slice(0,8)),2200))
     ]);
-    const detailed=[...enriched,...tail];
     const avg=stations.length?Math.round(stations.reduce((sum,row)=>sum+row.price,0)/stations.length):null;
-    return json({provider:'opinet',source,radius,product:prodcd,productName:PRODUCTS[prodcd],
-      areaName:areaName||(source==='aroundAll'?`현재 위치 주변 ${Math.round(radius/1000)}km`:'현재 지역'),
+    return json({provider:'opinet',apiVersion:FUEL_API_VERSION,source,radius,product:prodcd,productName:PRODUCTS[prodcd],
+      areaName:areaName||(source==='aroundAll'?'현재 위치 주변 5km':'현재 지역'),
       averagePrice:avg,updatedAt:new Date().toISOString(),stations:detailed,
       ...(diag?{trace,testedLocation:{lat,lng,katecX:Math.round(x),katecY:Math.round(y)}}:{})});
   }catch(e){
@@ -153,8 +135,6 @@ function classify(msg){
 async function fetchOpinetJson(endpoint,params,key,trace){
   const url=new URL('https://www.opinet.co.kr/api/'+endpoint);
   url.searchParams.set('out','json');
-  // 신규 발급 키는 certkey 가 아니라 code 파라미터로만 인식된다(직접 호출로 확인). 기존 키 호환을 위해 둘 다 같은 값으로 전송.
-  url.searchParams.set('code',key);
   url.searchParams.set('certkey',key);
   for(const [k,v] of Object.entries(params||{}))if(v!==''&&v!=null)url.searchParams.set(k,String(v));
   const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),6500);
@@ -169,9 +149,6 @@ async function fetchOpinetJson(endpoint,params,key,trace){
     if(result?.CODE && !['00','0','200'].includes(String(result.CODE)))throw new Error('오피넷 서비스 오류 '+String(result.CODE));
     // Log only structural metadata; never a response snippet or key.
     t.rowCount=Array.isArray(result?.OIL)?result.OIL.length:0;
-    // 빈 응답일 때만: 오피넷이 돌려준 본문 앞부분(인증키는 [redacted] 처리)을 진단 trace 에 포함.
-    // 비진단 응답의 summary 는 step/status/rows/error 만 골라 쓰므로 일반 사용자 화면에는 노출되지 않는다.
-    if(t.rowCount===0&&key)t.snippet=body.split(key).join('[redacted]').replace(/\s+/g,' ').slice(0,300);
     trace?.push(t);
     return obj;
   }catch(e){
