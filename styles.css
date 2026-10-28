@@ -4330,4 +4330,5 @@ body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-camera.passe
 .dangollo-ai-confirm-actions{display:flex;gap:12px}.dangollo-ai-confirm-actions button{flex:1;min-height:52px;border-radius:12px;border:1px solid #aab9c4;background:#f5f8fa;color:#233744;font-size:16px;font-weight:700}
 .dangollo-ai-confirm-actions button:last-child{background:#087e59;border-color:#087e59;color:white}
 
-.fuel-best-nav{display:block;width:100%;margin:2px 0 8px;padding:12px 14px;border:0;border-radius:12px;background:#1f6bff;color:#fff;font:inherit;font-weight:800;font-size:14px;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}.fuel-best-nav:active{filter:brightness(.92)}
+/* v7.6.27.9 home AI hands-free search entry */
+#homeAiVoiceBtn{display:inline-flex;align-items:center;justify-content:center;flex:0 0 42px;min-height:42px;border:0;border-radius:12px;background:#e5f4ee;color:#147656;cursor:pointer;touch-action:manipulation}#homeAiVoiceBtn svg{width:23px;height:23px;display:block}.home-ai-example{display:flex;gap:8px;align-items:center;margin:10px 3px 4px;flex-wrap:wrap;font-size:12px;color:#536779}.home-ai-example button{border:1px solid #b6ded0;border-radius:16px;background:#f0faf5;padding:7px 11px;color:#126f54;text-align:left;font-size:12px;cursor:pointer;touch-action:manipulation}
