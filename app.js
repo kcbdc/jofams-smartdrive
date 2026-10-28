@@ -7979,7 +7979,7 @@ function confirmDestinationChange(name){
 
 /* v7.6.27.20: Single-field AI route & merchant planning; Opinet is untouched. */
 let aiTripBusy=false,homeAiVoicePending=false,aiQuickStartTimer=null;
-const AI_LAST_CONDITION_KEY='dangollo.ai.lastConditions.v1',AI_QUICK_START_KEY='dangollo.ai.quickStart.v1';
+const AI_LAST_CONDITION_KEY='dangollo.ai.lastConditions.v1',AI_LAST_COMMAND_KEY='dangollo.ai.lastCommand.v1',AI_QUICK_START_KEY='dangollo.ai.quickStart.v1';
 const aiTripEl=id=>document.getElementById(id);
 const aiTripBtn=(text,fn,primary=false)=>{const b=document.createElement('button');b.type='button';b.textContent=text;b.className=primary?'ai-trip-primary':'ai-trip-secondary';b.onclick=fn;return b};
 const aiTripSafeText=x=>String(x||'').slice(0,100);
@@ -8003,7 +8003,23 @@ async function aiTripParse(text){try{const r=await callWorkerAiAssist('trip_plan
 function aiTripIsQuery(q){return /온누리|지역사랑|지역화폐|우회|가는\s*길에|경유|들렀다|들러|상품권/.test(String(q||''))}
 function aiTripConditionText(plan){return `${plan.payment==='onnuri'?'온누리':plan.payment==='local'?'지역사랑':'상품권'} · ${plan.category==='meal'?'식당':plan.category==='cafe'?'카페':plan.category==='dessert'?'디저트':plan.category==='gas_station'?'주유소':'전체 업종'} · 우회 최대 ${plan.max_detour_min}분`}
 function aiTripSaveCondition(plan){try{localStorage.setItem(AI_LAST_CONDITION_KEY,JSON.stringify({payment:plan.payment,category:plan.category,max_detour_min:plan.max_detour_min}));aiTripRefreshRecent()}catch{}}
-function aiTripRefreshRecent(){const b=$('homeAiRecentBtn');if(!b)return;try{const r=JSON.parse(localStorage.getItem(AI_LAST_CONDITION_KEY)||'null');if(!r)return;b.hidden=false;b.textContent=`최근 조건 · ${aiTripConditionText(r)}`;}catch{}}
+function aiTripRememberCommand(text){
+  const command=String(text||'').trim().slice(0,280);
+  if(!command)return;
+  try{localStorage.setItem(AI_LAST_COMMAND_KEY,command);aiTripRefreshRecent()}catch(e){console.warn('AI recent command save failed',e)}
+}
+function aiTripRefreshRecent(){
+  const b=$('homeAiRecentBtn');if(!b)return;
+  let command='';try{command=String(localStorage.getItem(AI_LAST_COMMAND_KEY)||'').trim()}catch{}
+  b.hidden=!command;
+  b.textContent=command?`최근 지시 · ${command}`:'';
+  b.title=command;
+}
+function aiTripClearHomeQuery(submitted){
+  const input=$('destinationInput');
+  // Never erase a new command typed while an older asynchronous request finishes.
+  if(input&&input.value.trim()===String(submitted||'').trim())input.value='';
+}
 function aiTripQuickEnabled(){try{return localStorage.getItem(AI_QUICK_START_KEY)!=='off'}catch{return true}}
 function aiTripCancelQuick(){if(aiQuickStartTimer){clearInterval(aiQuickStartTimer);aiQuickStartTimer=null}}
 function aiTripQuickCountdown(ui){
@@ -8104,8 +8120,19 @@ async function startAiTripSearch(text){
   try{const plan=await aiTripParse(text);if(!ui.root.isConnected)return;if(!plan||plan.intent!=='plan_stops'){ui.desc.textContent='조건을 이해하지 못했습니다. 문장을 다시 입력해 주세요.';return}aiTripSaveCondition(plan);await aiTripResolveDestination(ui,plan,aiTripSafeText(plan.destination||''))}
   catch(e){console.warn('AI condition search failed',e);if(ui.root.isConnected)ui.desc.textContent='검색을 완료하지 못했습니다. 다시 시도해 주세요.'}finally{aiTripBusy=false}
 }
-function aiTripSearchFromHome(){const input=$('destinationInput');const q=input?.value?.trim()||'';if(!q)return;if(aiTripIsQuery(q))return startAiTripSearch(q);return searchPlaces(q)}
-function aiTripApplyRecent(){try{const condition=JSON.parse(localStorage.getItem(AI_LAST_CONDITION_KEY)||'null');if(!condition)return;const q=$('destinationInput')?.value?.trim()||state.destination?.name||'';const words=[q,condition.payment==='onnuri'?'온누리':condition.payment==='local'?'지역사랑':'',condition.category==='meal'?'식당':condition.category==='cafe'?'카페':condition.category==='dessert'?'디저트':'',`${condition.max_detour_min||5}분 이내 우회`].filter(Boolean).join(' ');$('destinationInput').value=words;startAiTripSearch(words)}catch{}}
+async function aiTripSearchFromHome(options={}){
+  const input=$('destinationInput');const q=input?.value?.trim()||'';
+  if(!q)return;
+  if(aiTripIsQuery(q)&&!options.fromExample)aiTripRememberCommand(q);
+  try{return await (aiTripIsQuery(q)?startAiTripSearch(q):searchPlaces(q))}
+  finally{aiTripClearHomeQuery(q)}
+}
+function aiTripApplyRecent(){
+  let command='';try{command=String(localStorage.getItem(AI_LAST_COMMAND_KEY)||'').trim()}catch{}
+  if(!command)return;
+  const input=$('destinationInput');if(input)input.value=command;
+  return aiTripSearchFromHome();
+}
 // One shared voice session for home and driving. UI feedback is driven by the
 // recognizer lifecycle; no microphone audio is recorded or retained here.
 let dangolloVoiceSession=null, dangolloVoiceSerial=0;
@@ -8803,7 +8830,7 @@ function bindHomeCriticalUI(){
 function bindUI(){
   try{bindFutureDepartureUI();}catch(e){console.warn('UI bind section 1 failed',e)}
   try{$('allowLocationBtn').onclick=requestLocationPermission;$('allowCameraBtn').onclick=requestCameraPermission;$('permissionContinueBtn').onclick=closePermissionGate;}catch(e){console.warn('UI bind section 2 failed',e)}
-  try{if($('homeSheetToggle'))$('homeSheetToggle').onclick=toggleHomeSheet;if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=closeMapPlacePrompt;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;if($('voucherBuildingClose'))$('voucherBuildingClose').onclick=closeVoucherBuildingModal;window.addEventListener('online',()=>{state.localVoucherRetryCount=0;loadLocalVoucherMap({force:true})});if($('voucherBuildingModal'))$('voucherBuildingModal').addEventListener('click',e=>{if(e.target===$('voucherBuildingModal'))closeVoucherBuildingModal()});applyIcons();if($('homeAiMicBtn'))$('homeAiMicBtn').onclick=homeAiVoiceSearch;if($('homeAiExampleBtn'))$('homeAiExampleBtn').onclick=()=>{if($('destinationInput'))$('destinationInput').value='세종시청 가는 길에 온누리 식당 5분 이내';aiTripSearchFromHome()};$('searchBtn').onclick=aiTripSearchFromHome;if($('homeAiRecentBtn'))$('homeAiRecentBtn').onclick=aiTripApplyRecent;aiTripRefreshRecent();$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')aiTripSearchFromHome()});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
+  try{if($('homeSheetToggle'))$('homeSheetToggle').onclick=toggleHomeSheet;if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=closeMapPlacePrompt;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;if($('voucherBuildingClose'))$('voucherBuildingClose').onclick=closeVoucherBuildingModal;window.addEventListener('online',()=>{state.localVoucherRetryCount=0;loadLocalVoucherMap({force:true})});if($('voucherBuildingModal'))$('voucherBuildingModal').addEventListener('click',e=>{if(e.target===$('voucherBuildingModal'))closeVoucherBuildingModal()});applyIcons();if($('homeAiMicBtn'))$('homeAiMicBtn').onclick=homeAiVoiceSearch;if($('homeAiExampleBtn'))$('homeAiExampleBtn').onclick=()=>{if($('destinationInput'))$('destinationInput').value='세종시청 가는 길에 온누리 식당 5분 이내';return aiTripSearchFromHome({fromExample:true})};$('searchBtn').onclick=aiTripSearchFromHome;if($('homeAiRecentBtn'))$('homeAiRecentBtn').onclick=aiTripApplyRecent;aiTripRefreshRecent();$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')aiTripSearchFromHome()});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
   try{document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>setCharacter(b.dataset.character));$('homeShortcut').onclick=()=>state.savedPlaces.home?chooseDestination(state.savedPlaces.home):openPlaceModal('home');$('workShortcut').onclick=()=>state.savedPlaces.work?chooseDestination(state.savedPlaces.work):openPlaceModal('work');$('homeManageBtn').onclick=()=>openPlaceModal('home');$('workManageBtn').onclick=()=>openPlaceModal('work');$('favoriteShortcut').onclick=openFavoritesList;}catch(e){console.warn('UI bind section 4 failed',e)}
   try{document.querySelectorAll('[data-my-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.myCharacter);syncCharacterUI();toast(`${characterDefs[state.character].name} 가이드로 변경했습니다.`)});}catch(e){console.warn('UI bind section 5 failed',e)}
   try{document.querySelectorAll('[data-voice-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.voiceCharacter);syncCharacterUI();speak(`${characterDefs[state.character].name} 음성 안내입니다.`)});}catch(e){console.warn('UI bind section 6 failed',e)}

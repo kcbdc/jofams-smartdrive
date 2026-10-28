@@ -4400,3 +4400,6 @@ body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-camera.passe
 @keyframes dangolloDot{0%,70%,100%{transform:translateY(0);opacity:.5}35%{transform:translateY(-4px);opacity:1}}
 @media(prefers-reduced-motion:reduce){.dangollo-mic-listening,.dangollo-mic-processing,.dangollo-voice-state-icon,.dangollo-voice-dots i{animation:none!important}}
 @media(orientation:landscape){.dangollo-voice-status:not(.hidden){bottom:max(18px,env(safe-area-inset-bottom,0px))!important}}
+
+/* v7.6.27.24: one example + one recent full command chip */
+#homeAiRecentBtn{max-width:min(72vw,400px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
