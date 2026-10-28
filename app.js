@@ -4768,11 +4768,50 @@ function maybeRestoreDriveMap(){
   state.userMapInteracting=false;
   return true;
 }
+
+/* 7.6.27.25 · 현재 위치 날씨(별도 API, 오피넷/AI 호출과 분리) */
+const dangolloWeatherState={lastAt:0,lat:null,lng:null,pending:false,requestId:0};
+function dangolloWeatherSymbol(kind,day){
+  const cloud='<path d="M10 26h17c4 0 6-2.6 6-5.7 0-3.4-2.9-6-6.1-6-1.1-4-4.4-6.6-8.2-6.6-4.4 0-7.7 3.3-8.3 7.1C6.4 15 4 17.5 4 20.6 4 23.9 6.4 26 10 26Z" fill="#FFFFFF" stroke="#91BBCC" stroke-width="1.8"/>';
+  const sun='<circle cx="14" cy="14" r="7" fill="#FFD66D" stroke="#EEAB49" stroke-width="1.6"/><path d="M14 2v3m0 18v3M2 14h3m18 0h3M5.5 5.5l2.3 2.3m12.4 12.4 2.3 2.3m0-17-2.3 2.3M7.8 20.2l-2.3 2.3" stroke="#EFAB49" stroke-width="2" stroke-linecap="round"/>';
+  const moon='<path d="M23 3a11 11 0 1 0 10 17.8A11.7 11.7 0 0 1 23 3Z" fill="#B6B9F0" stroke="#888CC9" stroke-width="1.5"/>';
+  const rain='<path d="m12 29-2 4m11-4-2 4m10-4-2 4" stroke="#5C9BE7" stroke-width="2.5" stroke-linecap="round"/>';
+  const snow='<path d="M12 29v5m-2.5-2.5h5M23 29v5m-2.5-2.5h5" stroke="#71B6DC" stroke-width="2" stroke-linecap="round"/>';
+  const storm='<path d="m21 25-5 7h5l-3 4 11-10h-6l3-4" fill="#F5C353" stroke="#E5A233" stroke-width="1"/>';
+  const shapes={clear:day?sun:moon,partly:(day?sun:moon)+cloud,cloud:cloud,rain:cloud+rain,snow:cloud+snow,storm:cloud+storm,fog:cloud+'<path d="M6 30h23M10 34h18" stroke="#A9BDC4" stroke-width="2" stroke-linecap="round"/>'};
+  return '<svg viewBox="0 0 38 38" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">'+(shapes[kind]||cloud)+'</svg>';
+}
+function updateDangolloWeatherBadge(info){
+  const badge=document.getElementById('homeWeatherBadge'),icon=document.getElementById('homeWeatherIcon'),temp=document.getElementById('homeWeatherTemp'),label=document.getElementById('homeWeatherLabel');
+  if(!badge||!icon||!temp||!label)return;
+  if(!info){badge.classList.add('is-error');badge.classList.remove('is-loading');temp.textContent='--°';label.textContent='날씨 확인 불가';badge.title='현재 위치의 날씨를 확인하지 못했습니다';return}
+  badge.classList.remove('is-error','is-loading');icon.innerHTML=dangolloWeatherSymbol(info.kind,info.isDay);temp.textContent=Math.round(info.temperature)+'°';label.textContent=info.label||'현재 날씨';badge.title='현재 위치 기준 '+(info.label||'날씨')+' '+Math.round(info.temperature)+'°C · 자료: Open-Meteo';
+}
+async function refreshDangolloHomeWeather(force=false){
+  if(document.getElementById('homeView')?.classList.contains('hidden'))return;
+  const p=pointValid(state.user)?state.user:pointValid(state.lastRawFix)?state.lastRawFix:null;
+  if(!p){if(!dangolloWeatherState.pending)document.getElementById('homeWeatherLabel')?.replaceChildren(document.createTextNode('위치 확인 중'));return;}
+  const lat=Number(p.lat),lng=Number(p.lng),cache=dangolloWeatherState;
+  if(cache.pending)return;
+  if(!force&&Date.now()-cache.lastAt<600000&&cache.lat!=null&&hav(cache.lat,cache.lng,lat,lng)<3000)return;
+  cache.pending=true;const req=++cache.requestId;
+  try{
+    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),6500);
+    let response;
+    try{response=await fetch('/api/weather?lat='+encodeURIComponent(lat.toFixed(4))+'&lng='+encodeURIComponent(lng.toFixed(4)),{signal:controller.signal,headers:{Accept:'application/json'}})}finally{clearTimeout(timer)}
+    if(!response.ok)throw new Error('weather '+response.status);
+    const data=await response.json();if(!Number.isFinite(Number(data?.temperature)))throw new Error('weather unavailable');
+    if(req!==cache.requestId)return;
+    cache.lastAt=Date.now();cache.lat=lat;cache.lng=lng;updateDangolloWeatherBadge(data);
+  }catch(e){console.warn('home weather temporarily unavailable',e?.message||e);if(!cache.lastAt)updateDangolloWeatherBadge(null)}finally{cache.pending=false}
+}
+
 function setView(view){
   $('homeView').classList.toggle('hidden',view!=='home');$('routeView').classList.toggle('hidden',view!=='route');$('driveView').classList.toggle('hidden',view!=='drive');
   setTimeout(tryLandscapeFullscreen,60); // 화면 전환/최초 진입 시에도 현재 가로/세로 상태에 맞게 전체화면 여부를 갱신
   $('bottomNav').classList.toggle('hidden',view!=='home'||state.arRunning);
   if(view==='home'){
+    setTimeout(()=>refreshDangolloHomeWeather(),220);
     $('homeView')?.classList.remove('ui-hidden');
     // 생활편의시설은 최초 진입 시에도 현재 위치를 자동으로 확인해 기본 탭(주유소) 목록을 바로 보여준다.
     // loadHomeFacility 내부에서 위치가 없으면 locate(false)로 자동 확인하므로 위치 확보 여부와 무관하게 항상 호출한다.
@@ -4788,6 +4827,7 @@ function setView(view){
       try{
         if(!state.tripStartedAt){
           const u=await locate(false);
+          if(u&&pointValid(u))refreshDangolloHomeWeather();
           if(u&&pointValid(u)&&state.map&&!state.homeSheetCollapsed)state.map.easeTo({center:[u.lng,u.lat],zoom:15.5,duration:380});
         }
       }catch{}
@@ -9033,3 +9073,6 @@ function initDangolloDrivingQuickActions(){
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initDangolloDrivingQuickActions,{once:true});
 else initDangolloDrivingQuickActions();
+
+// 7.6.27.25: 날씨는 홈 화면 표시 중에만 주기적으로 갱신
+setInterval(()=>{if(!document.hidden)refreshDangolloHomeWeather()},60000);
