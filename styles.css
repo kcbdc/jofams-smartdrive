@@ -4348,3 +4348,14 @@ body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-camera.passe
 .ai-trip-card .ai-trip-list{display:flex;flex-direction:column;gap:8px;margin:10px 0}
 .ai-trip-card .ai-trip-choice{width:100%;border:1px solid #d9e5e1;background:#f8fbfa;text-align:left}
 .ai-trip-card .ai-trip-choice strong,.ai-trip-card .ai-trip-choice small{display:block;line-height:1.5}.ai-trip-card .ai-trip-choice small{color:#527269}
+
+/* v7.6.27.20 AI single-sheet layout; no fuel or map overrides */
+.ai-trip-dest{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0 12px;padding:10px;border:1px solid #d8e8e1;border-radius:12px;background:#f3faf7}
+.ai-trip-dest>div:first-child{font-size:14px;font-weight:700;flex:1}
+.ai-trip-dest input{flex:1;min-width:165px}
+.ai-trip-dest-chips{display:flex;flex-wrap:wrap;gap:7px;width:100%;margin-top:7px}
+.ai-trip-dest-chips button{min-height:38px;background:#e6f5ee;border:1px solid #b1d6c6;color:#075943}
+.ai-trip-candidates{display:flex;flex-direction:column;gap:8px}
+.ai-trip-toggle{display:flex;align-items:center;gap:8px;font-size:13px;padding:10px;border-radius:10px;background:#e9f5ef}
+.ai-trip-toggle input{width:19px;height:19px}
+#homeAiRecentBtn{background:#f1f6ff;color:#1a5f91;border:1px solid #bad0eb;padding:8px 12px;border-radius:20px;font-size:12px}
