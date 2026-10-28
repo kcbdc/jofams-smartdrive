@@ -8106,8 +8106,114 @@ async function startAiTripSearch(text){
 }
 function aiTripSearchFromHome(){const input=$('destinationInput');const q=input?.value?.trim()||'';if(!q)return;if(aiTripIsQuery(q))return startAiTripSearch(q);return searchPlaces(q)}
 function aiTripApplyRecent(){try{const condition=JSON.parse(localStorage.getItem(AI_LAST_CONDITION_KEY)||'null');if(!condition)return;const q=$('destinationInput')?.value?.trim()||state.destination?.name||'';const words=[q,condition.payment==='onnuri'?'온누리':condition.payment==='local'?'지역사랑':'',condition.category==='meal'?'식당':condition.category==='cafe'?'카페':condition.category==='dessert'?'디저트':'',`${condition.max_detour_min||5}분 이내 우회`].filter(Boolean).join(' ');$('destinationInput').value=words;startAiTripSearch(words)}catch{}}
-function homeAiVoiceSearch(){homeAiVoicePending=true;if(window.JofamsVoiceBridge?.isNativeVoiceAvailable?.()){try{window.JofamsVoiceBridge.startRecognition();return}catch(e){console.warn('native voice failed',e)}}const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){homeAiVoicePending=false;toast('이 기기에서는 음성 입력을 지원하지 않습니다.');return}const rec=new SR();rec.lang='ko-KR';rec.interimResults=false;rec.onresult=e=>{homeAiVoicePending=false;const text=String(e.results?.[0]?.[0]?.transcript||'').trim();if($('destinationInput'))$('destinationInput').value=text;aiTripSearchFromHome()};rec.onerror=()=>{homeAiVoicePending=false;toast('음성 인식을 확인해 주세요.')};rec.onend=()=>{homeAiVoicePending=false};try{rec.start()}catch{homeAiVoicePending=false;toast('마이크를 시작하지 못했습니다.')}
+// One shared voice session for home and driving. UI feedback is driven by the
+// recognizer lifecycle; no microphone audio is recorded or retained here.
+let dangolloVoiceSession=null, dangolloVoiceSerial=0;
+function dangolloVoiceVisual(stage,message=''){
+  const panel=$('dangolloVoiceStatus');
+  if(panel){
+    panel.classList.toggle('hidden',stage==='idle');
+    panel.dataset.phase=stage;
+    const title=$('dangolloVoiceStatusTitle');
+    if(title)title.textContent=stage==='listening'?'듣고 있어요':stage==='processing'?'명령 처리 중':'음성 입력 종료';
+    const desc=$('dangolloVoiceStatusDesc');
+    if(desc)desc.textContent=message||(stage==='listening'?'말씀해 주세요 · 5초간 말씀이 없으면 종료합니다':stage==='processing'?'말씀하신 내용을 확인하고 있어요':'');
+  }
+  for(const id of ['homeAiMicBtn','arOpenBtn','driveArBtn','driveVoiceBtn']){
+    const button=$(id);if(!button)continue;
+    button.classList.toggle('dangollo-mic-listening',stage==='listening');
+    button.classList.toggle('dangollo-mic-processing',stage==='processing');
+    button.setAttribute('aria-pressed',String(stage==='listening'));
+    button.setAttribute('aria-busy',String(stage==='processing'));
+  }
 }
+function dangolloVoiceClearTimers(session){
+  if(!session)return;
+  clearTimeout(session.silenceTimer);
+  clearTimeout(session.resultTimer);
+  session.silenceTimer=null;session.resultTimer=null;
+}
+function dangolloVoiceFinish(session){
+  if(!session||dangolloVoiceSession!==session)return;
+  dangolloVoiceClearTimers(session);
+  dangolloVoiceSession=null;homeAiVoicePending=false;
+  dangolloVoiceVisual('idle');
+}
+function dangolloVoiceAbort(session,reason){
+  if(!session||dangolloVoiceSession!==session)return;
+  dangolloVoiceClearTimers(session);
+  session.finished=true;
+  try{session.rec?.abort()}catch{}
+  if(session.native){try{window.JofamsVoiceBridge?.stopRecognition?.()}catch{}}
+  dangolloVoiceFinish(session);
+  if(reason)toast(reason,2000);
+}
+function dangolloVoiceSilenceTimeout(session){
+  if(!session||dangolloVoiceSession!==session||session.finished||session.received||session.speechStarted)return;
+  session.silenceTimer=setTimeout(()=>{
+    if(dangolloVoiceSession===session&&!session.received&&!session.speechStarted)
+      dangolloVoiceAbort(session,'5초 동안 음성이 없어 마이크를 종료했습니다.');
+  },5000);
+}
+function dangolloVoiceReceive(session,text){
+  if(!session||dangolloVoiceSession!==session||session.finished||session.received)return;
+  text=String(text||'').trim();
+  if(!text){dangolloVoiceAbort(session,'음성을 인식하지 못했습니다. 다시 시도해 주세요.');return}
+  session.received=true;session.finished=true;
+  dangolloVoiceClearTimers(session);
+  homeAiVoicePending=false;
+  dangolloVoiceVisual('processing','“'+text.slice(0,55)+'” 분석 중…');
+  try{session.rec?.stop()}catch{}
+  let action;
+  try{
+    if(session.mode==='home'){
+      if($('destinationInput'))$('destinationInput').value=text;
+      action=aiTripSearchFromHome();
+    }else action=handleVoiceCommandText(text);
+  }catch(e){console.warn('Voice command failed',e);dangolloVoiceFinish(session);return}
+  Promise.resolve(action).catch(e=>console.warn('Voice command rejected',e))
+    .finally(()=>dangolloVoiceFinish(session));
+}
+function dangolloVoiceBegin(mode){
+  // Tapping either mic again cancels the active session, including native sessions.
+  if(dangolloVoiceSession){dangolloVoiceAbort(dangolloVoiceSession);return}
+  const session={id:++dangolloVoiceSerial,mode,finished:false,received:false,speechStarted:false,native:false,rec:null,silenceTimer:null,resultTimer:null};
+  dangolloVoiceSession=session;homeAiVoicePending=mode==='home';
+  dangolloVoiceVisual('listening');
+  const bridge=window.JofamsVoiceBridge;
+  if(bridge?.isNativeVoiceAvailable?.()){
+    try{
+      session.native=true;
+      const started=bridge.startRecognition();
+      // Native bridge has only final-result events; without speech lifecycle
+      // events, five seconds is the maximum wait for any recognition result.
+      dangolloVoiceSilenceTimeout(session);
+      return started;
+    }catch(e){console.warn('Native voice bridge failed',e);session.native=false}
+  }
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){dangolloVoiceAbort(session,'이 기기에서는 음성 입력을 지원하지 않습니다.');return}
+  const rec=new SR();session.rec=rec;rec.lang='ko-KR';rec.interimResults=true;rec.maxAlternatives=1;
+  rec.onstart=()=>{if(dangolloVoiceSession===session)dangolloVoiceSilenceTimeout(session)};
+  rec.onspeechstart=()=>{if(dangolloVoiceSession!==session)return;session.speechStarted=true;clearTimeout(session.silenceTimer);dangolloVoiceVisual('listening','음성을 듣고 있습니다…')};
+  rec.onspeechend=()=>{
+    if(dangolloVoiceSession!==session||session.received)return;
+    dangolloVoiceVisual('processing','음성 인식 결과를 확인하고 있습니다…');
+    session.resultTimer=setTimeout(()=>dangolloVoiceAbort(session,'음성 인식 시간이 초과됐습니다.'),5000);
+  };
+  rec.onresult=e=>{
+    const results=Array.from(e.results||[]);
+    const final=results.filter(r=>r.isFinal).map(r=>r?.[0]?.transcript||'').join(' ').trim();
+    if(final){dangolloVoiceReceive(session,final);return}
+    const partial=results.map(r=>r?.[0]?.transcript||'').join(' ').trim();
+    if(partial){session.speechStarted=true;clearTimeout(session.silenceTimer);dangolloVoiceVisual('listening','“'+partial.slice(0,55)+'” 듣고 있어요…')}
+  };
+  rec.onerror=e=>{if(dangolloVoiceSession===session)dangolloVoiceAbort(session,e?.error==='not-allowed'?'마이크 권한을 허용해 주세요.':'음성 인식이 종료됐습니다. 다시 시도해 주세요.')};
+  rec.onend=()=>{if(dangolloVoiceSession===session&&!session.received)dangolloVoiceAbort(session)};
+  try{rec.start();dangolloVoiceSilenceTimeout(session)}catch{dangolloVoiceAbort(session,'마이크를 시작하지 못했습니다.')}
+}
+function homeAiVoiceSearch(){return dangolloVoiceBegin('home')}
+
 
 async function handleVoiceCommandText(raw){
   const text=String(raw||'').trim();if(!text)return toast('명령을 다시 말씀해 주세요.');
@@ -8134,20 +8240,17 @@ async function handleVoiceCommandText(raw){
     else await chooseDestination(item);
   }catch(e){console.warn('voice destination search failed',e);toast('음성 목적지 검색에 실패했습니다.',2800)}
 }
-function startVoiceCommand(){
-  if(window.JofamsVoiceBridge?.isNativeVoiceAvailable?.()){
-    toast('“가는 길에 온누리 식당, 5분 이내 우회”처럼 말씀해 주세요.');
-    try{return window.JofamsVoiceBridge.startRecognition()}catch(e){console.warn('native voice bridge failed',e)}
-  }
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){toast('이 기기에서는 음성 인식을 지원하지 않습니다. 마이크 권한과 HTTPS를 확인해 주세요.');return}
-  const rec=new SR();rec.lang='ko-KR';rec.interimResults=false;rec.maxAlternatives=1;
-  toast('“모닝커피 카페 들러서 안내해 줘”처럼 말씀해 주세요...',3500);
-  rec.onresult=e=>handleVoiceCommandText((e.results?.[0]?.[0]?.transcript||'').trim());
-  rec.onerror=()=>toast('마이크 권한이나 음성 인식을 확인해 주세요.');
-  try{rec.start()}catch{toast('음성 인식을 시작하지 못했습니다.')}
-}
-window.addEventListener('jofams-native-voice-result',e=>{const text=String(e.detail?.text||e.detail||'').trim();if(homeAiVoicePending){homeAiVoicePending=false;if($('destinationInput'))$('destinationInput').value=text;aiTripSearchFromHome();return}handleVoiceCommandText(text)});
+function startVoiceCommand(){return dangolloVoiceBegin('drive')}
+window.addEventListener('jofams-native-voice-result',e=>{
+  const session=dangolloVoiceSession;
+  // Ignore late replies after cancellation/timeout instead of applying stale commands.
+  if(!session||!session.native)return;
+  dangolloVoiceReceive(session,String(e.detail?.text||e.detail||''));
+});
+window.addEventListener('jofams-native-voice-error',e=>{
+  const session=dangolloVoiceSession;
+  if(session?.native)dangolloVoiceAbort(session,'음성 인식을 완료하지 못했습니다.');
+});
 
 
 function normalizedEmail(v){return String(v||'').trim().toLowerCase()}

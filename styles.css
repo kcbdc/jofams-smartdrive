@@ -4359,3 +4359,44 @@ body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-camera.passe
 .ai-trip-toggle{display:flex;align-items:center;gap:8px;font-size:13px;padding:10px;border-radius:10px;background:#e9f5ef}
 .ai-trip-toggle input{width:19px;height:19px}
 #homeAiRecentBtn{background:#f1f6ff;color:#1a5f91;border:1px solid #bad0eb;padding:8px 12px;border-radius:20px;font-size:12px}
+
+/* v7.6.27.23: shared microphone listening / processing feedback. */
+#homeAiMicBtn.dangollo-mic-listening,
+#arOpenBtn.dangollo-mic-listening,
+#driveArBtn.dangollo-mic-listening,
+#driveVoiceBtn.dangollo-mic-listening{
+  background:#d9f7e9!important;color:#087d53!important;
+  box-shadow:0 0 0 2px #159e6c,0 0 0 7px rgba(27,166,113,.15)!important;
+  animation:dangolloMicBreath 1.05s ease-in-out infinite!important;
+}
+#homeAiMicBtn.dangollo-mic-processing,
+#arOpenBtn.dangollo-mic-processing,
+#driveArBtn.dangollo-mic-processing,
+#driveVoiceBtn.dangollo-mic-processing{
+  background:#e8f0ff!important;color:#225fc0!important;
+  animation:dangolloMicProcess 1.6s ease-in-out infinite!important;
+}
+@keyframes dangolloMicBreath{0%,100%{opacity:1;filter:brightness(1)}50%{opacity:.63;filter:brightness(1.08)}}
+@keyframes dangolloMicProcess{0%,100%{box-shadow:0 0 0 2px rgba(30,100,190,.12)}50%{box-shadow:0 0 0 6px rgba(30,100,190,.25)}}
+.dangollo-voice-status:not(.hidden){
+  position:fixed!important;left:50%!important;bottom:max(92px,calc(env(safe-area-inset-bottom,0px) + 84px))!important;
+  transform:translateX(-50%)!important;z-index:2147483100!important;
+  display:flex!important;align-items:center;gap:11px;width:max-content;max-width:min(90vw,390px);
+  padding:11px 15px!important;border-radius:17px!important;
+  background:rgba(18,36,48,.95)!important;color:#fff!important;
+  box-shadow:0 8px 32px rgba(0,0,0,.24)!important;pointer-events:none!important;
+  backdrop-filter:blur(12px);
+}
+.dangollo-voice-state-icon{width:36px;height:36px;display:grid;place-items:center;flex-shrink:0;border-radius:50%;background:#187e62;color:white}
+[data-phase="listening"] .dangollo-voice-state-icon{animation:dangolloMicBreath 1.05s ease-in-out infinite}
+[data-phase="processing"] .dangollo-voice-state-icon{background:#3270bf}
+.dangollo-voice-copy{display:flex;min-width:0;flex-direction:column;gap:2px;font-size:13px;line-height:1.35}
+.dangollo-voice-copy strong{font-size:13px;font-weight:750;color:#fff}
+.dangollo-voice-copy small{font-size:11px;opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px}
+.dangollo-voice-dots{display:flex;align-items:center;gap:3px;flex-shrink:0}
+.dangollo-voice-dots i{width:4px;height:4px;background:#8fe8bf;border-radius:50%;animation:dangolloDot 1.1s infinite ease-in-out}
+.dangollo-voice-dots i:nth-child(2){animation-delay:.16s}.dangollo-voice-dots i:nth-child(3){animation-delay:.32s}
+[data-phase="processing"] .dangollo-voice-dots i{background:#a7c8ff}
+@keyframes dangolloDot{0%,70%,100%{transform:translateY(0);opacity:.5}35%{transform:translateY(-4px);opacity:1}}
+@media(prefers-reduced-motion:reduce){.dangollo-mic-listening,.dangollo-mic-processing,.dangollo-voice-state-icon,.dangollo-voice-dots i{animation:none!important}}
+@media(orientation:landscape){.dangollo-voice-status:not(.hidden){bottom:max(18px,env(safe-area-inset-bottom,0px))!important}}
