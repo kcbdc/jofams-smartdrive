@@ -4852,7 +4852,7 @@ function setView(view){
     $('homeView')?.classList.remove('ui-hidden');
     // 생활편의시설은 최초 진입 시에도 현재 위치를 자동으로 확인해 기본 탭(주유소) 목록을 바로 보여준다.
     // loadHomeFacility 내부에서 위치가 없으면 locate(false)로 자동 확인하므로 위치 확보 여부와 무관하게 항상 호출한다.
-    if(!state.homeFacilityItems.length||pointValid(state.user))setTimeout(()=>loadHomeFacility(state.homeFacilityCategory),120);
+    if(!state.homeFacilityItems.length||Date.now()-(state.homeFacilityRefreshAt||0)>120000){state.homeFacilityRefreshAt=Date.now();setTimeout(()=>loadHomeFacility(state.homeFacilityCategory),450)}
     const header=document.querySelector('#homeView .home-header');if(header){header.style.removeProperty('display');header.style.removeProperty('visibility');header.style.removeProperty('opacity')}
   }
   document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.classList.toggle('active',b.dataset.bottomNav===view));
@@ -7993,12 +7993,25 @@ async function runVoiceMerchantRecommendation(text){
 /* Workers AI optional assistance: voice intent extraction and grounded route comparison.
    Never delegate route calculations, camera guidance or route switching to a model. */
 function selectedAiModel(){const value=$('routeAiModel')?.value||$('driveAiModel')?.value;return ['llama','gemma'].includes(value)?value:'llama'}
+// v7.6.27.31: Keep both models usable under variable Cloudflare inference latency.
+// Selected model is tried first; when it fails, try the other model once and report which responded.
 async function callWorkerAiAssist(task,payload,timeoutMs=9000){
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
-  try{
-    const res=await fetch('/api/ai-assist',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({task,model:selectedAiModel(),...payload}),signal:controller.signal});
-    const body=await res.json();if(!res.ok||!body?.ok)throw Error(body?.message||'AI 처리 실패');return body;
-  }finally{clearTimeout(timer)}
+  const requested=selectedAiModel(),models=[requested,requested==='llama'?'gemma':'llama'];
+  let failure;
+  for(let i=0;i<models.length;i++){
+    const controller=new AbortController();
+    const budget=i===0?Math.max(timeoutMs,task==='trip_plan'?12500:14000):9500;
+    const timer=setTimeout(()=>controller.abort(),budget);
+    try{
+      const res=await fetch('/api/ai-assist',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({task,model:models[i],...payload}),signal:controller.signal});
+      const body=await res.json();
+      if(!res.ok||!body?.ok)throw Error(body?.message||'AI 처리 실패');
+      if(i>0){body.fallbackFrom=requested;console.info('[AI] fallback model',requested,'=>',models[i])}
+      return body;
+    }catch(e){failure=e;console.warn('[AI] model request failed',models[i],e?.name||e?.message)}
+    finally{clearTimeout(timer)}
+  }
+  throw failure||new Error('AI 연결 실패');
 }
 function routeCompareRows(){
   return(state.carRouteOptions||[]).filter(r=>r?.geometry?.length).map(r=>({
@@ -8031,7 +8044,7 @@ function initRouteAiCompare(){
   button.addEventListener('click',explainRoutesWithAi);
 }
 async function parseVoiceIntentWithAi(text){
-  try{return(await callWorkerAiAssist('voice_parse',{text:text.slice(0,240)},6500)).intent||null}catch{return null}
+  try{return(await callWorkerAiAssist('voice_parse',{text:text.slice(0,240)},12500)).intent||null}catch{return null}
 }
 function confirmDestinationChange(name){
   // Non-blocking in-app confirmation. No automatic route switch while driving.
@@ -8076,7 +8089,7 @@ function aiTripRules(text){
   const category=/주유소/.test(q)?'gas_station':/카페|커피/.test(q)?'cafe':/디저트|케이크|빵집/.test(q)?'dessert':/식당|식사|밥|맛집|음식/.test(q)?'meal':'any';
   return{intent:'plan_stops',category,payment:/온누리/.test(q)?'onnuri':/지역사랑|지역화폐/.test(q)?'local':'any',max_detour_min:Math.max(1,Math.min(15,Number(m?.[1]||m?.[2]||m?.[3]||5))),destination:voiceQueryDestination(q)||'',confidence:.5};
 }
-async function aiTripParse(text){try{const r=await callWorkerAiAssist('trip_plan',{text:String(text).slice(0,280)},6500);if(r?.plan?.intent==='plan_stops'&&r.plan.confidence>=.5)return r.plan}catch(e){console.warn('AI trip_plan fallback',e?.message||e)}return aiTripRules(text)}
+async function aiTripParse(text){try{const r=await callWorkerAiAssist('trip_plan',{text:String(text).slice(0,280)},12500);if(r?.plan?.intent==='plan_stops'&&r.plan.confidence>=.5)return r.plan}catch(e){console.warn('AI trip_plan fallback',e?.message||e)}return aiTripRules(text)}
 function aiTripIsQuery(q){return /온누리|지역사랑|지역화폐|우회|가는\s*길에|경유|들렀다|들러|상품권/.test(String(q||''))}
 function aiTripConditionText(plan){return `${plan.payment==='onnuri'?'온누리':plan.payment==='local'?'지역사랑':'상품권'} · ${plan.category==='meal'?'식당':plan.category==='cafe'?'카페':plan.category==='dessert'?'디저트':plan.category==='gas_station'?'주유소':'전체 업종'} · 우회 최대 ${plan.max_detour_min}분`}
 function aiTripSaveCondition(plan){try{localStorage.setItem(AI_LAST_CONDITION_KEY,JSON.stringify({payment:plan.payment,category:plan.category,max_detour_min:plan.max_detour_min}));aiTripRefreshRecent()}catch{}}
@@ -8970,6 +8983,10 @@ if('serviceWorker' in navigator)window.addEventListener('load',async()=>{
   try{const regs=await navigator.serviceWorker.getRegistrations();await Promise.all(regs.map(r=>r.unregister()))}catch(e){console.warn('service worker cleanup failed',e)}
   try{if('caches' in window){const keys=await caches.keys();await Promise.all(keys.filter(k=>k.startsWith('jofams-navi-')).map(k=>caches.delete(k)))}}catch(e){console.warn('cache cleanup failed',e)}
 });
+function dangolloAfterFirstPaint(fn,delay=1000){
+  const schedule=()=>{if('requestIdleCallback' in window)requestIdleCallback(()=>void fn(),{timeout:delay+1800});else setTimeout(()=>void fn(),delay)};
+  requestAnimationFrame(()=>requestAnimationFrame(schedule));
+}
 let dangolloBootstrapped=false;
 function bootstrapApp(){
   if(dangolloBootstrapped)return;
@@ -8987,19 +9004,21 @@ function bootstrapApp(){
     try{loadLocalUserSettings()}catch{}
     Promise.allSettled([loadDbSavedPlaces(),loadDbFavorites(),loadDbRecents(),loadUserSettings()]);
   }
-  Promise.resolve().then(()=>initFirebase()).catch(e=>console.warn('firebase init failed',e));
+  // Defer non-critical account and media startup until the first screen is interactive.
+  dangolloAfterFirstPaint(()=>initFirebase().catch(e=>console.warn('firebase init failed',e)),950);
   try{loadSavedWaypointCourses();renderProfile();updateOriginUI();renderRouteWaypoints();renderSavedWaypointCourses();updateTripHistorySummary();setView('home')}catch(e){console.error('initial render failed',e)}
-  try{loadHomeShorts()}catch(e){console.warn('komsco shorts init failed',e)}
+  dangolloAfterFirstPaint(()=>loadHomeShorts().catch(e=>console.warn('komsco shorts init failed',e)),1600);
   try{
     $('driveRadioBtn')&&($('driveRadioBtn').onclick=toggleRadio);
     $('radioVolume')&&($('radioVolume').oninput=e=>setRadioVolume(Number(e.target.value)/100,true));
     $('guideVolume')&&($('guideVolume').oninput=e=>changeVolume(e.target.value));
-    Promise.resolve().then(initVirtualRadio).catch(e=>console.warn('virtual radio init failed',e));
+    dangolloAfterFirstPaint(()=>initVirtualRadio().catch(e=>console.warn('virtual radio init failed',e)),2200);
   }catch(e){console.warn('radio UI bind failed',e)}
   if('speechSynthesis'in window){try{speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices()}catch{}}
   setTimeout(()=>refreshPermissionState().catch(()=>{}),180);
   // Startup fuel request; cached result is displayed first if the GPS is still warming up.
-  setTimeout(()=>loadFuelPrices(state.fuelProduct,{force:false}).catch(e=>console.warn('initial fuel failed',e)),350);
+  // Fuel remains available, but initial requests should not compete with the map's critical render.
+  dangolloAfterFirstPaint(()=>loadFuelPrices(state.fuelProduct,{force:false}).catch(e=>console.warn('initial fuel failed',e)),950);
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootstrapApp,{once:true});else bootstrapApp();
 
@@ -9123,6 +9142,8 @@ setInterval(()=>{if(!document.hidden)refreshDangolloHomeWeather()},60000);
 
 /* v7.6.27.26 — 길 위의 핫플: verified voucher locations + legitimate Instagram search link. */
 let hotspotRequestSeq=0;
+const hotspotLiveCache=new Map(); // short-lived by-location API response cache (no persistent location storage)
+
 const hotspotText=x=>String(x||'').trim().slice(0,160);
 function hotspotInstagramUrl(item){return discoverMerchantSearchUrl(item,'instagram')}
 function hotspotCategoryMatch(item,category){
@@ -9235,7 +9256,7 @@ async function hotspotFind(host){
   host.results.replaceChildren();host.status.textContent='현 위치 주변 가맹점을 확인하고 있습니다…';
   try{
     let origin=currentOriginPoint();
-    if(!pointValid(origin))origin=await refreshCurrentLocation({maxAgeMs:30000,timeoutMs:3500}).catch(()=>null);
+    if(!pointValid(origin))origin=await refreshCurrentLocation({maxAgeMs:30000,timeoutMs:1700}).catch(()=>null);
     if(!valid())return;
     if(!pointValid(origin)){host.status.textContent='현 위치를 확인하지 못했습니다. 위치 권한을 확인한 뒤 다시 열어 주세요.';return}
     const memory=hotspotPositioned(hotspotGetSources(payment,origin),origin);
@@ -9243,13 +9264,31 @@ async function hotspotFind(host){
     const kinds=payment==='onnuri'?['onnuri']:payment==='local'?['local']:['onnuri','local'];
     const request=async kind=>{
       const path=kind==='onnuri'?'/api/onnuri-voucher':'/api/local-voucher';
+      const key=kind+'|'+origin.lat.toFixed(2)+'|'+origin.lng.toFixed(2);
+      const cached=hotspotLiveCache.get(key);
+      if(cached&&Date.now()-cached.at<120000)return {kind,ok:true,items:cached.items};
       try{
-        const d=await planningFetchJson(path,{lat:origin.lat,lng:origin.lng,...drivePoiRegionBox(origin,2)},5000);
-        return {kind,ok:true,items:Array.isArray(d?.items)?d.items:[]};
-      }catch(e){console.warn('[hotspot] voucher fetch failed',kind,String(e?.message||e));return {kind,ok:false,items:[]}}
+        const d=await planningFetchJson(path,{lat:origin.lat,lng:origin.lng,...drivePoiRegionBox(origin,2)},3800);
+        const items=Array.isArray(d?.items)?d.items:[];
+        hotspotLiveCache.set(key,{at:Date.now(),items});
+        if(hotspotLiveCache.size>16)hotspotLiveCache.delete(hotspotLiveCache.keys().next().value);
+        return {kind,ok:true,items};
+      }catch(e){console.warn('[hotspot] voucher fetch failed',kind,String(e?.message||e));return {kind,ok:false,items:cached?.items||[]}}
     };
     // Update in parallel, but use cache immediately instead of blocking on the slowest endpoint.
-    const responses=await Promise.all(kinds.map(request));if(!valid())return;
+    const liveResults=[];
+    const responses=await Promise.all(kinds.map(async kind=>{
+      const result=await request(kind);
+      liveResults.push(result);
+      if(valid()&&result.items.length){
+        const staged=hotspotPositioned([
+          ...liveResults.flatMap(x=>x.items.map(item=>({...item,payment:x.kind,_hotspotSource:'live'}))),
+          ...hotspotGetSources(payment)
+        ],origin);
+        hotspotPaintCandidates(host,staged,category,{preview:liveResults.length<kinds.length});
+      }
+      return result;
+    }));if(!valid())return;
     const available=responses.flatMap(x=>x.items.map(item=>({...item,payment:x.kind,_hotspotSource:'live'})));
     const positioned=hotspotPositioned([...available,...hotspotGetSources(payment,origin)],origin);
     // Avoid claiming that an empty successful server response means a transport error.
