@@ -64,7 +64,7 @@ export async function onRequestPost({request,env}){
     user=JSON.stringify({destination:clean(data?.destination,80),routes});
   }
   try{
-    const generated=await generateAi(env,data.model,[{role:'system',content:system},{role:'user',content:user}],780,0.1);
+    const generated=await generateAi(env,data.model,[{role:'system',content:system},{role:'user',content:user}],task==='trip_plan'?440:780,0.1);
     const output=generated.text;if(!output)return json({ok:false,message:'AI 응답이 비어 있습니다.'},502);
     if(task==='route_compare')return json({ok:true,model:data.model,answer:output.slice(0,2000)});
     if(task==='trip_plan'){

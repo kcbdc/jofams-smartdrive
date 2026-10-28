@@ -7999,7 +7999,7 @@ function aiTripRules(text){
   const category=/주유소/.test(q)?'gas_station':/카페|커피/.test(q)?'cafe':/디저트|케이크|빵집/.test(q)?'dessert':/식당|식사|밥|맛집|음식/.test(q)?'meal':'any';
   return{intent:'plan_stops',category,payment:/온누리/.test(q)?'onnuri':/지역사랑|지역화폐/.test(q)?'local':'any',max_detour_min:Math.max(1,Math.min(15,Number(m?.[1]||m?.[2]||m?.[3]||5))),destination:voiceQueryDestination(q)||'',confidence:.5};
 }
-async function aiTripParse(text){try{const r=await callWorkerAiAssist('trip_plan',{text:String(text).slice(0,280)},8500);if(r?.plan?.intent==='plan_stops'&&r.plan.confidence>=.5)return r.plan}catch(e){console.warn('AI trip_plan fallback',e?.message||e)}return aiTripRules(text)}
+async function aiTripParse(text){try{const r=await callWorkerAiAssist('trip_plan',{text:String(text).slice(0,280)},6500);if(r?.plan?.intent==='plan_stops'&&r.plan.confidence>=.5)return r.plan}catch(e){console.warn('AI trip_plan fallback',e?.message||e)}return aiTripRules(text)}
 function aiTripIsQuery(q){return /온누리|지역사랑|지역화폐|우회|가는\s*길에|경유|들렀다|들러|상품권/.test(String(q||''))}
 function aiTripConditionText(plan){return `${plan.payment==='onnuri'?'온누리':plan.payment==='local'?'지역사랑':'상품권'} · ${plan.category==='meal'?'식당':plan.category==='cafe'?'카페':plan.category==='dessert'?'디저트':plan.category==='gas_station'?'주유소':'전체 업종'} · 우회 최대 ${plan.max_detour_min}분`}
 function aiTripSaveCondition(plan){try{localStorage.setItem(AI_LAST_CONDITION_KEY,JSON.stringify({payment:plan.payment,category:plan.category,max_detour_min:plan.max_detour_min}));aiTripRefreshRecent()}catch{}}
@@ -8020,16 +8020,55 @@ function aiTripMerchantPool(plan){
   return rows.sort((x,y)=>x.offset-y.offset).slice(0,12);
 }
 async function aiTripEnsureRoute(){if(state.route?.geometry?.length&&state.destination)return true;if(!pointValid(state.destination))return false;if(!state.user)await locate(false);if(!state.user)return false;await loadRouteOptions();return Boolean(state.route?.geometry?.length)}
-async function aiTripVerifyCandidates(plan){
+async function aiTripVerifyCandidates(plan,progress=()=>{}){
+  progress('경로와 출발 위치를 확인하고 있습니다…');
   if(!await aiTripEnsureRoute())throw Error('현재 위치와 목적지 경로를 확인할 수 없습니다.');
   if(plan.category==='gas_station')throw Error('상품권 주유소 결제 여부를 검증할 데이터가 없어 확정할 수 없습니다.');
-  if(!state.tripStartedAt){const pts=planningProbes(state.route.geometry);const merchant=async path=>(await Promise.all(pts.map(pt=>planningFetchJson(path,{lat:pt.lat,lng:pt.lng,...drivePoiRegionBox(pt,2.0)}).then(j=>Array.isArray(j.items)?j.items:[]).catch(()=>[])))).flat();const [local,onnuri]=await Promise.all([merchant('/api/local-voucher'),merchant('/api/onnuri-voucher')]);state.planningAi={...(state.planningAi||{}),local:mergeDrivePoiMerchantRows(local),onnuri:mergeDrivePoiMerchantRows(onnuri)}}
+  const payment=plan.payment==='onnuri'?'onnuri':plan.payment==='local'?'local':'both';
+  // Reuse already fetched merchant data when possible; never trigger the unrelated Opinet API.
+  let current=aiTripMerchantPool(plan);
+  if(!current.length&&!state.tripStartedAt){
+    progress('경로 주변 가맹점을 조회하고 있습니다…');
+    const pts=planningProbes(state.route.geometry).slice(0,3);
+    const request=async(path)=>{
+      const pages=await Promise.all(pts.map(pt=>planningFetchJson(path,{lat:pt.lat,lng:pt.lng,...drivePoiRegionBox(pt,2.0)},4500)
+        .then(j=>Array.isArray(j.items)?j.items:[]).catch(()=>[])));
+      return mergeDrivePoiMerchantRows(pages.flat());
+    };
+    if(payment==='onnuri'){
+      state.planningAi={...(state.planningAi||{}),onnuri:await request('/api/onnuri-voucher')};
+    }else if(payment==='local'){
+      state.planningAi={...(state.planningAi||{}),local:await request('/api/local-voucher')};
+    }else{
+      const [onnuri,local]=await Promise.all([request('/api/onnuri-voucher'),request('/api/local-voucher')]);
+      state.planningAi={...(state.planningAi||{}),onnuri,local};
+    }
+    current=aiTripMerchantPool(plan);
+  }
   const base=Number(state.route?.duration);if(!(base>0))throw Error('기본 경로 소요시간이 없습니다.');
-  const results=[],candidates=aiTripMerchantPool(plan),spec=routePreferenceSpec();
-  for(const item of candidates.slice(0,6)){const pt=normalizedPlace({name:item.name||item.market||'가맹점',address:item.address||'',lat:item.lat,lng:item.lng});if(!pointValid(pt))continue;
-    try{const rr=await Promise.race([routeRequest(spec.priority,spec.avoid,[...(state.waypoints||[]),pt],state.routeMode),new Promise((_,reject)=>setTimeout(()=>reject(Error('TIMEOUT')),6000))]);if(!rr?.geometry?.length)continue;const extra=(Number(rr.duration)-base)/60;if(Number.isFinite(extra)&&extra<=plan.max_detour_min&&extra>=-3){results.push({item,pt,route:rr,extra:Math.max(0,extra)});if(results.length>=3)break}}
-    catch(e){console.warn('AI trip route verification failed',String(e?.message||e))}}
-  return results;
+  const candidates=current.slice(0,6),spec=routePreferenceSpec();
+  if(!candidates.length)return[];
+  progress(`${candidates.length}개 후보의 실제 우회시간을 동시에 비교하고 있습니다…`);
+  // Two small concurrent batches: avoid six serial 6-second waits without flooding route provider.
+  const check=async(item)=>{
+    const pt=normalizedPlace({name:item.name||item.market||'가맹점',address:item.address||'',lat:item.lat,lng:item.lng});
+    if(!pointValid(pt))return null;
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),4800);
+    try{
+      const rr=await routeRequest(spec.priority,spec.avoid,[...(state.waypoints||[]),pt],state.routeMode,null,controller.signal);
+      if(!rr?.geometry?.length)return null;
+      const extra=(Number(rr.duration)-base)/60;
+      return Number.isFinite(extra)&&extra<=plan.max_detour_min&&extra>=-3?{item,pt,route:rr,extra:Math.max(0,extra)}:null;
+    }catch(e){console.warn('AI trip candidate validation unavailable',String(e?.message||e));return null}
+    finally{clearTimeout(timer)}
+  };
+  const verified=[];
+  for(let i=0;i<candidates.length;i+=3){
+    const batch=await Promise.all(candidates.slice(i,i+3).map(check));
+    verified.push(...batch.filter(Boolean));
+    if(verified.length>=3)break;
+  }
+  return verified.sort((a,b)=>a.extra-b.extra||a.item.offset-b.item.offset).slice(0,3);
 }
 async function aiTripSearchPlaces(q){const u=new URL('/api/search',location.origin);u.searchParams.set('q',q);if(pointValid(state.user)){u.searchParams.set('lat',state.user.lat);u.searchParams.set('lng',state.user.lng)}const r=await fetch(u);if(!r.ok)throw Error('SEARCH');const d=await r.json();return(Array.isArray(d.items)?d.items:[]).filter(pointValid).slice(0,6)}
 function aiTripDestinationExact(items,q){const n=x=>String(x||'').replace(/\s/g,'').toLowerCase();const exact=items.filter(x=>n(x.name)===n(q));return exact.length===1?exact[0]:items.length===1?items[0]:null}
@@ -8050,7 +8089,7 @@ async function aiTripShowCandidates(plan,ui){
   const destination=ui.body.querySelector('.ai-trip-dest');ui.body.textContent='';if(destination)ui.body.append(destination);
   const data=document.createElement('div');data.className='ai-trip-candidates';data.textContent=aiTripConditionText(plan);ui.body.append(data);
   const toggle=document.createElement('label');toggle.className='ai-trip-toggle';const check=document.createElement('input');check.type='checkbox';check.checked=aiTripQuickEnabled();check.onchange=()=>{try{localStorage.setItem(AI_QUICK_START_KEY,check.checked?'on':'off')}catch{}};toggle.append(check,document.createTextNode(' 후보 선택 후 5초 자동 안내 시작'));data.append(toggle);
-  try{const items=await aiTripVerifyCandidates(plan);if(!ui.root.isConnected)return;data.querySelectorAll('.ai-trip-choice,.ai-trip-empty').forEach(n=>n.remove());ui.desc.textContent='경유할 가맹점을 선택하세요. 선택 전에는 경로를 변경하지 않습니다.';
+  try{const items=await aiTripVerifyCandidates(plan,message=>{if(ui.root.isConnected)ui.desc.textContent=message});if(!ui.root.isConnected)return;data.querySelectorAll('.ai-trip-choice,.ai-trip-empty').forEach(n=>n.remove());ui.desc.textContent='경유할 가맹점을 선택하세요. 선택 전에는 경로를 변경하지 않습니다.';
     if(!items.length){const empty=document.createElement('p');empty.className='ai-trip-empty';empty.textContent='실제 데이터와 경로 API로 확인한 조건 일치 후보가 없습니다.';data.append(empty);return}
     for(const x of items){const btn=document.createElement('button');btn.className='ai-trip-choice';const name=document.createElement('strong');name.textContent=x.pt.name;const desc=document.createElement('small');desc.textContent=`${x.item.payment==='onnuri'?'온누리':'지역사랑'} · 추가 우회 약 ${Math.round(x.extra*10)/10}분 · 경로에서 약 ${Math.round(x.item.offset)}m`;btn.append(name,desc);btn.onclick=async()=>{
         if(state.tripStartedAt){ui.desc.textContent='주행 중에는 안전한 장소에 정차한 후 경유지를 선택해 주세요.';return}
@@ -8061,7 +8100,7 @@ async function aiTripShowCandidates(plan,ui){
 }
 async function startAiTripSearch(text){
   if(aiTripBusy)return toast('AI 검색이 진행 중입니다.');aiTripBusy=true;aiTripCancelQuick();
-  const ui=aiTripDialog('AI 조건 해석 중','목적지와 조건을 한 화면에서 확인합니다.');
+  const ui=aiTripDialog('AI 조건 해석 중','조건을 분석하고 목적지를 확인하고 있습니다…');
   try{const plan=await aiTripParse(text);if(!ui.root.isConnected)return;if(!plan||plan.intent!=='plan_stops'){ui.desc.textContent='조건을 이해하지 못했습니다. 문장을 다시 입력해 주세요.';return}aiTripSaveCondition(plan);await aiTripResolveDestination(ui,plan,aiTripSafeText(plan.destination||''))}
   catch(e){console.warn('AI condition search failed',e);if(ui.root.isConnected)ui.desc.textContent='검색을 완료하지 못했습니다. 다시 시도해 주세요.'}finally{aiTripBusy=false}
 }
