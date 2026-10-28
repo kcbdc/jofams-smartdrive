@@ -1531,6 +1531,7 @@ function merchantDistanceSorted(items){
     .map(x=>({...x,_distance:voucherGeoMeters(state.user.lat,state.user.lng,Number(x.lat),Number(x.lng))}))
     .sort((a,b)=>a._distance-b._distance);
 }
+let wherePageLimit=10;
 function currentWhereItems(){
   const source=state.whereToTab==='onnuri'?state.onnuriData:state.localVoucherData;
   return merchantDistanceSorted(source?.items||[]).slice(0,100);
@@ -1556,7 +1557,7 @@ function discoverMerchantCategory(item){
 }
 function discoverMerchantImage(item, override){
   const category=override||discoverMerchantCategory(item);
-  return '/assets/merchant-'+( ['cafe','bakery','meal','flower','books','market','academy','pharmacy','hospital','laundry','butcher','bookstore','stationery'].includes(category)?category:'local')+'.svg';
+  return '/assets/merchant-'+( ['cafe','bakery','meal','flower','books','market','academy','pharmacy','hospital','laundry','butcher','bookstore','stationery','beauty','optician','fuel_repair'].includes(category)?category:'local')+'.svg';
 }
 function discoverMerchantSearchUrl(item,service){
   const name=String(item?.name||item?.market||'').trim().slice(0,64);
@@ -1567,13 +1568,16 @@ function discoverMerchantSearchUrl(item,service){
   return 'https://search.naver.com/search.naver?where=view&query='+encodeURIComponent(q+' 방문 후기');
 }
 function discoverMerchantLinks(item,cssClass='discover-links'){
-  const link=(type,label)=>`<a href="${escapeHtml(discoverMerchantSearchUrl(item,type))}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(item.name||'가맹점')} ${label} (새 창)">${label}</a>`;
-  return `<span class="${cssClass}">${link('instagram','◎ 인스타그램')}${link('review','☆ 후기 검색')}</span>`;
+  const link=(type,display,label)=>`<a href="${escapeHtml(discoverMerchantSearchUrl(item,type))}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(item.name||'가맹점')} ${label} (새 창)">${display}</a>`;
+  const instagram='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg><span>인스타그램</span>';
+  const review='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5a7.9 7.9 0 0 1-8 8 8.8 8.8 0 0 1-3-.5L4 20l1-4.4A8 8 0 1 1 20 11.5Z"/><path d="M8.5 11.5h7M8.5 14.5h4"/></svg><span>후기 검색</span>';
+  return `<span class="${cssClass}">${link('instagram',instagram,'인스타그램 검색')}${link('review',review,'방문후기 검색')}</span>`;
 }
 function renderWhereToList(){
   const box=$('whereToList');if(!box)return;
   document.querySelectorAll('[data-where-tab]').forEach(b=>b.classList.toggle('active',b.dataset.whereTab===state.whereToTab));
-  const items=currentWhereItems();
+  const allItems=currentWhereItems();
+  const items=allItems.slice(0,wherePageLimit);
   if(!items.length){
     box.innerHTML=`<div class="where-to-empty">${state.whereToTab==='onnuri'?'온누리상품권':'지역사랑상품권'} 가맹점을 불러오는 중이거나 주변 검색결과가 없습니다.</div>`;
     return;
@@ -1613,6 +1617,7 @@ function renderWhereToList(){
       <strong>${whereDistanceLabel(x._distance)}</strong>
     </div>`;
   }).join('');
+  if(allItems.length>items.length){const more=document.createElement('button');more.type='button';more.className='merchant-more-button';more.textContent=`더보기 · ${items.length}/${allItems.length}곳`;more.onclick=()=>{wherePageLimit+=10;renderWhereToList()};box.append(more)}
 
   // SNS/review links do not trigger the enclosing destination choice.
   box.querySelectorAll('.discover-links a').forEach(a=>a.onclick=e=>e.stopPropagation());
@@ -1673,28 +1678,21 @@ function focusVoucherItem(item){
 }
 async function refreshWhereTo(){
   const label=$('whereToLocationLabel');
-  if(label)label.textContent='현재 위치 확인 중';
+  // Paint the last known merchant lists immediately; do not wait for GPS or the slower Onnuri API.
+  if(!state.localVoucherData){const cached=readVoucherStaleCache();if(cached?.items?.length)state.localVoucherData=cached}
+  if(!state.onnuriData){const cached=readOnnuriStaleCache();if(cached?.items?.length)state.onnuriData=cached}
+  renderWhereToList();
+  if(label)label.textContent=pointValid(state.user)?'현재 위치 기준 · 가까운 순':'위치 확인 중';
   try{
-    await locate(false).catch(()=>null);
-    if(!pointValid(state.user))return;
+    if(!pointValid(state.user))await locate(false).catch(()=>null);
+    if(!pointValid(state.user)){if(label)label.textContent='위치 확인이 필요합니다';return}
     if(label)label.textContent='현재 위치 기준 · 가까운 순';
-    if(state.map){
-      try{state.map.jumpTo({center:[Number(state.user.lng),Number(state.user.lat)],zoom:15.7})}catch{}
-    }
-    if(!state.localVoucherData){
-      const cached=readVoucherStaleCache();
-      if(cached?.items?.length)state.localVoucherData=cached;
-    }
-    if(!state.onnuriData){
-      const cached=readOnnuriStaleCache();
-      if(cached?.items?.length)state.onnuriData=cached;
-    }
     renderWhereToList();
-    Promise.allSettled([loadLocalVoucherMap({force:true}),loadOnnuriMap({force:true})]).then(()=>renderWhereToList());
-  }catch(e){
-    console.warn('where-to refresh failed',e);
-    renderWhereToList();
-  }
+    if(state.map){try{state.map.jumpTo({center:[Number(state.user.lng),Number(state.user.lat)],zoom:15.7})}catch{}}
+    // A slow endpoint cannot delay painting the other merchant list.
+    void Promise.resolve().then(()=>loadLocalVoucherMap({force:false})).then(()=>renderWhereToList()).catch(e=>console.warn('[where-to] local',e));
+    void Promise.resolve().then(()=>loadOnnuriMap({force:false})).then(()=>renderWhereToList()).catch(e=>console.warn('[where-to] onnuri',e));
+  }catch(e){console.warn('[where-to] refresh',e);renderWhereToList()}
 }
 
 function closeBottomPanels(except=''){
@@ -8970,7 +8968,7 @@ function bindUI(){
 if($('whereToRefresh'))$('whereToRefresh').onclick=refreshWhereTo;
 if($('whereToHotspotBtn'))$('whereToHotspotBtn').onclick=()=>{closeWhereTo();hotspotOpen()};
 if($('whereToModal'))$('whereToModal').addEventListener('click',e=>{if(e.target===$('whereToModal'))closeWhereTo()});
-document.querySelectorAll('[data-where-tab]').forEach(b=>b.onclick=()=>{state.whereToTab=b.dataset.whereTab;renderWhereToList();refreshWhereTo()});
+document.querySelectorAll('[data-where-tab]').forEach(b=>b.onclick=()=>{wherePageLimit=10;state.whereToTab=b.dataset.whereTab;renderWhereToList();refreshWhereTo()});
 if($('savedPlacesClose'))$('savedPlacesClose').onclick=closeSavedPlaces;
 if($('savedPlacesModal'))$('savedPlacesModal').addEventListener('click',e=>{if(e.target===$('savedPlacesModal'))closeSavedPlaces()});
 if($('savedGroupAddBtn'))$('savedGroupAddBtn').onclick=addSavedGroup;
@@ -9143,28 +9141,38 @@ setInterval(()=>{if(!document.hidden)refreshDangolloHomeWeather()},60000);
 /* v7.6.27.26 — 길 위의 핫플: verified voucher locations + legitimate Instagram search link. */
 let hotspotRequestSeq=0;
 const hotspotLiveCache=new Map(); // short-lived by-location API response cache (no persistent location storage)
+const hotspotInflight=new Map(); // share the first fetch across category changes
 
 const hotspotText=x=>String(x||'').trim().slice(0,160);
 function hotspotInstagramUrl(item){return discoverMerchantSearchUrl(item,'instagram')}
 function hotspotCategoryMatch(item,category){
-  const type=discoverMerchantCategory(item);
-  if(category==='meal')return type==='meal'||classifyVoiceMerchant(item)==='meal';
-  if(category==='cafe')return type==='cafe';
-  if(category==='dessert'||category==='bakery')return type==='bakery'||classifyVoiceMerchant(item)==='dessert';
-  return type===category;
+  const t=discoverMerchantCategory(item);
+  const text=[item.name,item.category,item.categoryName,item.industry,item.businessType,item.type,item.upjong].filter(Boolean).join(' ').toLowerCase();
+  if(category==='meal')return t==='meal'||classifyVoiceMerchant(item)==='meal';
+  if(category==='cafe_bakery')return ['cafe','bakery'].includes(t)||classifyVoiceMerchant(item)==='dessert';
+  if(category==='meat_fruit')return t==='butcher'||/청과|과일|과채|야채|채소|정육|식육|축산/.test(text);
+  if(category==='academy')return t==='academy';
+  if(category==='hospital_pharmacy')return ['hospital','pharmacy'].includes(t);
+  if(category==='beauty')return /미용|헤어|네일|피부관리|뷰티|이발|바버|에스테틱|화장품/.test(text);
+  if(category==='optician')return /안경|렌즈|안경원|안경점|optical/.test(text);
+  if(category==='laundry')return t==='laundry';
+  if(category==='flower_stationery_books')return ['flower','stationery','bookstore'].includes(t);
+  if(category==='fuel_repair')return /주유소|충전소|정비소|카센터|자동차정비|타이어|세차/.test(text);
+  return false;
 }
-const hotspotCategoryLabel={meal:'식당',cafe:'카페',dessert:'디저트',market:'마트',bakery:'베이커리',butcher:'정육점',flower:'꽃집',bookstore:'서점',stationery:'문구',academy:'학원',pharmacy:'약국',hospital:'병원',laundry:'세탁소'};
+const hotspotCategoryLabel={meal:'동네 맛집',cafe_bakery:'카페·빵집',meat_fruit:'정육·청과',academy:'학원',hospital_pharmacy:'병원·약국',beauty:'뷰티',optician:'안경점',laundry:'세탁소',flower_stationery_books:'꽃집·문구·서점',fuel_repair:'주유소·정비소'};
+let hotspotPageLimit=10;
 
 function hotspotRenderRow(host,item,opts={}){
   const row=document.createElement('article');row.className='hotspot-result';
-  const visual=document.createElement('div');visual.className='hotspot-photo';const image=document.createElement('img');image.src=discoverMerchantImage(item,hotspotCategoryMatch(item,opts.category)?opts.category:undefined);image.loading='lazy';image.alt='업종별 대표 일러스트 (해당 가맹점 실사진 아님)';visual.append(image);
+  const visual=document.createElement('div');visual.className='hotspot-photo';const image=document.createElement('img');image.src=discoverMerchantImage(item);image.loading='lazy';image.alt='업종별 대표 일러스트 (해당 가맹점 실사진 아님)';visual.append(image);
   const title=document.createElement('strong');title.textContent=hotspotText(item.name||item.market||'가맹점');
   const meta=document.createElement('small');const distance=opts.distance!=null?` · 약 ${(opts.distance/1000).toFixed(1)}km`:'';
   meta.textContent=`${item.payment==='onnuri'?'온누리':'지역사랑'} 가맹점${distance}${opts.extra!=null?` · 추가 우회 약 ${opts.extra.toFixed(1)}분`:''}`;
   const address=document.createElement('small');address.textContent=hotspotText(item.address||item.matchedAddress||item.market||'주소 상세 확인 필요');
   const actions=document.createElement('div');actions.className='hotspot-actions';
-  const insta=document.createElement('a');insta.href=hotspotInstagramUrl(item);insta.target='_blank';insta.rel='noopener noreferrer';insta.textContent='◎ 인스타그램에서 찾기';insta.title='이 장소를 인스타그램에서 검색 (SNS 인기도 미검증)';
-  const review=document.createElement('a');review.href=discoverMerchantSearchUrl(item,'review');review.target='_blank';review.rel='noopener noreferrer';review.textContent='☆ 방문 후기';review.title='외부 방문 후기 검색 (평점·인기도 미검증)';
+  const insta=document.createElement('a');insta.href=hotspotInstagramUrl(item);insta.target='_blank';insta.rel='noopener noreferrer';insta.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg><span>인스타그램</span>'; insta.title='이 장소를 인스타그램에서 검색 (SNS 인기도 미검증)';
+  const review=document.createElement('a');review.href=discoverMerchantSearchUrl(item,'review');review.target='_blank';review.rel='noopener noreferrer';review.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5a7.9 7.9 0 0 1-8 8 8.8 8.8 0 0 1-3-.5L4 20l1-4.4A8 8 0 1 1 20 11.5Z"/><path d="M8.5 11.5h7M8.5 14.5h4"/></svg><span>방문후기</span>'; review.title='외부 방문 후기 검색 (평점·인기도 미검증)';
   const go=document.createElement('button');go.type='button';go.textContent=opts.verified?'경유지로 추가':'목적지로 선택';
   go.onclick=async()=>{
     if(state.tripStartedAt){host.status.textContent='안전한 곳에 정차한 후 장소를 선택해 주세요.';return}
@@ -9192,17 +9200,17 @@ function hotspotOpen(query=""){
   document.getElementById('hotspotOverlay')?.remove();++hotspotRequestSeq;
   const root=document.createElement('div');root.id='hotspotOverlay';root.className='hotspot-overlay';
   const sheet=document.createElement('section');sheet.className='hotspot-sheet';sheet.setAttribute('role','dialog');sheet.setAttribute('aria-modal','true');sheet.setAttribute('aria-label','길 위의 핫플');
-  sheet.innerHTML='<div class="hotspot-title"><div><small>단골로 · 지역 소비 발견</small><h2>🍜 길 위의 핫플</h2></div><button type="button" class="hotspot-close" aria-label="닫기">×</button></div><p class="hotspot-intro">맛집·카페·마트·베이커리·정육점·꽃집·서점·문구 등 실제 상품권 가맹점을 찾아보세요. SNS 게시물은 외부에서 검색합니다.</p><div class="hotspot-filters"><label>종류<select id="hotspotCategory"><option value="meal">맛집</option><option value="cafe">카페</option><option value="dessert">디저트</option><option value="market">마트</option><option value="bakery">베이커리</option><option value="butcher">정육점</option><option value="flower">꽃집</option><option value="bookstore">서점</option><option value="stationery">문구</option><option value="academy">학원</option><option value="pharmacy">약국</option><option value="hospital">병원</option><option value="laundry">세탁소</option></select></label><label>결제 혜택<select id="hotspotPayment"><option value="both">전체</option><option value="onnuri">온누리</option><option value="local">지역사랑</option></select></label><label>최대 우회<select id="hotspotDetour"><option value="5">5분</option><option value="10">10분</option><option value="3">3분</option></select></label></div><p id="hotspotStatus" class="hotspot-status" role="status" aria-live="polite">주변 가맹점을 확인하고 있습니다…</p><div id="hotspotResults" class="hotspot-results"></div><p class="hotspot-disclaimer">이미지는 업종별 대표 일러스트이며 가맹점 실사진이 아닙니다. SNS·후기는 외부 검색으로 연결되며 인기 순위·평점은 검증하지 않습니다. 결제 가능 여부와 영업시간은 방문 전 확인하세요.</p>';
+  sheet.innerHTML='<div class="hotspot-title"><div><small>단골로 · 지역 소비 발견</small><h2>🍜 길 위의 핫플</h2></div><button type="button" class="hotspot-close" aria-label="닫기">×</button></div><p class="hotspot-intro">맛집부터 생활편의시설까지 10개 업종의 실제 상품권 가맹점을 찾아보세요. SNS 게시물은 외부에서 검색합니다.</p><div class="hotspot-filters"><label>종류<select id="hotspotCategory"><option value="meal">동네 맛집</option><option value="cafe_bakery">카페·빵집</option><option value="meat_fruit">정육·청과</option><option value="academy">학원</option><option value="hospital_pharmacy">병원·약국</option><option value="beauty">뷰티</option><option value="optician">안경점</option><option value="laundry">세탁소</option><option value="flower_stationery_books">꽃집·문구·서점</option><option value="fuel_repair">주유소·정비소</option></select></label><label>결제 혜택<select id="hotspotPayment"><option value="both">전체</option><option value="onnuri">온누리</option><option value="local">지역사랑</option></select></label><label>최대 우회<select id="hotspotDetour"><option value="5">5분</option><option value="10">10분</option><option value="3">3분</option></select></label></div><p id="hotspotStatus" class="hotspot-status" role="status" aria-live="polite">주변 가맹점을 확인하고 있습니다…</p><div id="hotspotResults" class="hotspot-results"></div><p class="hotspot-disclaimer">이미지는 업종별 대표 일러스트이며 가맹점 실사진이 아닙니다. SNS·후기는 외부 검색으로 연결되며 인기 순위·평점은 검증하지 않습니다. 결제 가능 여부와 영업시간은 방문 전 확인하세요.</p>';
   root.append(sheet);document.body.append(root);const close=()=>{hotspotRequestSeq++;root.remove()};sheet.querySelector('.hotspot-close').onclick=close;root.onclick=e=>{if(e.target===root)close()};
-  const host={root,status:sheet.querySelector('#hotspotStatus'),results:sheet.querySelector('#hotspotResults')};
+  const host={root,status:sheet.querySelector('#hotspotStatus'),results:sheet.querySelector('#hotspotResults'),rows:[],pageLimit:10,renderVersion:0};
   if(query){
-    const category=/정육|축산|식육/i.test(query)?'butcher':/서점|책방/i.test(query)?'bookstore':/문구|문방구|학용품|사무용품/i.test(query)?'stationery':/꽃집|꽃가게|화원|플라워/i.test(query)?'flower':/마트|슈퍼|시장|식료품/i.test(query)?'market':/베이커리|빵집|제과점/i.test(query)?'bakery':/학원|교습소|입시/i.test(query)?'academy':/약국|약사/i.test(query)?'pharmacy':/병원|의원|진료/i.test(query)?'hospital':/세탁|크리닝/i.test(query)?'laundry':/카페|커피/i.test(query)?'cafe':/디저트|빵|케이크/i.test(query)?'dessert':'meal';
+    const category=/주유소|정비소|카센터|타이어/i.test(query)?'fuel_repair':/안경|렌즈/i.test(query)?'optician':/뷰티|미용|네일|헤어/i.test(query)?'beauty':/정육|축산|식육|청과|과일/i.test(query)?'meat_fruit':/꽃집|꽃가게|화원|플라워|문구|문방구|서점|책방/i.test(query)?'flower_stationery_books':/학원|교습소|입시/i.test(query)?'academy':/약국|약사|병원|의원|진료/i.test(query)?'hospital_pharmacy':/세탁|크리닝/i.test(query)?'laundry':/카페|커피|디저트|베이커리|빵집|제과점/i.test(query)?'cafe_bakery':'meal';
     sheet.querySelector('#hotspotCategory').value=category;
     if(/온누리/.test(query))sheet.querySelector('#hotspotPayment').value='onnuri';
     else if(/지역사랑|지역화폐/.test(query))sheet.querySelector('#hotspotPayment').value='local';
     const time=query.match(/(3|5|10)\s*분/);if(time)sheet.querySelector('#hotspotDetour').value=time[1];
   }
-  for(const el of sheet.querySelectorAll('select'))el.onchange=()=>void hotspotFind(host).catch(e=>{console.error('[hotspot] filter query',e);if(host.root.isConnected)host.status.textContent='조회 중 오류가 발생했습니다. 다시 시도해 주세요.'});
+  for(const el of sheet.querySelectorAll('select'))el.onchange=()=>{host.pageLimit=10;void hotspotFind(host).catch(e=>{console.error('[hotspot] filter query',e);if(host.root.isConnected)host.status.textContent='조회 중 오류가 발생했습니다. 다시 시도해 주세요.'})};
   void hotspotFind(host).catch(e=>{console.error('[hotspot] initial query',e);if(host.root.isConnected)host.status.textContent='조회 중 오류가 발생했습니다. 필터를 바꾸거나 다시 시도해 주세요.'});
 }
 /* 7.6.27.29: Home / 어디갈까 share one initial merchant-data pipeline.
@@ -9232,28 +9240,45 @@ function hotspotPositioned(rows,origin){
     .filter(x=>{const key=[x.payment,String(x.name||x.market||'').trim(),Number(x.lat).toFixed(5),Number(x.lng).toFixed(5)].join('|');if(seen.has(key))return false;seen.add(key);return true})
     .sort((a,b)=>a._meters-b._meters);
 }
+function hotspotSetRows(host,rows,context={}){
+  if(!host.root.isConnected)return;
+  host.rows=rows;
+  host.results.replaceChildren();
+  const take=Math.min(host.pageLimit,rows.length);
+  for(let i=0;i<take;i++){
+    const x=rows[i];host.results.append(hotspotRenderRow(host,x.item||x,x.opts||{}));
+  }
+  if(rows.length>take){
+    const more=document.createElement('button');more.type='button';more.className='merchant-more-button';
+    more.textContent=`더보기 · ${take}/${rows.length}곳`;
+    more.onclick=()=>{host.pageLimit+=10;hotspotSetRows(host,host.rows)};
+    host.results.append(more);
+  }
+}
 function hotspotPaintCandidates(host,positioned,category,context={}){
   if(!host.root.isConnected)return false;
-  const rows=positioned.filter(x=>hotspotCategoryMatch(x,category)).slice(0,6);
-  host.results.replaceChildren();
+  let rows=positioned.filter(x=>hotspotCategoryMatch(x,category)).slice(0,100);
   if(rows.length){
     host.status.textContent=`현 위치 주변 ${hotspotCategoryLabel[category]||'가맹점'} ${rows.length}곳 · 직선거리 기준${context.preview?' · 정보 갱신 중…':''}${context.routeMessage?' · 우회시간 미검증':''}`;
-    rows.forEach(x=>host.results.append(hotspotRenderRow(host,x,{distance:x._meters,category})));
+    hotspotSetRows(host,rows.map(x=>({item:x,opts:{distance:x._meters,category}})));
     return true;
   }
   if(positioned.length){
-    host.status.textContent=`${hotspotCategoryLabel[category]||'선택 업종'}으로 확인된 가맹점이 없습니다. 다른 업종의 주변 가맹점 ${Math.min(6,positioned.length)}곳을 참고용으로 표시합니다.${context.preview?' 데이터 갱신 중…':''}`;
-    positioned.slice(0,6).forEach(x=>host.results.append(hotspotRenderRow(host,x,{distance:x._meters,category:undefined})));
+    rows=positioned.slice(0,100);
+    host.status.textContent=`${hotspotCategoryLabel[category]||'선택 업종'}의 확인된 가맹점이 없습니다. 다른 업종 ${rows.length}곳을 참고용으로 표시합니다.${context.preview?' 갱신 중…':''}`;
+    hotspotSetRows(host,rows.map(x=>({item:x,opts:{distance:x._meters}})));
     return true;
   }
-  host.status.textContent=context.preview?'현재 위치의 가맹점 정보를 새로 확인하고 있습니다…':'위치가 확인된 주변 가맹점이 없습니다. 다른 업종 또는 위치를 확인해 주세요.';
+  host.status.textContent=context.preview?'현재 위치의 가맹점 정보를 확인하고 있습니다…':'위치가 확인된 주변 가맹점이 없습니다.';
+  hotspotSetRows(host,[]);
   return false;
 }
+
 async function hotspotFind(host){
   const seq=++hotspotRequestSeq,valid=()=>seq===hotspotRequestSeq&&host.root.isConnected;
   const sel=id=>host.root.querySelector(id)?.value;
   const category=sel('#hotspotCategory')||'meal',payment=sel('#hotspotPayment')||'both',max_detour_min=Number(sel('#hotspotDetour'))||5;
-  host.results.replaceChildren();host.status.textContent='현 위치 주변 가맹점을 확인하고 있습니다…';
+  host.pageLimit=10;host.results.replaceChildren();host.status.textContent='현 위치 주변 가맹점을 확인하고 있습니다…';
   try{
     let origin=currentOriginPoint();
     if(!pointValid(origin))origin=await refreshCurrentLocation({maxAgeMs:30000,timeoutMs:1700}).catch(()=>null);
@@ -9267,13 +9292,19 @@ async function hotspotFind(host){
       const key=kind+'|'+origin.lat.toFixed(2)+'|'+origin.lng.toFixed(2);
       const cached=hotspotLiveCache.get(key);
       if(cached&&Date.now()-cached.at<120000)return {kind,ok:true,items:cached.items};
-      try{
-        const d=await planningFetchJson(path,{lat:origin.lat,lng:origin.lng,...drivePoiRegionBox(origin,2)},3800);
-        const items=Array.isArray(d?.items)?d.items:[];
-        hotspotLiveCache.set(key,{at:Date.now(),items});
-        if(hotspotLiveCache.size>16)hotspotLiveCache.delete(hotspotLiveCache.keys().next().value);
-        return {kind,ok:true,items};
-      }catch(e){console.warn('[hotspot] voucher fetch failed',kind,String(e?.message||e));return {kind,ok:false,items:cached?.items||[]}}
+      if(hotspotInflight.has(key))return hotspotInflight.get(key);
+      const task=(async()=>{
+        try{
+          const d=await planningFetchJson(path,{lat:origin.lat,lng:origin.lng,...drivePoiRegionBox(origin,2)},5800);
+          const items=Array.isArray(d?.items)?d.items:[];
+          hotspotLiveCache.set(key,{at:Date.now(),items});
+          if(hotspotLiveCache.size>16)hotspotLiveCache.delete(hotspotLiveCache.keys().next().value);
+          return {kind,ok:true,items};
+        }catch(e){console.warn('[hotspot] voucher fetch failed',kind,String(e?.message||e));return {kind,ok:false,items:cached?.items||[]}}
+        finally{hotspotInflight.delete(key)}
+      })();
+      hotspotInflight.set(key,task);
+      return task;
     };
     // Update in parallel, but use cache immediately instead of blocking on the slowest endpoint.
     const liveResults=[];
@@ -9298,7 +9329,7 @@ async function hotspotFind(host){
       try{
         const rows=await aiTripVerifyCandidates({category,payment,max_detour_min},msg=>{if(valid())host.status.textContent=msg});
         if(!valid())return;
-        if(rows.length){host.results.replaceChildren();host.status.textContent=`실제 우회시간으로 확인한 ${rows.length}곳 · ${max_detour_min}분 이내`;rows.forEach(x=>host.results.append(hotspotRenderRow(host,{...x.item,name:x.pt.name},{verified:true,extra:x.extra,category})));return;}
+        if(rows.length){host.status.textContent=`실제 우회시간으로 확인한 ${rows.length}곳 · ${max_detour_min}분 이내`;hotspotSetRows(host,rows.map(x=>({item:{...x.item,name:x.pt.name},opts:{verified:true,extra:x.extra,category}})));return;}
       }catch(e){console.warn('[hotspot] detour validation skipped',e)}
     }
     if(!valid())return;

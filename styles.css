@@ -4433,3 +4433,14 @@ body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-camera.passe
 .hotspot-photo{width:100%;height:128px;overflow:hidden;border-radius:12px;background:#f5f6f0}.hotspot-photo img{width:100%;height:100%;object-fit:cover;display:block}
 .hotspot-actions{flex-wrap:wrap}.hotspot-actions a,.hotspot-actions button{flex:1 1 29%;min-width:92px;font-size:10px}
 @media(max-width:360px){.where-to-item{grid-template-columns:56px minmax(0,1fr) auto!important}.where-to-visual{width:56px;height:60px}.hotspot-actions a,.hotspot-actions button{flex-basis:100%}}
+
+/* v7.6.27.32: home search, social actions and incremental merchant lists */
+#homeView .search-box{padding-left:13px;gap:7px}
+#homeView .search-box #homeAiMicBtn,#homeView .search-box #searchBtn{flex:0 0 42px!important;width:42px!important;height:42px!important;min-width:42px;min-height:42px;border-radius:13px;display:inline-grid;place-items:center}
+#homeView .search-box #homeAiMicBtn svg,#homeView .search-box #searchBtn svg{width:22px!important;height:22px!important}
+#homeView .search-box #destinationInput{min-width:0;font-size:13px}
+.merchant-more-button{width:100%;min-height:43px;padding:10px 14px;margin-top:8px;border:1px solid #b9dcc8;border-radius:13px;background:#ecf8f0;color:#186542;font-weight:800;font-size:12px;cursor:pointer}
+.hotspot-actions a,.discover-links a{display:inline-flex!important;align-items:center;justify-content:center;gap:5px}
+.hotspot-actions a svg,.discover-links a svg{width:17px;height:17px;flex:0 0 17px}
+.hotspot-actions a:first-child,.discover-links a:first-child{background:linear-gradient(110deg,#fff1f7,#fff6ec);color:#ad4266}
+.hotspot-actions a:nth-child(2),.discover-links a:nth-child(2){background:#f0f5fc;color:#47628b}
