@@ -36,7 +36,8 @@ async function generateAi(env,choice,messages,maxTokens,temperature){
     }catch(e){lastError=e;
       const msg=String(e?.message||e);
       // Do not retry a missing binding, invalid model, quota or authorization errors.
-      if(/quota|limit exceeded|invalid model|not found|unauthoriz|forbidden|binding/i.test(msg))break;
+      // Model runtime errors are not fixed by immediately repeating a long inference.
+      break;
     }
   }
   throw lastError||new Error('EMPTY_MODEL_OUTPUT');
@@ -67,7 +68,7 @@ export async function onRequestPost({request,env}){
     {role:'user',content:JSON.stringify({task:'제공된 후보 가운데 사용자에게 도움이 될 곳 2~3곳을 골라 장단점과 확인 사항을 설명',destination,category:kind,candidates})}
   ];
   try{
-    const generated=await generateAi(env,choice,messages,850,0.25);
+    const generated=await generateAi(env,choice,messages,560,0.25);
     const answer=generated.text;
     if(!answer.trim())return json({ok:false,error:'EMPTY_AI_RESPONSE',message:'모델 응답을 해석하지 못했습니다.'},502);
     return json({ok:true,model:choice,answer:answer.slice(0,2600),groundedCandidateCount:candidates.length});

@@ -33,7 +33,8 @@ async function generateAi(env,choice,messages,maxTokens,temperature){
     }catch(e){lastError=e;
       const msg=String(e?.message||e);
       // Do not retry a missing binding, invalid model, quota or authorization errors.
-      if(/quota|limit exceeded|invalid model|not found|unauthoriz|forbidden|binding/i.test(msg))break;
+      // Model runtime errors are not fixed by immediately repeating a long inference.
+      break;
     }
   }
   throw lastError||new Error('EMPTY_MODEL_OUTPUT');
@@ -64,7 +65,7 @@ export async function onRequestPost({request,env}){
     user=JSON.stringify({destination:clean(data?.destination,80),routes});
   }
   try{
-    const generated=await generateAi(env,data.model,[{role:'system',content:system},{role:'user',content:user}],task==='trip_plan'?440:780,0.1);
+    const generated=await generateAi(env,data.model,[{role:'system',content:system},{role:'user',content:user}],task==='trip_plan'?300:480,0.1);
     const output=generated.text;if(!output)return json({ok:false,message:'AI 응답이 비어 있습니다.'},502);
     if(task==='route_compare')return json({ok:true,model:data.model,answer:output.slice(0,2000)});
     if(task==='trip_plan'){
