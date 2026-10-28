@@ -4329,3 +4329,5 @@ body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-camera.passe
 .dangollo-ai-confirm-card strong{font-size:21px}.dangollo-ai-confirm-card p{font-size:16px;line-height:1.6;margin:16px 0}
 .dangollo-ai-confirm-actions{display:flex;gap:12px}.dangollo-ai-confirm-actions button{flex:1;min-height:52px;border-radius:12px;border:1px solid #aab9c4;background:#f5f8fa;color:#233744;font-size:16px;font-weight:700}
 .dangollo-ai-confirm-actions button:last-child{background:#087e59;border-color:#087e59;color:white}
+
+.fuel-best-nav{display:block;width:100%;margin:2px 0 8px;padding:12px 14px;border:0;border-radius:12px;background:#1f6bff;color:#fff;font:inherit;font-weight:800;font-size:14px;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}.fuel-best-nav:active{filter:brightness(.92)}

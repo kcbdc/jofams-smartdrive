@@ -37,12 +37,13 @@ export async function onRequestGet({request,env}){
   try{
     // Opinet official documentation requires the certkey parameter, not 'code'.
     // One price-sorted nearby request, then one distance-sorted retry only if it is empty.
+    // 정상 동작하던 원본(v7.6.27.7)과 동일한 호출: 가격순 → (비면) 거리순 재시도.
     for(const sort of ['1','2']){
       try{
         const found=await opinetAround(x,y,prodcd,5000,sort,key,trace);
         aroundEmpty ||= found.length===0;
         if(found.length){stations=found.sort((a,b)=>a.price-b.price).slice(0,cnt);source='aroundAll';radius=5000;break}
-      }catch(e){upstreamError ||= e;trace.push({step:'aroundAll',error:safeError(e)})}
+      }catch(e){upstreamError ||= e}
     }
 
     if(!stations.length){
@@ -69,14 +70,30 @@ export async function onRequestGet({request,env}){
       // Catalog diagnostics are expensive and not product-specific. Run them only on
       // explicit ?diag=1; otherwise a transient empty result is not 'invalid key'.
       if(!diag){
+        // 오피넷이 오류를 돌려준 경우(인증 거부/한도 초과/차단 등)를 '가격 없음'으로 숨기지 않는다.
+        const summary=trace.map(t=>({step:t.step,status:t.status,rows:t.rowCount,error:t.error})).slice(0,6);
+        // 위치와 무관한 지역코드 조회(areaCode.do)까지 200 + 0건이면 좌표·유종 문제가 아니라
+        // 인증키 단위로 빈 응답이 오는 상태(일일 한도 초과, 키 승인/IP 제한, 키 만료 등)다.
+        if(summary.some(t=>t.step==='areaCode.do'&&t.status===200&&t.rows===0)){
+          return json({provider:'opinet',product:prodcd,productName:PRODUCTS[prodcd],stations:[],
+            error:'오피넷이 인증키 요청에 빈 응답을 반환하고 있습니다(지역코드 조회도 0건).',
+            code:'OPINET_KEY_QUOTA_SUSPECT',trace:summary},502);
+        }
+        if(upstreamError){
+          const msg=String(upstreamError?.message||upstreamError);
+          return json({provider:'opinet',product:prodcd,productName:PRODUCTS[prodcd],stations:[],
+            error:'오피넷 응답 오류: '+safeError(upstreamError),code:classify(msg),trace:summary},502);
+        }
         return json({provider:'opinet',source:'none',product:prodcd,productName:PRODUCTS[prodcd],
-          stations:[],code:'OPINET_PRODUCT_UNAVAILABLE',
+          stations:[],code:'OPINET_PRODUCT_UNAVAILABLE',trace:summary,
           error:`${PRODUCTS[prodcd]}의 주변 판매가격을 현재 확인하지 못했습니다. 다른 유종의 정상 조회와 인증 오류는 별개입니다.`,
           retryable:true},200,true);
       }
       const check=await checkOpinetCatalog(key,trace);
       const diagnostic={
         keySource:selectedKeyName,
+        // 서버에 실제 들어 있는 키가 마이페이지 키와 같은지 대조용(전체 값은 노출하지 않음)
+        keyInfo:{length:key.length,looksLikeOpinetKey:/^F\d{9}$/.test(key),last2:key.slice(-2)},
         aroundEmpty, catalog:check,
         coordinateSystem:'KATEC',
         ...(diag?{testedLocation:{lat,lng,katecX:Math.round(x),katecY:Math.round(y)},trace}:{})
@@ -101,13 +118,16 @@ export async function onRequestGet({request,env}){
       },200,true);
     }
 
-    const detailed=await Promise.race([
-      enrichAddresses(stations.slice(0,8),key),
-      new Promise(resolve=>setTimeout(()=>resolve(stations.slice(0,8)),2200))
+    // 호출 한도 보호(일 300건): 주소 상세 조회는 상위 3곳만, 나머지는 그대로 반환.
+    const head=stations.slice(0,3),tail=stations.slice(3);
+    const enriched=await Promise.race([
+      enrichAddresses(head,key),
+      new Promise(resolve=>setTimeout(()=>resolve(head),2200))
     ]);
+    const detailed=[...enriched,...tail];
     const avg=stations.length?Math.round(stations.reduce((sum,row)=>sum+row.price,0)/stations.length):null;
     return json({provider:'opinet',source,radius,product:prodcd,productName:PRODUCTS[prodcd],
-      areaName:areaName||(source==='aroundAll'?'현재 위치 주변 5km':'현재 지역'),
+      areaName:areaName||(source==='aroundAll'?`현재 위치 주변 ${Math.round(radius/1000)}km`:'현재 지역'),
       averagePrice:avg,updatedAt:new Date().toISOString(),stations:detailed,
       ...(diag?{trace,testedLocation:{lat,lng,katecX:Math.round(x),katecY:Math.round(y)}}:{})});
   }catch(e){
@@ -133,6 +153,8 @@ function classify(msg){
 async function fetchOpinetJson(endpoint,params,key,trace){
   const url=new URL('https://www.opinet.co.kr/api/'+endpoint);
   url.searchParams.set('out','json');
+  // 신규 발급 키는 certkey 가 아니라 code 파라미터로만 인식된다(직접 호출로 확인). 기존 키 호환을 위해 둘 다 같은 값으로 전송.
+  url.searchParams.set('code',key);
   url.searchParams.set('certkey',key);
   for(const [k,v] of Object.entries(params||{}))if(v!==''&&v!=null)url.searchParams.set(k,String(v));
   const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),6500);
@@ -147,6 +169,9 @@ async function fetchOpinetJson(endpoint,params,key,trace){
     if(result?.CODE && !['00','0','200'].includes(String(result.CODE)))throw new Error('오피넷 서비스 오류 '+String(result.CODE));
     // Log only structural metadata; never a response snippet or key.
     t.rowCount=Array.isArray(result?.OIL)?result.OIL.length:0;
+    // 빈 응답일 때만: 오피넷이 돌려준 본문 앞부분(인증키는 [redacted] 처리)을 진단 trace 에 포함.
+    // 비진단 응답의 summary 는 step/status/rows/error 만 골라 쓰므로 일반 사용자 화면에는 노출되지 않는다.
+    if(t.rowCount===0&&key)t.snippet=body.split(key).join('[redacted]').replace(/\s+/g,' ').slice(0,300);
     trace?.push(t);
     return obj;
   }catch(e){
