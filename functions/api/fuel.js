@@ -13,7 +13,6 @@ const OK_HEADERS={'content-type':'application/json; charset=utf-8','cache-contro
 const ERR_HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'no-store'};
 const UA='Mozilla/5.0 (compatible; DangolroNavi/7.6)';
 const PRODUCTS={B027:'휘발유',D047:'경유',B034:'고급휘발유',K015:'LPG'};
-const FUEL_API_VERSION='7.6.27.8';
 
 export async function onRequestGet({request,env}){
   const url=new URL(request.url);
@@ -21,7 +20,6 @@ export async function onRequestGet({request,env}){
   const prodcd=PRODUCTS[url.searchParams.get('prodcd')]?url.searchParams.get('prodcd'):'B027';
   const cnt=Math.max(1,Math.min(20,Number(url.searchParams.get('cnt'))||8));
   const diag=url.searchParams.get('diag')==='1';
-  const includeVersion={apiVersion:FUEL_API_VERSION};
   const trace=[];
   if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat<-90||lat>90||lng<-180||lng>180||(lat===0&&lng===0))
     return json({error:'올바른 lat/lng가 필요합니다.',code:'INVALID_COORDINATES'},400);
@@ -72,7 +70,7 @@ export async function onRequestGet({request,env}){
       // explicit ?diag=1; otherwise a transient empty result is not 'invalid key'.
       if(!diag){
         return json({provider:'opinet',source:'none',product:prodcd,productName:PRODUCTS[prodcd],
-          stations:[],...includeVersion,code:'OPINET_PRODUCT_UNAVAILABLE',
+          stations:[],code:'OPINET_PRODUCT_UNAVAILABLE',
           error:`${PRODUCTS[prodcd]}의 주변 판매가격을 현재 확인하지 못했습니다. 다른 유종의 정상 조회와 인증 오류는 별개입니다.`,
           retryable:true},200,true);
       }
@@ -85,8 +83,8 @@ export async function onRequestGet({request,env}){
       };
       if(!check.areaOk && !check.averageOk){
         return json({
-          error:'오피넷 API가 빈 목록을 반환했습니다. 이것만으로 인증키 만료 또는 일일 한도 초과를 판정할 수 없습니다. 정상 조회되는 다른 유종이 있다면 유종별 API 응답을 별도로 확인하세요.',
-          code:'OPINET_UPSTREAM_EMPTY_UNVERIFIED',...includeVersion,product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic,
+          error:'오피넷 API가 선택 유종 및 진단 요청에 빈 목록을 반환했습니다. 인증 문제로 확정할 수 없으므로 유종별 가격 게시 여부·일시 응답·호출 한도를 확인하세요.',
+          code:'OPINET_KEY_OR_UPSTREAM',product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic,
           action:`Cloudflare의 ${selectedKeyName} Secret에 오피넷 공식 공개 API 인증키가 설정되어 있는지 확인하고 재배포하세요. 인증키·일일 이용량·공급 API 응답은 서버 밖에서 확인해야 합니다.`
         },502);
       }
@@ -94,12 +92,12 @@ export async function onRequestGet({request,env}){
       if(!check.areaOk){
         return json({
           error:'전국평균유가는 조회되지만 반경·지역코드 API는 빈 목록을 반환합니다. 반경 좌표/서비스별 이용 권한 또는 공급 응답을 점검하세요.',
-          code:'OPINET_SEARCH_EMPTY_UNVERIFIED',...includeVersion,product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic
+          code:'OPINET_SEARCH_EMPTY_UNVERIFIED',product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic
         },502);
       }
       return json({
         error:'지역코드 API는 정상이나 주변 유가 검색에서 판매가격 자료를 확보하지 못했습니다. 실제 반경 내 주유소가 없다는 뜻은 아닙니다.',
-        code:'OPINET_PRICE_NOT_AVAILABLE',...includeVersion,product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic
+        code:'OPINET_PRICE_NOT_AVAILABLE',product:prodcd,productName:PRODUCTS[prodcd],stations:[],diagnostic
       },200,true);
     }
 
@@ -108,7 +106,7 @@ export async function onRequestGet({request,env}){
       new Promise(resolve=>setTimeout(()=>resolve(stations.slice(0,8)),2200))
     ]);
     const avg=stations.length?Math.round(stations.reduce((sum,row)=>sum+row.price,0)/stations.length):null;
-    return json({provider:'opinet',apiVersion:FUEL_API_VERSION,source,radius,product:prodcd,productName:PRODUCTS[prodcd],
+    return json({provider:'opinet',source,radius,product:prodcd,productName:PRODUCTS[prodcd],
       areaName:areaName||(source==='aroundAll'?'현재 위치 주변 5km':'현재 지역'),
       averagePrice:avg,updatedAt:new Date().toISOString(),stations:detailed,
       ...(diag?{trace,testedLocation:{lat,lng,katecX:Math.round(x),katecY:Math.round(y)}}:{})});
