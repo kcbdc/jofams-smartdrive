@@ -4649,3 +4649,8 @@ html body #app #driveView .maneuver-stack{z-index:78!important}
   #festivalModal .festival-card-title{font-size:13px!important}
   #festivalModal .festival-status-tabs button{padding:7px 7px!important;font-size:11px!important}
 }
+
+/* v7.6.27.44: identical selection treatment for all four bottom navigation tabs. */
+html body #app #bottomNav button[data-bottom-nav]{transition:background-color .18s ease,color .18s ease;}
+html body #app #bottomNav button[data-bottom-nav].active{background:#edf4ff!important;color:#1f63dd!important;}
+html body #app #bottomNav button[data-bottom-nav]:not(.active){background:transparent!important;color:#7e899b!important;}

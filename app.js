@@ -1723,6 +1723,25 @@ async function refreshWhereTo(){
   }catch(e){console.warn('[where-to] refresh',e);renderWhereToList()}
 }
 
+// Keep the fixed navigation highlight aligned with the actual open panel.
+function syncBottomNavSelection(preferred=''){
+  const nav=$('bottomNav');
+  if(!nav)return;
+  let selected=preferred;
+  if(!selected){
+    if(!$('whereToModal')?.classList.contains('hidden'))selected='where';
+    else if(!$('savedPlacesModal')?.classList.contains('hidden'))selected='saved';
+    else if(!$('myModal')?.classList.contains('hidden'))selected='my';
+    else selected='home';
+  }
+  nav.querySelectorAll('[data-bottom-nav]').forEach(btn=>{
+    const active=btn.dataset.bottomNav===selected;
+    btn.classList.toggle('active',active);
+    if(active)btn.setAttribute('aria-current','page');
+    else btn.removeAttribute('aria-current');
+  });
+}
+
 function closeBottomPanels(except=''){
   if(except!=='where')$('whereToModal')?.classList.add('hidden');
   if(except!=='saved')$('savedPlacesModal')?.classList.add('hidden');
@@ -1733,10 +1752,11 @@ function openWhereTo(){
   closeBottomPanels('where');
   state.whereToTab=state.whereToTab||'local';
   $('whereToModal')?.classList.remove('hidden');
+  syncBottomNavSelection('where');
   renderWhereToList();
   refreshWhereTo();
 }
-function closeWhereTo(){$('whereToModal')?.classList.add('hidden')}
+function closeWhereTo(){$('whereToModal')?.classList.add('hidden');syncBottomNavSelection()}
 
 
 function openOnnuriZoneInfo(zone){
@@ -4965,7 +4985,7 @@ function setView(view){
     if(!state.homeFacilityItems.length||Date.now()-(state.homeFacilityRefreshAt||0)>120000){state.homeFacilityRefreshAt=Date.now();setTimeout(()=>loadHomeFacility(state.homeFacilityCategory),450)}
     const header=document.querySelector('#homeView .home-header');if(header){header.style.removeProperty('display');header.style.removeProperty('visibility');header.style.removeProperty('opacity')}
   }
-  document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.classList.toggle('active',b.dataset.bottomNav===view));
+  if(view==='home')syncBottomNavSelection();
   if(state.map){if(view==='home'){state.map3D=false;enforce2DMap();state.map.easeTo({pitch:0,bearing:0})}else if(view==='drive')applyDriveMapMode()}
   applyNightMode();if(view==='home'){
     loadSavedWaypointCourses();renderSavedWaypointCourses();
@@ -7915,9 +7935,10 @@ function openSavedPlaces(){
   closeBottomPanels('saved');
   loadSavedPlaceGroups();
   $('savedPlacesModal')?.classList.remove('hidden');
+  syncBottomNavSelection('saved');
   renderSavedGroups();
 }
-function closeSavedPlaces(){$('savedPlacesModal')?.classList.add('hidden')}
+function closeSavedPlaces(){$('savedPlacesModal')?.classList.add('hidden');syncBottomNavSelection()}
 
 function favoritesStorageKey(){return state.firebase.user?`${FAVS}.${state.firebase.user.uid}`:FAVS}
 function recentsStorageKey(){return state.firebase.user?`${RECENTS}.${state.firebase.user.uid}`:RECENTS}
@@ -9204,8 +9225,8 @@ async function openDriveAlternateRoutes(){
 }
 function openDriveMenu(){$('driveMenu').classList.remove('hidden')}
 function closeDriveMenu(){$('driveMenu').classList.add('hidden')}
-function openMy(){closeBottomPanels('my');$('myModal').classList.remove('hidden');renderProfile();syncCharacterUI();updateVolumeUI();updateTripHistorySummary()}
-function closeMy(){$('myModal').classList.add('hidden')}
+function openMy(){closeBottomPanels('my');$('myModal').classList.remove('hidden');syncBottomNavSelection('my');renderProfile();syncCharacterUI();updateVolumeUI();updateTripHistorySummary()}
+function closeMy(){$('myModal').classList.add('hidden');syncBottomNavSelection()}
 function toggleSettingPanel(buttonId,panelId){const btn=$(buttonId),panel=$(panelId),open=panel.classList.contains('hidden');panel.classList.toggle('hidden',!open);btn.setAttribute('aria-expanded',String(open));if(open)setTimeout(()=>panel.scrollIntoView({behavior:'smooth',block:'nearest'}),50)}
 async function shareArrival(){if(!state.destination)return;const text=`'${state.destination.name}' 이동 중입니다. 예상 도착 ${$('arrivalTime').textContent.replace('도착 ','')}`;try{if(navigator.share)await navigator.share({title:'단골로 내비',text});else await navigator.clipboard.writeText(text),toast('도착 정보를 복사했습니다.')}catch{}}
 
@@ -9308,7 +9329,7 @@ function bindUI(){
   try{if($('adminModeBtn'))$('adminModeBtn').onclick=openAdminMode;if($('adminCloseBtn'))$('adminCloseBtn').onclick=closeAdminMode;document.querySelectorAll('[data-admin-tab]').forEach(b=>b.onclick=()=>switchAdminTab(b.dataset.adminTab));if($('adminNoticeSaveBtn'))$('adminNoticeSaveBtn').onclick=saveAdminNotice;if($('adminContentSaveBtn'))$('adminContentSaveBtn').onclick=saveAdminContent;if($('onnuriBatchStartBtn'))$('onnuriBatchStartBtn').onclick=startOnnuriBatch;if($('onnuriBatchStopBtn'))$('onnuriBatchStopBtn').onclick=stopOnnuriBatch;if($('onnuriBatchResetBtn'))$('onnuriBatchResetBtn').onclick=resetOnnuriLegacyProgress;if($('adminShortsSaveBtn'))$('adminShortsSaveBtn').onclick=saveAdminShortsSettings;if($('adminShortsRefreshBtn'))$('adminShortsRefreshBtn').onclick=refreshAdminShortsNow;}catch(e){console.warn('UI bind section 16 failed',e)}
   try{if($('komscoShortsMyBtn'))$('komscoShortsMyBtn').onclick=openKomscoShortsList;if($('komscoShortsListClose'))$('komscoShortsListClose').onclick=closeKomscoShortsList;if($('komscoShortsListModal'))$('komscoShortsListModal').addEventListener('click',e=>{if(e.target===$('komscoShortsListModal'))closeKomscoShortsList()});if($('komscoShortClose'))$('komscoShortClose').onclick=closeKomscoShort;if($('komscoShortMuteBtn'))$('komscoShortMuteBtn').onclick=toggleKomscoMute;if($('komscoShortModal'))$('komscoShortModal').addEventListener('click',e=>{if(e.target===$('komscoShortModal'))closeKomscoShort()});}catch(e){console.warn('UI bind section 17 failed',e)}
   try{if($('waypointSearchClose'))$('waypointSearchClose').onclick=()=>closeWaypointSearch(true);if($('waypointSearchSubmit'))$('waypointSearchSubmit').onclick=()=>searchWaypointPlaces($('waypointSearchInput').value);if($('waypointSearchInput'))$('waypointSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchWaypointPlaces(e.target.value)});if($('waypointSearchModal'))$('waypointSearchModal').addEventListener('click',e=>{if(e.target===$('waypointSearchModal'))closeWaypointSearch(true)});if($('drivePlaceChoiceClose'))$('drivePlaceChoiceClose').onclick=closeDrivePlaceChoice;if($('drivePlaceAsWaypoint'))$('drivePlaceAsWaypoint').onclick=()=>applyDrivePlaceChoice('waypoint');if($('drivePlaceAsDestination'))$('drivePlaceAsDestination').onclick=()=>applyDrivePlaceChoice('destination');if($('drivePlaceChoiceModal'))$('drivePlaceChoiceModal').addEventListener('click',e=>{if(e.target===$('drivePlaceChoiceModal'))closeDrivePlaceChoice()});}catch(e){console.warn('UI bind section waypoint/permission failed',e)}
-  try{$('originModalClose').onclick=closeOriginModal;$('useCurrentOriginBtn').onclick=useCurrentOrigin;$('originSearchBtn').onclick=()=>searchOrigins($('originSearchInput').value);$('originSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchOrigins(e.target.value)});$('originModal').addEventListener('click',e=>{if(e.target===$('originModal'))closeOriginModal()});$('arCloseBtn').onclick=stopAR;document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.bottomNav;closeBottomPanels(nav);if(nav==='home'){cancelAutoStart();setView('home')}else if(nav==='where'){setView('home');openWhereTo()}else if(nav==='saved'){setView('home');openSavedPlaces()}else if(nav==='my')openMy()});$('placeModalClose').onclick=()=>$('placeModal').classList.add('hidden');if($('useCurrentPlaceBtn'))$('useCurrentPlaceBtn').onclick=saveCurrentLocationAsPlace;if($('placeSaveBtn'))$('placeSaveBtn').onclick=confirmRegisteredPlace;if($('whereToClose'))$('whereToClose').onclick=closeWhereTo;
+  try{$('originModalClose').onclick=closeOriginModal;$('useCurrentOriginBtn').onclick=useCurrentOrigin;$('originSearchBtn').onclick=()=>searchOrigins($('originSearchInput').value);$('originSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchOrigins(e.target.value)});$('originModal').addEventListener('click',e=>{if(e.target===$('originModal'))closeOriginModal()});$('arCloseBtn').onclick=stopAR;document.querySelectorAll('[data-bottom-nav]').forEach(b=>b.onclick=()=>{const nav=b.dataset.bottomNav;closeBottomPanels(nav);if(nav==='home'){cancelAutoStart();setView('home')}else if(nav==='where'){setView('home');openWhereTo()}else if(nav==='saved'){setView('home');openSavedPlaces()}else if(nav==='my')openMy();syncBottomNavSelection(nav)});$('placeModalClose').onclick=()=>$('placeModal').classList.add('hidden');if($('useCurrentPlaceBtn'))$('useCurrentPlaceBtn').onclick=saveCurrentLocationAsPlace;if($('placeSaveBtn'))$('placeSaveBtn').onclick=confirmRegisteredPlace;if($('whereToClose'))$('whereToClose').onclick=closeWhereTo;
 if($('whereToRefresh'))$('whereToRefresh').onclick=refreshWhereTo;
 if($('whereToHotspotBtn'))$('whereToHotspotBtn').onclick=()=>{closeWhereTo();hotspotOpen()};
 if($('whereToModal'))$('whereToModal').addEventListener('click',e=>{if(e.target===$('whereToModal'))closeWhereTo()});
