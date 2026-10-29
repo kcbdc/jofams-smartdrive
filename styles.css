@@ -4705,3 +4705,32 @@ html body #app #bottomNav button[data-bottom-nav]:not(.active){background:transp
 .dangollo-rich-editor:empty:before{content:attr(data-placeholder);color:#9aa8b7;pointer-events:none}
 .admin-panel textarea.dangollo-rich-source-hidden{display:none!important}
 .notice-list article>.dangollo-rich-copy{margin-top:10px;font-size:13px}.privacy-copy>.dangollo-rich-copy{margin:10px 0}
+
+/* v7.6.27.50 - notices: separate list and detail, natural-height safe scrolling */
+#infoModal .info-sheet{height:min(86dvh,820px);max-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 40px);min-height:0;display:flex;flex-direction:column;overflow:hidden}
+#infoModal .info-sheet>header{flex:0 0 auto}
+#infoModal #infoModalBody{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:12px 5px 35px;max-width:100%;box-sizing:border-box}
+#infoModal #infoModalBody *,#adminNoticeList *{box-sizing:border-box}
+.notice-index{display:flex;flex-direction:column;gap:10px;min-width:0}
+.notice-index .notice-row{width:100%;max-width:100%;display:flex;align-items:center;gap:12px;min-width:0;text-align:left;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:17px 14px;cursor:pointer;color:#1a2e46;font:inherit}
+.notice-index .notice-row-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:7px}
+.notice-index .notice-row b{font-size:15px;line-height:1.55;font-weight:750;white-space:normal;overflow-wrap:anywhere;word-break:break-word;margin:0}
+.notice-index .notice-row time{color:#79889b;font-size:12px}
+.notice-index .notice-row svg{width:18px;height:18px;flex:0 0 18px;color:#8094aa}
+.notice-index .notice-row:focus-visible,.notice-back:focus-visible{outline:2px solid #2879cb;outline-offset:-2px}
+.notice-detail{min-width:0;max-width:100%;padding:2px 4px 28px}
+.notice-back{border:0;background:#eff5fe;border-radius:10px;color:#2263a3;display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:750;padding:9px 12px;cursor:pointer}
+.notice-back svg{height:17px;width:17px}
+.notice-detail h2{font-size:20px;line-height:1.45;color:#15283d;margin:18px 0 6px;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+.notice-detail>time{color:#7b8798;font-size:12px}
+.notice-detail-content{border-top:1px solid #e8edf3;margin-top:18px;padding-top:14px;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word}
+.notice-detail-content img,.admin-notice-card img{display:block;max-width:100%!important;height:auto!important;object-fit:contain}
+.notice-detail-content table,.admin-notice-card table{max-width:100%;overflow-x:auto}
+.notice-detail-content pre,.notice-detail-content code,.admin-notice-card pre{max-width:100%;overflow-wrap:anywhere;white-space:pre-wrap}
+.notice-detail-content a{overflow-wrap:anywhere}
+#adminNoticeList .admin-notice-card{min-width:0;max-width:100%;overflow:visible}
+#adminNoticeList .admin-notice-card>details{min-width:0;max-width:100%;padding-right:48px}
+#adminNoticeList .admin-notice-card summary{cursor:pointer;padding:2px 0 5px;overflow-wrap:anywhere;word-break:break-word}
+#adminNoticeList .admin-notice-card summary b{display:inline;line-height:1.5}
+#adminNoticeList .admin-notice-card .dangollo-rich-copy{margin-top:12px;min-width:0;max-width:100%}
+@media(max-width:420px){#infoModal .info-sheet{height:min(88dvh,800px)}.notice-detail h2{font-size:18px}.notice-index .notice-row{padding:15px 12px}}

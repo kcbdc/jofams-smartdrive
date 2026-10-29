@@ -4808,7 +4808,32 @@ const NOTICE_ITEMS=[
   {date:'2026.09.01',title:'MVP 7.5 AR 리본·단속카메라 로컬데이터 개선',body:'AR 지도 리본 시야각 조정, 로컬 무인단속카메라 데이터 적용, 제한속도 표시 보강, 터널 추정주행과 120초 경로 갱신을 유지합니다.'},
   {date:'2026.09.01',title:'안전운전 정보 안내',body:'단속카메라, 스쿨존, 사고·공사 및 교통정보는 실제 도로 표지와 교통법규를 우선하여 이용해 주세요.'}
 ];
-async function openNotices(){try{const d=await fetch('/api/content?type=notices').then(r=>r.json());const items=Array.isArray(d.items)&&d.items.length?d.items:NOTICE_ITEMS;openInfoModal('공지사항',`<div class="notice-list">${items.map(x=>`<article><time>${escapeHtml(x.date||x.createdAt||'')}</time><b>${escapeHtml(x.title)}</b><div class="dangollo-rich-copy">${richContentHTML(x.body)}</div></article>`).join('')}</div>`)}catch{openInfoModal('공지사항',`<div class="notice-list">${NOTICE_ITEMS.map(x=>`<article><time>${escapeHtml(x.date)}</time><b>${escapeHtml(x.title)}</b><div class="dangollo-rich-copy">${richContentHTML(x.body)}</div></article>`).join('')}</div>`)}}
+let NOTICE_VIEW_ITEMS=[];
+function noticeDateText(item){
+ const raw=String(item?.date||item?.createdAt||'').trim();
+ if(!raw)return '등록일 미표시';
+ const dt=new Date(raw);
+ return Number.isNaN(dt.getTime())?raw:dt.toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'});
+}
+function showNoticeList(){
+ const body=$('infoModalBody');if(!body)return;
+ $('infoModalTitle').textContent='공지사항';
+ body.innerHTML=`<div class="notice-list notice-index" role="list">${NOTICE_VIEW_ITEMS.map((x,i)=>`<button type="button" class="notice-row" data-notice-index="${i}" role="listitem" aria-label="${escapeHtml(x.title||'공지사항')} 상세보기"><span class="notice-row-copy"><b>${escapeHtml(x.title||'공지사항')}</b><time>${escapeHtml(noticeDateText(x))}</time></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>`).join('')}</div>`;
+ body.scrollTop=0;
+ body.querySelectorAll('[data-notice-index]').forEach(btn=>btn.addEventListener('click',()=>showNoticeDetail(Number(btn.dataset.noticeIndex))));
+}
+function showNoticeDetail(index){
+ const item=NOTICE_VIEW_ITEMS[index],body=$('infoModalBody');if(!item||!body)return;
+ $('infoModalTitle').textContent='공지사항';
+ body.innerHTML=`<section class="notice-detail"><button type="button" class="notice-back" id="noticeBackToList"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>목록으로</button><h2>${escapeHtml(item.title||'공지사항')}</h2><time>${escapeHtml(noticeDateText(item))}</time><div class="notice-detail-content dangollo-rich-copy">${richContentHTML(item.body)}</div></section>`;
+ body.scrollTop=0;
+ $('noticeBackToList')?.addEventListener('click',showNoticeList);
+}
+async function openNotices(){
+ try{const res=await fetch('/api/content?type=notices');if(!res.ok)throw new Error('NOTICE_HTTP');const data=await res.json();NOTICE_VIEW_ITEMS=Array.isArray(data.items)&&data.items.length?data.items:NOTICE_ITEMS;}
+ catch{NOTICE_VIEW_ITEMS=NOTICE_ITEMS;}
+ openInfoModal('공지사항','<p class="notice-loading">공지사항 목록을 준비하고 있습니다.</p>');showNoticeList();
+}
 function applyNightMode(){const h=new Date().getHours(),night=h>=19||h<6;document.body.classList.toggle('night-map',night);return night}
 /* 7.6.1.9: 가로 회전 시 실제 브라우저 전체화면(Fullscreen API)까지 적용한다.
    - 기존에는 Chrome/WebView의 "전체화면 종료 방법" 안내 팝업을 피하려고 CSS 레이아웃 확장만 사용했지만,
@@ -8928,7 +8953,7 @@ async function openAdminMode(){richInitEditors();
 function closeAdminMode(){$('adminModal')?.classList.add('hidden')}
 function switchAdminTab(tab){document.querySelectorAll('[data-admin-tab]').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===tab));['notices','content','inquiries','onnuri','shorts'].forEach(k=>$(`admin${k[0].toUpperCase()+k.slice(1)}Panel`)?.classList.toggle('hidden',k!==tab));if(tab==='notices')loadAdminNotices();if(tab==='content')loadAdminContent();if(tab==='inquiries')loadAdminInquiries();if(tab==='onnuri')loadOnnuriBatchStatus();if(tab==='shorts')loadAdminShorts()}
 async function adminContentRequest(type,method='GET',body=null){const u=new URL('/api/content',location.origin);u.searchParams.set('type',type);const opt={method,headers:{'content-type':'application/json'}};if(body)opt.body=JSON.stringify(body);const r=method==='GET'?await fetch(u):await authFetch(u,opt);const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`HTTP ${r.status}`);return d}
-async function loadAdminNotices(){try{const d=await adminContentRequest('notices');state.adminNotices=d.items||[];const box=$('adminNoticeList');box.innerHTML=state.adminNotices.length?state.adminNotices.map(x=>`<article><div><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.createdAt||'')}</small></div><button data-admin-notice-delete="${x.id}">삭제</button><div class="dangollo-rich-copy">${richContentHTML(x.body)}</div></article>`).join(''):'<div class="inquiry-empty">등록된 공지가 없습니다.</div>';box.querySelectorAll('[data-admin-notice-delete]').forEach(b=>b.onclick=()=>deleteAdminNotice(b.dataset.adminNoticeDelete))}catch{toast('공지 목록을 불러오지 못했습니다.')}}
+async function loadAdminNotices(){try{const d=await adminContentRequest('notices');state.adminNotices=d.items||[];const box=$('adminNoticeList');box.innerHTML=state.adminNotices.length?state.adminNotices.map(x=>`<article class="admin-notice-card"><details><summary><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.createdAt||'')}</small></summary><div class="dangollo-rich-copy">${richContentHTML(x.body)}</div></details><button data-admin-notice-delete="${escapeHtml(String(x.id))}">삭제</button></article>`).join(''):'<div class="inquiry-empty">등록된 공지가 없습니다.</div>';box.querySelectorAll('[data-admin-notice-delete]').forEach(b=>b.onclick=()=>deleteAdminNotice(b.dataset.adminNoticeDelete))}catch{toast('공지 목록을 불러오지 못했습니다.')}}
 async function saveAdminNotice(){const title=$('adminNoticeTitle').value.trim(),body=richEditorValue('adminNoticeBody').trim();if(title.length<2||body.length<2)return toast('공지 제목과 내용을 입력해 주세요.');const btn=$('adminNoticeSaveBtn');btn.disabled=true;try{await adminContentRequest('notices','POST',{title,body});$('adminNoticeTitle').value='';richSetEditor('adminNoticeBody','');showPlaceConfirmPopup('공지사항이 등록되었습니다.');loadAdminNotices()}catch{toast('공지 등록에 실패했습니다.')}finally{btn.disabled=false}}
 async function deleteAdminNotice(id){if(!confirm('이 공지를 삭제할까요?'))return;try{await adminContentRequest('notices','DELETE',{id});showPlaceConfirmPopup('공지사항이 삭제되었습니다.');loadAdminNotices()}catch{toast('공지 삭제에 실패했습니다.')}}
 async function loadAdminContent(){try{const d=await adminContentRequest('content');const c=d.content||{};richSetEditor('adminAppInfoText',c.appInfo||'');richSetEditor('adminPrivacyText',c.privacy||'')}catch{toast('콘텐츠를 불러오지 못했습니다.')}}
