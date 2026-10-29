@@ -1698,6 +1698,7 @@ function clearWhereMapPreview(){
   state.whereMapPreviewActive=false;
 }
 function cancelMapPlacePreview(){
+  if(dangolloFestival.returnMap){dangolloFestival.returnMap=false;closeMapPlacePrompt();clearWhereMapPreview();festivalOpen();return}
   const returnToList=Boolean(state.whereMapPreviewReturn);
   state.whereMapPreviewReturn=false;
   closeMapPlacePrompt();clearWhereMapPreview();
@@ -9683,3 +9684,111 @@ async function hotspotFind(host){
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{$('hotspotOpenBtn')?.addEventListener('click',()=>hotspotOpen())});
 else $('hotspotOpenBtn')?.addEventListener('click',()=>hotspotOpen());
+
+
+/* v7.6.27.42 — 가볼만한 축제 (KTO TourAPI; Naver external discovery only).
+   No fabricated popularity/review counts. Maps/route only on explicit user action. */
+const dangolloFestival={region:'전국',status:'all',sort:'recommended',visible:10,items:[],loading:false,loadedAt:0,returnMap:false,error:''};
+const festivalRegions=['전국','서울','경기','인천','강원','대전','세종','충남','충북','부산','대구','울산','경남','경북','광주','전남','전북','제주'];
+const festivalStatuses=[['all','전체'],['ongoing','진행중'],['upcoming','진행예정']];
+function festivalSafe(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;')}
+function festivalToday(){const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const get=t=>parts.find(p=>p.type===t)?.value||'';return get('year')+get('month')+get('day')}
+function festivalDate(s){return /^\d{8}$/.test(String(s))?`${s.slice(2,4)}.${s.slice(4,6)}.${s.slice(6,8)}`:'미확인'}
+function festivalIsActive(x){const now=festivalToday();return x.start<=now&&x.end>=now}
+function festivalIsUpcoming(x){return x.start>festivalToday()}
+function festivalKm(x){
+ if(!pointValid(state.user)||!pointValid({lng:x.lng,lat:x.lat}))return null;
+ return voucherGeoMeters(Number(state.user.lat),Number(state.user.lng),Number(x.lat),Number(x.lng))/1000;
+}
+function festivalFiltered(){
+ let arr=dangolloFestival.items.filter(x=>dangolloFestival.region==='전국'||String(x.address||'').startsWith(dangolloFestival.region));
+ if(dangolloFestival.status==='ongoing')arr=arr.filter(festivalIsActive);
+ if(dangolloFestival.status==='upcoming')arr=arr.filter(festivalIsUpcoming);
+ const sort=dangolloFestival.sort;
+ arr.sort((a,b)=>{
+  if(sort==='start')return a.start.localeCompare(b.start);
+  if(sort==='ongoing')return Number(festivalIsActive(b))-Number(festivalIsActive(a))||a.start.localeCompare(b.start);
+  if(sort==='distance')return (festivalKm(a)??Infinity)-(festivalKm(b)??Infinity)||a.start.localeCompare(b.start);
+  // '추천순' is a transparent local heuristic, not an unverified popularity rank.
+  return (Number(festivalIsActive(b))-Number(festivalIsActive(a)))||
+    (Number(Boolean(b.image))-Number(Boolean(a.image)))||
+    ((festivalKm(a)??9999)-(festivalKm(b)??9999))||a.start.localeCompare(b.start);
+ });
+ return arr;
+}
+function festivalRender(){
+ const regions=$('festivalRegions'),statuses=$('festivalStatuses'),list=$('festivalItems'),msg=$('festivalMessage'),more=$('festivalMore');
+ if(!regions||!statuses||!list)return;
+ regions.innerHTML=festivalRegions.map(r=>`<button type="button" class="${r===dangolloFestival.region?'active':''}" data-festival-region="${r}">${r}</button>`).join('');
+ statuses.innerHTML=festivalStatuses.map(([v,t])=>`<button type="button" class="${v===dangolloFestival.status?'active':''}" data-festival-status="${v}">${t}</button>`).join('');
+ if($('festivalSort'))$('festivalSort').value=dangolloFestival.sort;
+ const result=festivalFiltered();
+ if(msg){msg.textContent=dangolloFestival.error|| (dangolloFestival.loading&&!dangolloFestival.items.length?'축제 정보를 불러오는 중입니다…':dangolloFestival.items.length?`${result.length}개 축제 · 한국관광공사 제공 · 추천순은 진행 여부·사진·현재 위치 기준이며 인기 순위가 아닙니다.`:'등록된 축제 정보가 없습니다. 네이버 축제 검색에서도 확인할 수 있습니다.')}
+ list.innerHTML=result.slice(0,dangolloFestival.visible).map((x,i)=>{
+  const st=festivalIsActive(x)?'진행중':'진행예정',dist=festivalKm(x);
+  return `<button type="button" class="festival-card" data-festival-id="${festivalSafe(x.id)}"><span>${x.image?`<img src="${festivalSafe(x.image)}" loading="lazy" alt="${festivalSafe(x.name)} 축제 대표 사진" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'festival-photo-placeholder',textContent:'🎪'}))">`:'<span class="festival-photo-placeholder">🎪</span>'}</span><span class="festival-card-body"><span class="festival-tag ${st==='진행예정'?'upcoming':''}">${st}</span><b class="festival-card-title">${festivalSafe(x.name)}</b><small>${festivalDate(x.start)}~${festivalDate(x.end)}</small><small>${festivalSafe(x.address)}${dist!=null?' · '+dist.toFixed(1)+'km':''}</small></span></button>`
+ }).join('');
+ if(!result.length&&!dangolloFestival.loading)list.innerHTML='<div class="where-to-empty">조건에 맞는 축제가 없습니다. 지역이나 진행 상태를 바꿔 보세요.</div>';
+ if(more){more.classList.toggle('hidden',result.length<=dangolloFestival.visible);more.textContent=`10개 더보기 (${Math.min(result.length,dangolloFestival.visible)}/${result.length})`}
+ regions.querySelectorAll('[data-festival-region]').forEach(b=>b.onclick=()=>{dangolloFestival.region=b.dataset.festivalRegion;dangolloFestival.visible=10;festivalRender()});
+ statuses.querySelectorAll('[data-festival-status]').forEach(b=>b.onclick=()=>{dangolloFestival.status=b.dataset.festivalStatus;dangolloFestival.visible=10;festivalRender()});
+ list.querySelectorAll('[data-festival-id]').forEach(b=>b.onclick=()=>festivalDetail(b.dataset.festivalId));
+}
+async function festivalLoad(force=false){
+ if(dangolloFestival.loading)return;
+ if(!force&&dangolloFestival.loadedAt&&Date.now()-dangolloFestival.loadedAt<10*60000){festivalRender();return}
+ dangolloFestival.loading=true;dangolloFestival.error='';festivalRender();
+ try{
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10500);
+  let res;try{res=await fetch('/api/festivals',{signal:controller.signal})}finally{clearTimeout(timer)}
+  const data=await res.json();
+  if(!res.ok)throw new Error(data.message||'축제 정보를 조회하지 못했습니다.');
+  dangolloFestival.items=Array.isArray(data.items)?data.items:[];
+  dangolloFestival.loadedAt=Date.now();dangolloFestival.error='';
+ }catch(e){
+  dangolloFestival.error=e.message||'축제 정보 조회에 실패했습니다.';
+  if(!dangolloFestival.items.length&&$('festivalItems'))$('festivalItems').innerHTML='<a target="_blank" rel="noopener noreferrer" href="https://search.naver.com/search.naver?query=%EA%B0%80%EB%B3%BC%EB%A7%8C%ED%95%9C%20%EC%B6%95%EC%A0%9C">네이버에서 현재 축제 검색하기 ↗</a>';
+ }finally{dangolloFestival.loading=false;festivalRender()}
+}
+function festivalOpen(){
+ closeWhereTo();closeBottomPanels();$('festivalModal')?.classList.remove('hidden');
+ festivalRender();void festivalLoad();
+}
+function festivalClose(toWhere=true){$('festivalDetailModal')?.classList.add('hidden');$('festivalModal')?.classList.add('hidden');if(toWhere)openWhereTo()}
+function festivalDetail(id){
+ const x=dangolloFestival.items.find(y=>String(y.id)===String(id));if(!x)return;
+ const body=$('festivalDetailBody');if(!body)return;
+ const query=encodeURIComponent(x.name+' '+x.address.split(' ').slice(0,2).join(' '));
+ const naver='https://search.naver.com/search.naver?query='+query;
+ const reviews='https://search.naver.com/search.naver?where=view&query='+encodeURIComponent(x.name+' 방문 후기');
+ const valid=pointValid({lat:x.lat,lng:x.lng});
+ body.innerHTML=`<header class="festival-header"><button id="festivalDetailBack" type="button" aria-label="축제 목록으로">‹</button><b>축제 상세정보</b><button id="festivalDetailClose" type="button" aria-label="닫기">×</button></header>${x.image?`<img class="festival-detail-image" src="${festivalSafe(x.image)}" alt="${festivalSafe(x.name)} 대표 이미지" referrerpolicy="no-referrer">`:''}<h2 class="festival-detail-title">${festivalSafe(x.name)}</h2><span class="festival-tag ${festivalIsActive(x)?'':'upcoming'}">${festivalIsActive(x)?'진행중':'진행예정'}</span><div class="festival-detail-facts"><div>📅 ${festivalDate(x.start)} ~ ${festivalDate(x.end)}</div><div>📍 ${festivalSafe(x.address||'주소 미확인')}</div>${x.tel?`<div>☎ ${festivalSafe(x.tel)}</div>`:''}<div>자료 제공: 한국관광공사</div></div><div class="festival-detail-actions"><a href="${naver}" target="_blank" rel="noopener noreferrer">네이버에서 보기 ↗</a><a href="${reviews}" target="_blank" rel="noopener noreferrer">방문 후기 ↗</a><button id="festivalDetailMap" type="button" ${valid?'':'disabled'}>지도에서 위치 확인</button><button id="festivalDetailRoute" type="button" ${valid?'':'disabled'}>길안내 선택</button></div><p class="festival-source">사진과 일정은 한국관광공사 자료입니다. 네이버 평점·리뷰 수는 수집하거나 임의 표시하지 않습니다.</p>`;
+ $('festivalDetailModal')?.classList.remove('hidden');
+ $('festivalDetailBack').onclick=()=>{$('festivalDetailModal').classList.add('hidden')};
+ $('festivalDetailClose').onclick=()=>festivalClose();
+ $('festivalDetailMap').onclick=()=>festivalMapPreview(x);
+ $('festivalDetailRoute').onclick=()=>{festivalClose(false);cancelAutoStart();void chooseDestination({name:x.name,address:x.address,lng:x.lng,lat:x.lat},{autoGuide:false})};
+}
+function festivalMapPreview(x){
+ if(!pointValid({lat:x.lat,lng:x.lng})||!state.map){toast('정확한 축제 지도 위치가 없습니다.');return}
+ cancelAutoStart();dangolloFestival.returnMap=true;festivalClose(false);setView('home');setHomeSheetCollapsed(true);
+ state.whereMapPreviewActive=true;state.whereMapPreviewReturn=false;
+ try{state.whereMapPreviewMarker?.remove()}catch{}
+ try{
+  const pin=document.createElement('div');pin.className='where-map-preview-pin';pin.innerHTML='<svg viewBox="0 0 40 52" aria-hidden="true"><path d="M20 2C10 2 3 10 3 20c0 13 17 29 17 29s17-16 17-29C37 10 30 2 20 2Z" fill="#24815b" stroke="white" stroke-width="3"/><circle cx="20" cy="20" r="7" fill="white"/></svg>';
+  state.whereMapPreviewMarker=new maplibregl.Marker({element:pin,anchor:'bottom'}).setLngLat([x.lng,x.lat]).addTo(state.map);
+ }catch{}
+ showMapPlacePrompt({name:x.name,address:x.address,lat:x.lat,lng:x.lng});
+ if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').textContent='축제 목록으로';
+ if($('mapPlacePromptGo'))$('mapPlacePromptGo').textContent='길안내 선택';
+ try{state.map.easeTo({center:[x.lng,x.lat],zoom:15.5,pitch:0,bearing:0,duration:450})}catch{}
+}
+function festivalBind(){
+ $('whereToFestivalBtn')?.addEventListener('click',festivalOpen);
+ $('festivalClose')?.addEventListener('click',()=>festivalClose());
+ $('festivalBack')?.addEventListener('click',()=>festivalClose());
+ $('festivalSort')?.addEventListener('change',e=>{dangolloFestival.sort=e.target.value;dangolloFestival.visible=10;festivalRender()});
+ $('festivalMore')?.addEventListener('click',()=>{dangolloFestival.visible+=10;festivalRender()});
+ $('festivalModal')?.addEventListener('click',e=>{if(e.target===$('festivalModal'))festivalClose()});
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',festivalBind,{once:true});else festivalBind();

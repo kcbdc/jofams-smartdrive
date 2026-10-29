@@ -57,7 +57,7 @@
 <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.27.36" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.27.42" />
 </head>
 <body>
   <main id="app">
@@ -802,12 +802,29 @@
         <header><b>어디갈까</b><button id="whereToClose" class="circle-btn" type="button"><span data-icon="close"></span></button></header>
         <div class="where-to-location"><span data-icon="location"></span><div><b>내 주변 가맹점</b><small id="whereToLocationLabel">현재 위치 확인 중</small></div><button id="whereToRefresh" type="button">새로고침</button></div>
         <button id="whereToHotspotBtn" class="where-to-discover" type="button"><span aria-hidden="true">🍜</span><span><b>길 위의 핫플 · SNS 탐색</b><small>맛집·카페 이미지와 인스타그램·방문 후기 검색</small></span><span aria-hidden="true">›</span></button>
+        <button id="whereToFestivalBtn" class="where-to-discover festival-entry" type="button"><span aria-hidden="true">🎪</span><span><b>가볼만한 축제</b><small>전국 축제 · 사진 · 날짜 · 내 주변 · 네이버 후기</small></span><span aria-hidden="true">›</span></button>
         <div class="where-to-tabs" role="tablist" aria-label="가맹점 종류">
           <button type="button" class="active" data-where-tab="local">지역사랑상품권 가맹점</button>
           <button type="button" data-where-tab="onnuri">온누리상품권 가맹점</button>
         </div>
         <div id="whereToList" class="where-to-list"><div class="where-to-empty">현재 위치 주변 가맹점을 불러오는 중입니다.</div></div>
       </section>
+    </div>
+
+    <!-- 가볼만한 축제: TourAPI data / Naver public search links -->
+    <div id="festivalModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="가볼만한 축제">
+      <section class="simple-sheet festival-sheet">
+        <header class="festival-header"><button id="festivalBack" type="button" aria-label="뒤로가기">‹</button><b>가볼만한 축제</b><button id="festivalClose" type="button" aria-label="닫기">×</button></header>
+        <div class="festival-regions" id="festivalRegions" aria-label="지역 선택"></div>
+        <div class="festival-controls"><div class="festival-status-tabs" id="festivalStatuses" aria-label="진행 상태"></div><select id="festivalSort" aria-label="축제 정렬"><option value="recommended">추천순</option><option value="distance">거리순</option><option value="ongoing">지금 가는 순</option><option value="start">시작일순</option></select></div>
+        <p class="festival-message" id="festivalMessage" role="status" aria-live="polite">축제 정보를 확인하고 있습니다.</p>
+        <div id="festivalItems" class="festival-items"></div>
+        <button id="festivalMore" class="festival-more hidden" type="button">10개 더보기</button>
+        <p class="festival-source">축제 정보·사진: 한국관광공사 TourAPI. 날짜·운영 여부는 방문 전 주최 측에 확인하세요. 네이버 링크는 외부 검색입니다.</p>
+      </section>
+    </div>
+    <div id="festivalDetailModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="축제 상세정보">
+      <section class="simple-sheet festival-detail-sheet" id="festivalDetailBody"></section>
     </div>
 
     <!-- 저장: 장소 그룹 관리 -->
@@ -861,6 +878,6 @@
 
   <script>window.__JOFAMS_BUILD__="7.6.27.33";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.27.36"></script>
+  <script type="module" src="/app.js?v=7.6.27.42"></script>
 </body>
 </html>
