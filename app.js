@@ -3111,11 +3111,12 @@ function applyGps(pos,fly=false){
     else if(Number.isFinite(derivedSpeed)&&Number.isFinite(stateObj.speed)&&stateObj.speed>=.7)stateObj.speed=stateObj.speed*.78+derivedSpeed*.22;
   }
   if(tunnelZeroGps){
-    stateObj.speed=Math.max(
-      2.5,
+    // The browser cannot measure actual vehicle wheel speed in a GPS blackout.
+    // Retain only an evidenced previous motion estimate, never force 9km/h or more.
+    stateObj.speed=Math.max(0,
       Number(state.tunnelEntrySpeedMps)||0,
-      Number(state.lastRealSpeedMps)||0,
-      Number(state.user?.speed)||0
+      Number(state.speedEmaMps)||0,
+      Number(state.lastRealSpeedMps)||0
     );
   }
 
@@ -3394,6 +3395,7 @@ function updateGpsEstimateUi(){
   const dv=$('driveView');if(!dv)return;
   const v=state.gpsEstimated?(state.tunnelRouteLock?.active?'tunnel':'est'):'';
   if(v){if(dv.dataset.gps!==v)dv.dataset.gps=v}else if(dv.dataset.gps)delete dv.dataset.gps;
+  const speedLabel=$('speedPanel')?.querySelector('.speed-source-label');if(speedLabel)speedLabel.textContent=v?'추정속도':'현재속도';
 }
 /* 7.6.11.3 전방 터널 사전 안내: 터널 시작 650m 이내에서 한 번(터널별) 알려준다. */
 function announceTunnelAhead(idx){
@@ -5000,16 +5002,20 @@ function remainingWaypointsForReroute(){
   return (state.waypoints||[]).filter(pointValid).filter(w=>nearestIndex(w.lng,w.lat,g)>idx+8);
 }
 async function liveRouteRefresh(){
-  if(state.routeMode==='walk'||!state.tripStartedAt||!state.user||!state.destination||state.gpsEstimated||Date.now()-state.lastLiveRouteAt<65000)return;state.lastLiveRouteAt=Date.now();
+  if(state.routeMode==='walk'||!state.tripStartedAt||!state.user||!state.destination||state.gpsEstimated||Date.now()-state.lastLiveRouteAt<40000)return;state.lastLiveRouteAt=Date.now();
   try{
     const spec=routePreferenceSpec(),r=await routeRequest(spec.priority,spec.avoid,remainingWaypointsForReroute());if(!r?.geometry?.length||!state.route)return;
     const old=state.route,total=state.routeCumulative.at(-1)||old.distance||1,done=state.routeCumulative[state.currentRouteIndex]||0,remainingRatio=Math.max(0,Math.min(1,(total-done)/total)),oldRemain=Number(old.duration||0)*remainingRatio,newEta=Number(r.duration||0);
-    mergeFreshTraffic(old,r);drawRoute(old,{fit:false});renderTrafficRouteRail(state.currentRouteIndex);updateTrafficStatus((old.roadSegments||[]).find(x=>state.currentRouteIndex>=x.startIndex&&state.currentRouteIndex<=x.endIndex));
+    mergeFreshTraffic(old,r);
+    state.lastLiveTrafficUpdatedAt=Date.now();
+    // Update only the traffic overlay: rewriting the route source could relayout camera symbols.
+    try{const src=state.map?.getSource?.('route-traffic');if(src)src.setData(buildTrafficGeoJson(old));}catch(err){console.warn('traffic overlay update',err)}
+    renderTrafficRouteRail(state.currentRouteIndex);updateTrafficStatus((old.roadSegments||[]).find(x=>state.currentRouteIndex>=x.startIndex&&state.currentRouteIndex<=x.endIndex));
     const improvement=oldRemain-newEta,relative=oldRemain>0?improvement/oldRemain:0;
     if(improvement>=120||relative>=.10&&improvement>=60){state.route={...r,_label:'실시간 경로',_character:state.character};state.routeCumulative=buildCumulative(state.route);invalidateDrivePoiRoute();state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};drawRoute(state.route,{fit:false});await loadSafetyEvents(state.route);updateDriving(true);toast('실시간 교통을 반영해 더 빠른 경로로 변경했습니다.')}
   }catch(e){console.warn('live route refresh failed',e)}
 }
-function startLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.lastLiveRouteAt=0;setTimeout(liveRouteRefresh,12000);state.liveRouteTimer=setInterval(liveRouteRefresh,75000)}
+function startLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.lastLiveRouteAt=0;setTimeout(liveRouteRefresh,12000);state.liveRouteTimer=setInterval(liveRouteRefresh,45000)}
 function stopLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.liveRouteTimer=0}
 
 function markMapManualExplore(active=true){
@@ -5767,6 +5773,7 @@ function updateProgressUI(idx,force=false){
   const limit=effectiveSpeedLimit(idx,seg);
   const speed=Math.max(0,Math.round((state.user.speed||0)*3.6));
   $('currentSpeed').textContent=speed;$('speedPanel').classList.remove('hidden');
+  const speedLabel=$('speedPanel')?.querySelector('.speed-source-label');if(speedLabel)speedLabel.textContent=state.gpsEstimated?'추정속도':'현재속도';
 
   const safetyCandidates=computeSafetyCandidates(idx);
   renderSpeedOrSignBadge(limit,safetyCandidates);
@@ -6332,11 +6339,17 @@ let fixedCameraVisibleSource=null;
 function updateSafetyMarkerVisibility(){
   const source=state.map?.getSource?.(ROUTE_CAMERA_SOURCE);
   if(!source)return;
+  const running=Boolean(state.tripStartedAt&&state.routeMode==='car'&&!$('driveView')?.classList.contains('hidden'));
   const current=finiteOrNull(state.user?.routeDistance);
-  // A fixed set of route cameras; movement does not recreate the MapLibre source every GPS tick.
-  // A small backward buffer avoids symbol removal/reappearance caused by map-matching jitter.
-  const visible=(!state.tripStartedAt||state.routeMode!=='car'||$('driveView')?.classList.contains('hidden')||state.wrongDirectionActive)?[]:
-    fixedRouteCameraFeatures.filter(f=>current===null||(Number(f.properties.routeM)>=current-85&&Number(f.properties.routeM)<=current+3200));
+  // Hysteresis 250m / 500m: once a camera is visible, GPS jitter does not repeatedly
+  // cross the enter threshold and remove/reinsert the symbol.
+  const wasVisible=new Set((fixedCameraVisibleSignature||'').split('|'));
+  const visible=running?fixedRouteCameraFeatures.filter(f=>{
+    const m=Number(f.properties.routeM),key=String(f.properties.icon)+':'+String(Math.round(m));
+    const retained=wasVisible.has(key);
+    if(current===null)return true;
+    return m>=current-(retained?250:100)&&m<=current+(retained?3500:2900);
+  }):[];
   const signature=visible.map(f=>String(f.properties.icon)+':'+String(Math.round(Number(f.properties.routeM)))).join('|');
   if(source===fixedCameraVisibleSource&&signature===fixedCameraVisibleSignature)return;
   try{
@@ -6348,7 +6361,7 @@ function updateSafetyMarkerVisibility(){
 function clearSafetyMarkers(){
   // 이전 버전 HTML 마커도 제거해 겹침을 근본적으로 차단한다.
   for(const m of state.safetyMarkers||[])try{m.remove()}catch{}
-  state.safetyMarkers=[];fixedRouteCameraFeatures=[];fixedCameraVisibleSignature='';fixedCameraVisibleSource=null;
+  state.safetyMarkers=[];fixedRouteCameraFeatures=[];fixedCameraVisibleSignature='';fixedCameraVisibleSource=null;state.fixedCameraDatasetSignature='';
   try{state.map?.getSource?.(ROUTE_CAMERA_SOURCE)?.setData(routeCameraGeojson())}catch{}
 }
 function cameraIconImageData(speed){
@@ -6514,7 +6527,8 @@ function routeSnappedCameraItems(items){
 
 function renderSafetyMarkers(){
   if(!state.map||!maplibregl?.Marker)return;
-  clearSafetyMarkers();
+  // Keep existing symbols while recomputing the same route. Camera sources are rebuilt
+  // only when the actual camera dataset changes or navigation ends.
   if(!state.tripStartedAt||state.routeMode!=='car'||$('driveView')?.classList.contains('hidden')||state.wrongDirectionActive)return;
   const skip=['speed_limit','tunnel','curve_left','curve_right','double_curve','chronic_congestion'];
   /* 7.6.11.5 지도에는 안내 팝업이 뜨는 신호·속도·구간단속 카메라만 표시한다(이동식/버스전용차로 및 카메라 외 안전 마커 제거). */
@@ -6552,9 +6566,13 @@ function renderSafetyMarkers(){
       properties:{routeM:Number(e.__routeM),speed:displayedSpeed,icon:ROUTE_CAMERA_PREFIX+displayedSpeed,
         cameraType:String(e.type||'')}};
   });
-  fixedRouteCameraFeatures=features;
-  fixedCameraVisibleSignature='';
-  if(ensureFixedCameraLayer(features))updateSafetyMarkerVisibility();
+  const nextSignature=features.map(f=>`${f.geometry.coordinates.join(',')}:${f.properties.icon}:${Math.round(f.properties.routeM)}`).join('|');
+  if(nextSignature!==state.fixedCameraDatasetSignature){
+    state.fixedCameraDatasetSignature=nextSignature;
+    fixedRouteCameraFeatures=features;
+    fixedCameraVisibleSignature='';
+  }
+  if(ensureFixedCameraLayer(fixedRouteCameraFeatures))updateSafetyMarkerVisibility();
 
 
 }
@@ -6779,9 +6797,17 @@ function renderTrafficRouteRail(idx=state.currentRouteIndex){
   const box=$('trafficRouteSegments');if(!box)return;
   const road=state.route?.roadSegments||[];
   const future=road.filter(s=>Number(s.endIndex)>=idx).slice(0,24);
-  if(!future.length){box.innerHTML='<i class="unknown"></i>';return}
+  if(!future.length){if(box.dataset.trafficSignature!=='none'){box.innerHTML='<i class="unknown"></i>';box.dataset.trafficSignature='none'};return}
   const total=future.reduce((n,s)=>n+Math.max(1,(Number(s.endIndex)||0)-Math.max(idx,Number(s.startIndex)||0)),0)||1;
-  box.innerHTML=future.map(s=>{const w=Math.max(1,(Number(s.endIndex)||0)-Math.max(idx,Number(s.startIndex)||0));const key=trafficCssKey(s);return `<i class="${key}" style="flex:${Math.max(.25,w/total*10)}" title="${escapeHtml(trafficClassFromValues(s.trafficSpeed,s.trafficState).label)}"></i>`}).join('');
+  // The rail reflects fresh routing traffic, not a random palette. Avoid repainting unchanged DOM every GPS tick.
+  const pieces=future.map(s=>{const w=Math.max(1,(Number(s.endIndex)||0)-Math.max(idx,Number(s.startIndex)||0));const key=trafficCssKey(s);return {key,weight:Math.max(.25,w/total*10),label:trafficClassFromValues(s.trafficSpeed,s.trafficState).label}});
+  const signature=pieces.map(v=>`${v.key}:${Math.round(v.weight*20)}`).join('|');
+  if(box.dataset.trafficSignature!==signature){
+    box.innerHTML=pieces.map(v=>`<i class="${v.key}" style="flex:${v.weight}" title="${escapeHtml(v.label)}"></i>`).join('');
+    box.dataset.trafficSignature=signature;
+  }
+  const age=Date.now()-Number(state.lastLiveTrafficUpdatedAt||0);
+  box.setAttribute('aria-label',`경로 교통상황 · ${state.lastLiveTrafficUpdatedAt?(age<120000?'최근 갱신':'재조회 필요'):'경로 탐색 기준'} · 제공 구간 정보`);
 }
 function upcomingSpeedCamera(idx=state.currentRouteIndex){
   const cameraTypes=new Set(['speed_camera','signal_speed_camera','traffic_camera']);let best=null;
@@ -8953,7 +8979,7 @@ async function openAdminMode(){richInitEditors();
 }
 function closeAdminMode(){$('adminModal')?.classList.add('hidden')}
 function switchAdminTab(tab){document.querySelectorAll('[data-admin-tab]').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===tab));['notices','content','inquiries','onnuri','shorts'].forEach(k=>$(`admin${k[0].toUpperCase()+k.slice(1)}Panel`)?.classList.toggle('hidden',k!==tab));if(tab==='notices')loadAdminNotices();if(tab==='content')loadAdminContent();if(tab==='inquiries')loadAdminInquiries();if(tab==='onnuri')loadOnnuriBatchStatus();if(tab==='shorts')loadAdminShorts()}
-async function adminContentRequest(type,method='GET',body=null){const u=new URL('/api/content',location.origin);u.searchParams.set('type',type);const opt={method,headers:{'content-type':'application/json'}};if(body)opt.body=JSON.stringify(body);const r=method==='GET'?await fetch(u):await authFetch(u,opt);const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`HTTP ${r.status}`);return d}
+async function adminContentRequest(type,method='GET',body=null){const u=new URL('/api/content',location.origin);u.searchParams.set('type',type);const opt={method,headers:{'content-type':'application/json'}};if(body)opt.body=JSON.stringify(body);const r=method==='GET'?await fetch(u,{cache:'no-store',headers:{'cache-control':'no-cache'}}):await authFetch(u,opt);const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`HTTP ${r.status}`);return d}
 async function loadAdminNotices(){try{const d=await adminContentRequest('notices');state.adminNotices=d.items||[];const box=$('adminNoticeList');box.innerHTML=state.adminNotices.length?state.adminNotices.map(x=>`<article class="admin-notice-card"><details><summary><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.createdAt||'')}</small></summary><div class="dangollo-rich-copy">${richContentHTML(x.body)}</div></details><button data-admin-notice-delete="${escapeHtml(String(x.id))}">삭제</button></article>`).join(''):'<div class="inquiry-empty">등록된 공지가 없습니다.</div>';box.querySelectorAll('[data-admin-notice-delete]').forEach(b=>b.onclick=()=>deleteAdminNotice(b.dataset.adminNoticeDelete))}catch{toast('공지 목록을 불러오지 못했습니다.')}}
 function richLengthInfo(id){
  const content=richEditorValue(id);
@@ -8973,10 +8999,15 @@ async function saveAdminNotice(){
  const btn=$('adminNoticeSaveBtn');btn.disabled=true;btn.textContent='저장 및 본문 확인 중…';
  try{
   const posted=await adminContentRequest('notices','POST',{title,body});
-  const retrieved=await adminContentRequest('notices','GET');
-  const items=Array.isArray(retrieved.items)?retrieved.items:[];
-  const saved=posted?.item?.id!=null?items.find(x=>String(x.id)===String(posted.item.id)):
-    [...items].reverse().find(x=>noticeResponseMatches(x,title,body))||[...items].reverse().find(x=>String(x.title||'')===title);
+  let saved=null;
+  for(let attempt=0;attempt<4;attempt++){
+   if(attempt)await new Promise(resolve=>setTimeout(resolve,attempt*650));
+   const retrieved=await adminContentRequest('notices','GET');
+   const items=Array.isArray(retrieved.items)?retrieved.items:[];
+   saved=posted?.item?.id!=null?items.find(x=>String(x.id)===String(posted.item.id)):
+     [...items].reverse().find(x=>noticeResponseMatches(x,title,body))||[...items].reverse().find(x=>String(x.title||'')===title);
+   if(noticeResponseMatches(saved,title,body))break;
+  }
   if(!noticeResponseMatches(saved,title,body)){
    // Preserve editor content so it can be recovered if the API or DB truncates the value.
    const found=saved?String(saved.body||'').length:'확인 불가';
