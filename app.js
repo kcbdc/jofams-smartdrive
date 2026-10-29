@@ -5070,7 +5070,7 @@ function stopNavigation(){
   releaseNavigationWakeLock();
   for(const fn of [stopDestinationCycle,stopLiveRouteRefresh,stopAR,stopWatch,cancelAutoStart,clearRouteLayer,clearSafetyMarkers,hideSafetyAlert]){try{fn?.()}catch(e){console.warn('navigation cleanup failed',e)}}
   try{$('driveMenu')?.classList.add('hidden')}catch{}
-  state.safetyEvents=[];resetSectionSpeedState();state.tunnelRouteLock={active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0};state.route=null;state.routeOptions=[];state.waypoints=[];renderRouteWaypoints();
+  state.safetyEvents=[];resetSectionSpeedState();state.sectionSpeedResumeBlocked=false;state.tunnelRouteLock={active:false,startIndex:-1,endIndex:-1,routeDistance:null,lastAt:0};state.route=null;state.routeOptions=[];state.waypoints=[];renderRouteWaypoints();
   try{if(state.destMarker){state.destMarker.remove();state.destMarker=null}}catch{state.destMarker=null}
   try{if(state.originMarker){state.originMarker.remove();state.originMarker=null}}catch{state.originMarker=null}
   const edge=document.getElementById('dangolloDestinationEdge');if(edge)edge.hidden=true;
@@ -5387,10 +5387,21 @@ function setSectionOverspeedFlash(on){
 function resetSectionSpeedState(){
   setSectionOverspeedFlash(false);
   state.sectionSpeedState=null;
-  $('sectionSpeedPanel')?.classList.add('hidden');
-  $('driveView')?.classList.remove('has-section-speed');
+  const panel=$('sectionSpeedPanel');
+  if(panel){panel.classList.add('hidden');panel.classList.remove('over','nearing-end');delete panel.dataset.sectionState;}
+  const drive=$('driveView');
+  if(drive){drive.classList.remove('has-section-speed');if(drive.dataset.pop==='section')drive.dataset.pop='none';}
 }
 function updateSectionAverageSpeed(idx){
+  // 모의주행 종료 후 가상의 구간단속 상태가 실주행 HUD에 되살아나는 것을 방지한다.
+  // 신뢰 가능한 실제 GPS 이동(출발 잠금 해제)이 확인돼야만 안내를 다시 허용한다.
+  if(!state.tripStartedAt || (!state.simulationActive && state.sectionSpeedResumeBlocked)){
+    if(!state.simulationActive && state.sectionSpeedResumeBlocked &&
+       state.navigationStartReleased && !state.gpsEstimated && !state.drivePositionUncertain &&
+       Number(state.user?.speed)>0.8){
+      state.sectionSpeedResumeBlocked=false;
+    }else{resetSectionSpeedState();return;}
+  }
   /* 구간단속은 시작하면 종점까지 같은 상태로 안내한다. 경로가 재계산돼 거리 기준이 바뀌거나,
      이벤트 id가 바뀌거나, GPS/터널로 잠시 매칭이 끊겨도 중간에 끝내거나 평균속도를 초기화하지 않는다.
      평균속도는 경로 기준이 아닌 '누적 주행거리(오도미터)'로 계산해 경로가 바뀌어도 이어진다. */
@@ -6643,6 +6654,17 @@ function stopRouteSimulation({resumeGps=true}={}){
   state.simulationLastAt=0;
   state.simulationDistance=null;
 
+  // 모의주행 상태에서 생성된 구간단속 카드/과속 붉은 오버레이를 즉시 완전 해제.
+  // updateDriving()이 오래된 모의주행 위치로 다시 렌더링하지 않도록 잠금.
+  if(wasActive){
+    state.sectionSpeedResumeBlocked=true;
+    resetSectionSpeedState();
+    $('safetyAlert')?.classList.add('hidden');
+    const flash=$('overspeedFlash');if(flash){flash.classList.remove('active');flash.classList.add('hidden');}
+    const avgFlash=document.getElementById('sectionAvgOverspeedFlash');if(avgFlash)avgFlash.classList.remove('on');
+    state.activeSafetyId=null;
+  }
+
   // 2) GPS 응답을 기다리지 않고 모의주행 직전 실제 위치로 즉시 되돌린다.
   if(wasActive&&state.tripStartedAt){
     const real=state.lastRawFix;
@@ -6870,6 +6892,8 @@ function startRouteSimulation(){
 
   stopWatch();
   stopDeadReckoning();
+  state.sectionSpeedResumeBlocked=false;
+  resetSectionSpeedState();
   state.simulationActive=true;
   state.simulationRouteCheckAt=0;
   drawRoute(state.route,{fit:false});

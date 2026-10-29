@@ -4461,3 +4461,8 @@ body:has(#driveView:not(.hidden)) .maplibregl-marker.character-car-marker,
 body:has(#driveView:not(.hidden)) .maplibregl-marker.character-car-marker img{opacity:1!important;filter:none!important}
 /* Remove perpetual bob/blur from the car; actual position is driven only by verified route coordinates. */
 body:has(#driveView:not(.hidden)) .character-car-marker.rear-version.jofams-car-moving img{animation:none!important}
+
+/* v7.6.27.35: section camera HUD is above driving overlays; hidden always wins. */
+html body #app #driveView #sectionSpeedPanel:not(.hidden){z-index:99!important;isolation:isolate!important;}
+html body #app #driveView #sectionSpeedPanel.hidden{display:none!important;visibility:hidden!important;pointer-events:none!important;}
+html body #app #driveView:not(.has-section-speed) #sectionSpeedPanel{display:none!important;}
