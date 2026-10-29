@@ -4489,3 +4489,10 @@ html body #app #driveView .maneuver-stack{z-index:78!important}
 .dangollo-alt-choice-label{font-size:17px;font-weight:800;white-space:nowrap}
 .dangollo-alt-choice-detail{font-size:12px;color:#53687b;text-align:right}
 .dangollo-alt-safety{font-size:12px;line-height:1.5;color:#82909a;margin:15px 2px 0}
+
+/* 7.6.27.39 — simulation exit returns to the SAME pre-departure drive map, not route selection. */
+#driveView .departure-start-btn{display:none!important}
+#driveView.departure-waiting .departure-start-btn{display:flex!important;position:absolute;left:50%;bottom:calc(var(--safeB, 0px) + 164px);transform:translateX(-50%);z-index:1600;align-items:center;justify-content:center;gap:8px;padding:12px 26px;min-height:45px;border:1px solid rgba(255,255,255,.75);border-radius:999px;background:#137c59;color:#fff;font-weight:800;font-size:15px;box-shadow:0 5px 16px rgba(0,55,39,.25);white-space:nowrap;cursor:pointer}
+#driveView.departure-waiting #sectionSpeedPanel,#driveView.departure-waiting #safetyAlert,#driveView.departure-waiting #overspeedFlash,#driveView.departure-waiting #laneAssistLayer{display:none!important}
+#driveView.departure-waiting .character-car-marker,#driveView.departure-waiting .character-car-marker img{opacity:1!important;filter:none!important;animation:none!important}
+@media(max-height:650px){#driveView.departure-waiting .departure-start-btn{bottom:calc(var(--safeB,0px) + 123px);padding:9px 20px}}
