@@ -4533,3 +4533,119 @@ html body #app #driveView .maneuver-stack{z-index:78!important}
 #festivalModal{z-index:1250!important}#festivalDetailModal{z-index:1260!important}
 .festival-detail-actions button:disabled{opacity:.48;cursor:not-allowed}
 @media(max-width:390px){.festival-card{grid-template-columns:88px minmax(0,1fr)}.festival-card>img,.festival-photo-placeholder{width:88px;height:94px}.festival-status-tabs button{padding:8px 7px}}
+
+/* v7.6.27.43 — festival sheet mobile-width / photo overflow repair.
+   Prevent large TourAPI photos from determining a CSS-grid track's intrinsic width. */
+#festivalModal,#festivalDetailModal{overflow:hidden!important}
+#festivalModal .festival-sheet,#festivalDetailModal .festival-detail-sheet{
+  box-sizing:border-box!important;
+  position:absolute!important;
+  top:max(8px,env(safe-area-inset-top,0px))!important;
+  bottom:calc(max(8px,env(safe-area-inset-bottom,0px)) + 8px)!important;
+  left:8px!important;right:8px!important;
+  margin:0 auto!important;
+  width:calc(100% - 16px)!important;
+  max-width:620px!important;
+  min-width:0!important;
+  height:auto!important;
+  max-height:none!important;
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  padding:0 14px calc(30px + env(safe-area-inset-bottom,0px))!important;
+  border-radius:22px!important;
+}
+#festivalModal .festival-header,#festivalDetailModal .festival-header{
+  min-width:0!important;
+  margin:0 -14px 12px!important;
+  padding:10px 14px!important;
+  min-height:58px!important;
+}
+#festivalModal .festival-regions{max-width:100%!important;min-width:0!important;overscroll-behavior-x:contain}
+#festivalModal .festival-controls{width:100%!important;min-width:0!important;flex-wrap:wrap!important;gap:7px!important}
+#festivalModal .festival-status-tabs{max-width:100%!important;flex:1 1 auto!important;min-width:0!important}
+#festivalModal #festivalSort{flex:0 0 104px!important;max-width:104px!important}
+#festivalModal .festival-message{overflow-wrap:anywhere!important}
+#festivalModal .festival-items{width:100%!important;min-width:0!important;max-width:100%!important;display:grid!important;grid-template-columns:minmax(0,1fr)!important;overflow:hidden!important}
+#festivalModal .festival-card{
+  box-sizing:border-box!important;
+  display:grid!important;
+  grid-template-columns:96px minmax(0,1fr)!important;
+  align-items:center!important;
+  gap:12px!important;
+  width:100%!important;
+  max-width:100%!important;
+  min-width:0!important;
+  min-height:114px!important;
+  margin:0!important;
+  padding:10px!important;
+  overflow:hidden!important;
+  text-align:left!important;
+  white-space:normal!important;
+}
+#festivalModal .festival-card-thumb{
+  display:block!important;
+  box-sizing:border-box!important;
+  width:96px!important;
+  height:96px!important;
+  min-width:0!important;
+  max-width:96px!important;
+  overflow:hidden!important;
+  border-radius:12px!important;
+  background:#e8f2f0!important;
+}
+#festivalModal .festival-card-thumb img.festival-card-image,
+#festivalModal .festival-card-thumb .festival-photo-placeholder{
+  display:block!important;
+  width:100%!important;
+  max-width:100%!important;
+  min-width:0!important;
+  height:100%!important;
+  max-height:100%!important;
+  aspect-ratio:1 / 1!important;
+  object-fit:cover!important;
+  object-position:center!important;
+  border-radius:0!important;
+  margin:0!important;
+  float:none!important;
+  position:static!important;
+}
+#festivalModal .festival-card-thumb .festival-photo-placeholder{display:grid!important;place-items:center!important;font-size:30px!important}
+#festivalModal .festival-card-body{
+  display:flex!important;
+  flex-direction:column!important;
+  justify-content:center!important;
+  align-items:flex-start!important;
+  gap:4px!important;
+  min-width:0!important;
+  max-width:100%!important;
+  overflow:hidden!important;
+  white-space:normal!important;
+}
+#festivalModal .festival-card-title{
+  display:-webkit-box!important;
+  -webkit-line-clamp:2!important;
+  -webkit-box-orient:vertical!important;
+  overflow:hidden!important;
+  line-height:1.35!important;
+  font-size:14px!important;
+  overflow-wrap:anywhere!important;
+  max-width:100%!important;
+}
+#festivalModal .festival-card-body small{
+  display:block!important;
+  max-width:100%!important;
+  font-size:11px!important;
+  line-height:1.4!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+#festivalDetailModal .festival-detail-image{display:block!important;max-width:100%!important;height:auto!important;max-height:220px!important;object-fit:cover!important}
+@media(max-width:365px){
+  #festivalModal .festival-card{grid-template-columns:82px minmax(0,1fr)!important;gap:9px!important;padding:8px!important;min-height:100px!important}
+  #festivalModal .festival-card-thumb{width:82px!important;max-width:82px!important;height:82px!important}
+  #festivalModal .festival-card-title{font-size:13px!important}
+  #festivalModal .festival-status-tabs button{padding:7px 7px!important;font-size:11px!important}
+}
