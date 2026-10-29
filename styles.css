@@ -4496,3 +4496,12 @@ html body #app #driveView .maneuver-stack{z-index:78!important}
 #driveView.departure-waiting #sectionSpeedPanel,#driveView.departure-waiting #safetyAlert,#driveView.departure-waiting #overspeedFlash,#driveView.departure-waiting #laneAssistLayer{display:none!important}
 #driveView.departure-waiting .character-car-marker,#driveView.departure-waiting .character-car-marker img{opacity:1!important;filter:none!important;animation:none!important}
 @media(max-height:650px){#driveView.departure-waiting .departure-start-btn{bottom:calc(var(--safeB,0px) + 123px);padding:9px 20px}}
+
+/* 7.6.27.40: 출발 대기 지도에는 별도 시작 버튼 및 차로 안내 레이어를 노출하지 않음. */
+#driveView.departure-waiting .departure-start-btn,
+#driveView.departure-waiting #laneAssistLayer {display:none!important;}
+
+/* v7.6.27.41: non-navigating merchant location preview */
+.where-map-preview-pin{width:40px;height:52px;filter:drop-shadow(0 4px 7px rgba(0,64,40,.28));pointer-events:none}
+.where-map-preview-pin svg{display:block;width:40px;height:52px}
+#homeView.map-expanded #mapPlacePrompt{z-index:130!important;bottom:calc(76px + var(--safeB))!important}

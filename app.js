@@ -1180,6 +1180,7 @@ async function resolveMapClickedPlace(e){
   return {name:feature?.name||'지도에서 선택한 위치',address:'지도 좌표',lng,lat};
 }
 function showMapPlacePrompt(place){
+  if(!state.whereMapPreviewActive){if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').textContent='취소';if($('mapPlacePromptGo'))$('mapPlacePromptGo').textContent='확인 · 길안내'}
   state.mapPlaceCandidate=place;
   if($('mapPlacePromptTitle'))$('mapPlacePromptTitle').textContent=place?.name||'이 위치';
   const voucher=place?.voucher;
@@ -1208,8 +1209,15 @@ async function handleHomeMapClick(e){
 }
 async function startMapPlaceNavigation(){
   const p=state.mapPlaceCandidate;if(!p)return;
-  closeMapPlacePrompt();setHomeSheetCollapsed(false);await chooseDestination(p,{autoGuide:true});
+  const fromWhere=Boolean(state.whereMapPreviewActive);
+  closeMapPlacePrompt();
+  clearWhereMapPreview();state.whereMapPreviewReturn=false;
+  setHomeSheetCollapsed(false);
+  // Only this explicit confirmation may initiate destination selection.
+  await chooseDestination(p,{autoGuide:!fromWhere});
+  if(fromWhere)cancelAutoStart(); // where-to map preview never auto-starts guidance
 }
+
 
 
 function clearHomeCameraMarkers(){
@@ -1649,35 +1657,51 @@ function renderWhereToList(){
     }
   };});
 }
-function focusOnnuriItem(item){
-  const lng=Number(item?.lng??item?.lon??item?.longitude??item?.x),lat=Number(item?.lat??item?.latitude??item?.y);
-  if(!state.map||!Number.isFinite(lng)||!Number.isFinite(lat))return;
-  state.onnuriFocus={key:onnuriFocusKeyOf(item),at:Date.now()};
+/* v7.6.27.41: '지도에서 보기' means preview ONLY.  Never select a
+   destination, calculate a route or start guidance without an explicit tap. */
+function previewWhereMerchantOnMap(item,type){
+  const lng=Number(item?.lng??item?.lon??item?.longitude??item?.x);
+  const lat=Number(item?.lat??item?.latitude??item?.y);
+  if(!pointValid({lng,lat})||!state.map){toast('가맹점의 지도 위치를 확인할 수 없습니다.',2200);return}
+  cancelAutoStart(); // previous search countdown must never start this preview
+  state.whereMapPreviewActive=true;
+  state.whereMapPreviewReturn=true;
   closeWhereTo();
-  let done=false;
-  const finish=()=>{
-    if(done)return;done=true;
-    try{if(state.onnuriData)renderOnnuriMarkers(state.onnuriData)}catch{}
-    setTimeout(()=>{try{openOnnuriStoreInfo(item)}catch{}},150);
+  setView('home');
+  setHomeSheetCollapsed(true);
+  closeMapPlacePrompt();
+  const approx=type==='onnuri'&&(item.approximate||item.precision==='market-zone'||item.precision==='admin-zone');
+  const place={
+    name:item.name||(type==='onnuri'?'온누리상품권 가맹점':'지역사랑상품권 가맹점'),
+    address:approx?(item.market||item.matchedAddress||'시장·상점가 대표 위치'):(item.matchedAddress||item.address||item.market||''),
+    lng,lat,
+    ...(type==='onnuri'?{onnuri:item}:{voucher:item})
   };
-  try{state.map.once('moveend',()=>setTimeout(finish,60))}catch{}
-  try{state.map.easeTo({center:[lng,lat],zoom:Math.max(Number(state.map.getZoom())||0,17),duration:520})}catch{}
-  setTimeout(finish,1100);
+  try{state.whereMapPreviewMarker?.remove()}catch{}
+  try{
+    const el=document.createElement('div');el.className='where-map-preview-pin';
+    el.setAttribute('aria-label','선택한 가맹점 위치');
+    el.innerHTML='<svg viewBox="0 0 40 52" aria-hidden="true"><path d="M20 2C10 2 3 10 3 20c0 13 17 29 17 29s17-16 17-29C37 10 30 2 20 2Z" fill="#13865c" stroke="white" stroke-width="3"/><circle cx="20" cy="20" r="7" fill="white"/></svg>';
+    state.whereMapPreviewMarker=new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([lng,lat]).addTo(state.map);
+  }catch(e){console.warn('[where-to] preview marker',e)}
+  // Show the decision card immediately, not after another asynchronous marker query.
+  showMapPlacePrompt(place);
+  if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').textContent='목록으로';
+  if($('mapPlacePromptGo'))$('mapPlacePromptGo').textContent='길안내 선택';
+  try{state.map.easeTo({center:[lng,lat],zoom:Math.max(Number(state.map.getZoom())||0,16.7),pitch:0,bearing:0,duration:450})}catch{}
 }
-function focusVoucherItem(item){
-  const lng=Number(item?.lng??item?.lon??item?.longitude??item?.x),lat=Number(item?.lat??item?.latitude??item?.y);
-  if(!state.map||!Number.isFinite(lng)||!Number.isFinite(lat))return;
-  state.localVoucherFocus={key:voucherFocusKeyOf(item),at:Date.now()};
-  closeWhereTo();
-  let done=false;
-  const finish=()=>{
-    if(done)return;done=true;
-    try{if(state.localVoucherData)renderLocalVoucherMarkers(state.localVoucherData)}catch{}
-    setTimeout(()=>{try{openVoucherStoreInfo(item)}catch{}},150);
-  };
-  try{state.map.once('moveend',()=>setTimeout(finish,60))}catch{}
-  try{state.map.easeTo({center:[lng,lat],zoom:Math.max(Number(state.map.getZoom())||0,17),duration:520})}catch{}
-  setTimeout(finish,1100);
+function focusOnnuriItem(item){previewWhereMerchantOnMap(item,'onnuri')}
+function focusVoucherItem(item){previewWhereMerchantOnMap(item,'local')}
+function clearWhereMapPreview(){
+  try{state.whereMapPreviewMarker?.remove()}catch{}
+  state.whereMapPreviewMarker=null;
+  state.whereMapPreviewActive=false;
+}
+function cancelMapPlacePreview(){
+  const returnToList=Boolean(state.whereMapPreviewReturn);
+  state.whereMapPreviewReturn=false;
+  closeMapPlacePrompt();clearWhereMapPreview();
+  if(returnToList)openWhereTo();
 }
 async function refreshWhereTo(){
   const label=$('whereToLocationLabel');
@@ -4796,6 +4820,13 @@ function laneAssistModel(idx){
 }
 function updateLaneGuide(idx){
   const el=$('laneAssistLayer');if(!el)return;
+  // 모의주행 종료 후 출발 대기 지도에는 차로 안내를 표시하지 않는다.
+  if(state.departurePreview&&!state.tripStartedAt&&!state.simulationActive){
+    el.classList.add('hidden');
+    $('driveView')?.classList.remove('dangollo-in-junction');
+    state.activeLaneGuideKey='';
+    return;
+  }
   const model=laneAssistModel(idx);
   if(!model){el.classList.add('hidden');$('driveView')?.classList.remove('dangollo-in-junction');state.activeLaneGuideKey='';return}
   const key=`${model.guide.id||model.guide.routeIndex}:${model.range}`;
@@ -6760,6 +6791,8 @@ function stopRouteSimulation({resumeGps=true}={}){
     // 모의주행의 안전 경보·잔상은 출발대기 화면에서 모두 제거.
     resetSectionSpeedState();hideSafetyAlert();clearSafetyMarkers();
     $('laneAssistLayer')?.classList.add('hidden');
+    $('driveView')?.classList.remove('dangollo-in-junction');
+    state.activeLaneGuideKey='';
     $('overspeedFlash')?.classList.remove('active');
     $('driveView')?.classList.remove('has-safety','has-section-speed');
     if(state.map&&firstCoord){
@@ -9233,7 +9266,7 @@ function bindHomeCriticalUI(){
 function bindUI(){
   try{bindFutureDepartureUI();}catch(e){console.warn('UI bind section 1 failed',e)}
   try{$('allowLocationBtn').onclick=requestLocationPermission;$('allowCameraBtn').onclick=requestCameraPermission;$('permissionContinueBtn').onclick=closePermissionGate;}catch(e){console.warn('UI bind section 2 failed',e)}
-  try{if($('homeSheetToggle'))$('homeSheetToggle').onclick=toggleHomeSheet;if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=closeMapPlacePrompt;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;if($('voucherBuildingClose'))$('voucherBuildingClose').onclick=closeVoucherBuildingModal;window.addEventListener('online',()=>{state.localVoucherRetryCount=0;loadLocalVoucherMap({force:true})});if($('voucherBuildingModal'))$('voucherBuildingModal').addEventListener('click',e=>{if(e.target===$('voucherBuildingModal'))closeVoucherBuildingModal()});applyIcons();if($('homeAiMicBtn'))$('homeAiMicBtn').onclick=homeAiVoiceSearch;if($('homeAiExampleBtn'))$('homeAiExampleBtn').onclick=()=>{if($('destinationInput'))$('destinationInput').value='세종시청 가는 길에 온누리 식당 5분 이내';return aiTripSearchFromHome({fromExample:true})};$('searchBtn').onclick=aiTripSearchFromHome;if($('homeAiRecentBtn'))$('homeAiRecentBtn').onclick=aiTripApplyRecent;aiTripRefreshRecent();$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')aiTripSearchFromHome()});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
+  try{if($('homeSheetToggle'))$('homeSheetToggle').onclick=toggleHomeSheet;if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').onclick=cancelMapPlacePreview;if($('mapPlacePromptGo'))$('mapPlacePromptGo').onclick=startMapPlaceNavigation;if($('voucherBuildingClose'))$('voucherBuildingClose').onclick=closeVoucherBuildingModal;window.addEventListener('online',()=>{state.localVoucherRetryCount=0;loadLocalVoucherMap({force:true})});if($('voucherBuildingModal'))$('voucherBuildingModal').addEventListener('click',e=>{if(e.target===$('voucherBuildingModal'))closeVoucherBuildingModal()});applyIcons();if($('homeAiMicBtn'))$('homeAiMicBtn').onclick=homeAiVoiceSearch;if($('homeAiExampleBtn'))$('homeAiExampleBtn').onclick=()=>{if($('destinationInput'))$('destinationInput').value='세종시청 가는 길에 온누리 식당 5분 이내';return aiTripSearchFromHome({fromExample:true})};$('searchBtn').onclick=aiTripSearchFromHome;if($('homeAiRecentBtn'))$('homeAiRecentBtn').onclick=aiTripApplyRecent;aiTripRefreshRecent();$('destinationInput').addEventListener('keydown',e=>{if(e.key==='Enter')aiTripSearchFromHome()});document.querySelectorAll('[data-query]').forEach(b=>b.onclick=()=>searchPlaces(b.dataset.query));}catch(e){console.warn('UI bind section 3 failed',e)}
   try{document.querySelectorAll('[data-character]').forEach(b=>b.onclick=()=>setCharacter(b.dataset.character));$('homeShortcut').onclick=()=>state.savedPlaces.home?chooseDestination(state.savedPlaces.home):openPlaceModal('home');$('workShortcut').onclick=()=>state.savedPlaces.work?chooseDestination(state.savedPlaces.work):openPlaceModal('work');$('homeManageBtn').onclick=()=>openPlaceModal('home');$('workManageBtn').onclick=()=>openPlaceModal('work');$('favoriteShortcut').onclick=openFavoritesList;}catch(e){console.warn('UI bind section 4 failed',e)}
   try{document.querySelectorAll('[data-my-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.myCharacter);syncCharacterUI();toast(`${characterDefs[state.character].name} 가이드로 변경했습니다.`)});}catch(e){console.warn('UI bind section 5 failed',e)}
   try{document.querySelectorAll('[data-voice-character]').forEach(b=>b.onclick=()=>{setCharacter(b.dataset.voiceCharacter);syncCharacterUI();speak(`${characterDefs[state.character].name} 음성 안내입니다.`)});}catch(e){console.warn('UI bind section 6 failed',e)}
@@ -9264,7 +9297,6 @@ function bindUI(){
     if($('fuelModalClose'))$('fuelModalClose').onclick=closeFuelModal;
     if($('fuelModal'))$('fuelModal').addEventListener('click',e=>{if(e.target===$('fuelModal'))closeFuelModal()});
   }catch(e){console.warn('fuel UI bind failed',e)}
-  $('departureStartBtn')?.addEventListener('click',()=>startNavigation());
   try{$('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=recenterAndCheckFastRoute;$('mapCompassBtn').onclick=resetDriveCompass;$('map3dBtn').onclick=e=>{e.stopPropagation();state.map3D=!state.map3D;applyDriveMapMode();toggleMapControls(true)};$('mapSatelliteBtn').onclick=e=>{e.stopPropagation();toggleMapSatellite();toggleMapControls(true)};$('mapZoomInBtn').onclick=e=>{e.stopPropagation();state.map?.zoomIn({duration:180});toggleMapControls(true)};$('mapZoomOutBtn').onclick=e=>{e.stopPropagation();state.map?.zoomOut({duration:180});toggleMapControls(true)};$('driveView').addEventListener('click',e=>{if(e.target.closest('button,input,.maneuver-stack,.drive-bottom-card,.safety-alert,.traffic-status,.vms-banner,.lane-assist-layer'))return;toggleMapControls(true)});if($('driveVoiceBtn'))$('driveVoiceBtn').onclick=startVoiceCommand;if($('driveRadioBtn'))$('driveRadioBtn').onclick=toggleRadio;if($('arOpenBtn'))$('arOpenBtn').onclick=startVoiceCommand;if($('driveArBtn'))$('driveArBtn').onclick=()=>{closeDriveMenu();startVoiceCommand()};$('routeInfoBtn').onclick=openRouteInfo;/* simulation controls are bound once by bindDangolloSimulationControls() */$('driveSearchBtn').onclick=openDriveSearch;$('routeInfoClose').onclick=closeRouteInfo;$('routeInfoModal').addEventListener('click',e=>{if(e.target===$('routeInfoModal'))closeRouteInfo()});$('driveSearchClose').onclick=closeDriveSearch;$('driveSearchSubmit').onclick=()=>searchDriveDestinations($('driveSearchInput').value);$('driveSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchDriveDestinations(e.target.value)});$('driveSearchModal').addEventListener('click',e=>{if(e.target===$('driveSearchModal'))closeDriveSearch()});document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{closeDriveMenu();openDriveAlternateRoutes()};$('driveAlternateClose')?.addEventListener('click',closeDriveAlternateRoutes);$('driveAlternateModal')?.addEventListener('click',e=>{if(e.target===$('driveAlternateModal'))closeDriveAlternateRoutes()});$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;}catch(e){console.warn('UI bind section 9 failed',e)}
   try{$('guideVolume').oninput=e=>changeVolume(e.target.value);if($('radioVolume'))$('radioVolume').oninput=e=>setRadioVolume(Number(e.target.value)/100,true);$('myGuideVolume').oninput=e=>changeVolume(e.target.value);$('myCloseBtn').onclick=closeMy;$('myModal').addEventListener('click',e=>{if(e.target===$('myModal'))closeMy()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;$('myFavoritesBtn').onclick=openFavoritesList;$('tripHistoryBtn').onclick=openTripHistory;$('noticeBtn').onclick=openNotices;if($('appPrivacyBtn'))$('appPrivacyBtn').onclick=openAppPrivacy;if($('permissionSettingBtn'))$('permissionSettingBtn').onclick=()=>toggleSettingPanel('permissionSettingBtn','permissionSettingPanel');if($('locationConsentToggle'))$('locationConsentToggle').onchange=e=>setPermissionPreference('location',e.target.checked);if($('cameraConsentToggle'))$('cameraConsentToggle').onchange=e=>setPermissionPreference('camera',e.target.checked);$('infoModalClose').onclick=closeInfoModal;$('infoModal').addEventListener('click',e=>{if(e.target===$('infoModal'))closeInfoModal()});}catch(e){console.warn('UI bind section 10 failed',e)}
   try{if($('hamburgerCloseBtn'))$('hamburgerCloseBtn').onclick=closeHamburgerMenu;if($('hamburgerMenuModal'))$('hamburgerMenuModal').addEventListener('click',e=>{if(e.target===$('hamburgerMenuModal'))closeHamburgerMenu()});}catch(e){console.warn('UI bind section 11 failed',e)}
