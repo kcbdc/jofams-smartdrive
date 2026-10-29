@@ -9129,34 +9129,52 @@ const TRAFFIC_PRESETS=[
  ['광주',35.1595,126.8526],['울산',35.5384,129.3114],['수원',37.2636,127.0286],['춘천',37.8813,127.7298],
  ['전주',35.8242,127.1480],['창원',35.2279,128.6811],['포항',36.0190,129.3435],['제주',33.4996,126.5312]
 ];
-const TRAFFIC_VIEW={areas:[],selected:0,rows:[],loading:false,lastAt:0,seq:0};
+const TRAFFIC_VIEW={areas:[],selected:0,rows:[],counts:null,total:0,stats:null,loading:false,lastAt:0,seq:0};
 function trafficReadInterests(){try{const a=JSON.parse(localStorage.getItem(TRAFFIC_FAVORITES_KEY)||'[]');return Array.isArray(a)?a.filter(x=>x&&typeof x.name==='string'&&pointValid(x)).slice(0,5):[]}catch{return[]}}
 function trafficSaveInterests(){try{localStorage.setItem(TRAFFIC_FAVORITES_KEY,JSON.stringify(TRAFFIC_VIEW.areas.slice(0,5)))}catch{}}
 function trafficUniqueAreas(a){const out=[];for(const x of a){if(!pointValid(x))continue;if(out.some(y=>y.name===x.name||Math.hypot(y.lat-x.lat,y.lng-x.lng)<.008))continue;out.push(x)}return out.slice(0,5)}
 function trafficPresetArea(name){const x=TRAFFIC_PRESETS.find(a=>a[0]===name);return x?{name:x[0],lat:x[1],lng:x[2]}:null}
+function trafficLevelClass(level){
+ const v=String(level||'');
+ if(v==='원활')return 'smooth';
+ if(v==='서행')return 'slow';
+ if(v==='지체')return 'delayed';
+ if(v==='정체'||v==='극심')return 'jam';
+ return 'slow';
+}
+function trafficChipMeta(label){
+ const map={
+  '원활':{cls:'smooth',icon:'trafficSmooth'},
+  '서행':{cls:'slow',icon:'trafficSlow'},
+  '지체':{cls:'delayed',icon:'trafficDelayed'},
+  '정체':{cls:'jam',icon:'trafficJam'}
+ };
+ return map[label]||{cls:'slow',icon:'traffic'};
+}
 function trafficDraw(){
  const root=$('trafficInterestRoot');if(!root)return;
  const areas=$('trafficAreaChips');if(areas)areas.innerHTML=TRAFFIC_VIEW.areas.map((x,i)=>`<button type="button" class="traffic-area-chip ${i===TRAFFIC_VIEW.selected?'active':''}" data-traffic-select="${i}">${escapeHtml(x.name)}</button>`).join('');
  const area=TRAFFIC_VIEW.areas[TRAFFIC_VIEW.selected];
- const h=$('trafficStatusLine');if(h)h.textContent=TRAFFIC_VIEW.loading?'실시간 교통정보를 확인하는 중입니다…':(TRAFFIC_VIEW.lastAt?`${escapeHtml(area?.name||'관심지역')} · ${new Date(TRAFFIC_VIEW.lastAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})} 조회`:'관심지역을 선택해 도로 교통상황을 확인하세요.');
+ const h=$('trafficStatusLine');if(h)h.textContent=TRAFFIC_VIEW.loading?'실시간 교통정보를 확인하는 중입니다…':(TRAFFIC_VIEW.lastAt?`${escapeHtml(area?.name||'관심지역')} · ${new Date(TRAFFIC_VIEW.lastAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})} 서버 조회 (관측시각 별도)`:'관심지역을 선택해 도로 교통상황을 확인하세요.');
  const result=$('trafficInterestResults');if(!result)return;
  if(TRAFFIC_VIEW.loading&&!TRAFFIC_VIEW.rows.length){result.innerHTML='<div class="traffic-empty">도로별 실시간 정보를 불러오는 중입니다…</div>';return}
  if(!TRAFFIC_VIEW.rows.length){result.innerHTML='<div class="traffic-empty">조회 가능한 고속도로·국도 교통정보가 없습니다. 관심지역 또는 조회 범위를 바꿔 보세요.</div>';return}
- const cnt=TRAFFIC_VIEW.rows.reduce((a,r)=>(a[r.level]=(a[r.level]||0)+1,a),{});
- const chips=['원활','서행','지체','정체'].map(n=>`<span class="traffic-summary ${n==='원활'?'smooth':n==='정체'?'jam':'slow'}">${trafficSvg('traffic')}${n} ${cnt[n]||0}</span>`).join('');
- result.innerHTML=`<div class="traffic-summary-row">${chips}</div>${TRAFFIC_VIEW.rows.map(r=>`<article class="traffic-road-row"><span class="traffic-dot ${r.level==='원활'?'smooth':r.level==='정체'?'jam':'slow'}"></span><div class="traffic-road-name"><b>${escapeHtml(r.road)}</b><small>${escapeHtml(r.direction||'주행방향 정보 없음')} · ${escapeHtml(r.at||'시각 정보 없음')}</small></div><div class="traffic-road-metric"><b>${r.speed}km/h</b><small>${escapeHtml(r.level)}</small></div></article>`).join('')}<p class="traffic-data-footnote">국가교통정보센터 제공 · 고속도로·국도 주요 구간. 소통 등급은 도로 유형별 통행속도에 따른 참고 분류이며, 실제 통제 여부를 나타내지 않습니다.</p>`;
+ const cnt=TRAFFIC_VIEW.counts||TRAFFIC_VIEW.rows.filter(r=>r.verified).reduce((a,r)=>(a[r.level]=(a[r.level]||0)+1,a),{});
+ const chips=['원활','서행','지체','정체'].map(label=>{const meta=trafficChipMeta(label);return `<span class="traffic-summary ${meta.cls}">${trafficSvg(meta.icon)}${label} ${cnt[label]||0}</span>`}).join('');
+ result.innerHTML=`<div class="traffic-summary-row">${chips}</div>${TRAFFIC_VIEW.rows.map(r=>`<article class="traffic-road-row"><span class="traffic-dot ${trafficLevelClass(r.level)}"></span><div class="traffic-road-name"><b>${escapeHtml(r.road)}</b><small>${escapeHtml(r.direction||'주행방향 정보 없음')} · ${r.at?new Date(r.at).toLocaleString('ko-KR',{timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})+' 관측':'관측시각 미제공'}</small></div><div class="traffic-road-metric"><b>${r.speed}km/h</b><small>${r.verified?escapeHtml(r.level):'시각 미확인'}</small></div></article>`).join('')}<p class="traffic-data-footnote">국가교통정보센터 제공 · 고속도로·국도. 집계는 전체 ${TRAFFIC_VIEW.total||TRAFFIC_VIEW.rows.length}개 유효 구간 기준이며 목록은 최대 60개 표시합니다. 관측시각이 없으면 현재 상태 집계에서 제외합니다. 20분 초과 자료는 제외하며 등급은 속도기준 참고 분류입니다.</p>`;
 }
+
 async function trafficFetchArea(){
  const area=TRAFFIC_VIEW.areas[TRAFFIC_VIEW.selected];if(!area)return;
- const seq=++TRAFFIC_VIEW.seq;TRAFFIC_VIEW.loading=true;TRAFFIC_VIEW.rows=[];trafficDraw();
+ const seq=++TRAFFIC_VIEW.seq;TRAFFIC_VIEW.loading=true;TRAFFIC_VIEW.rows=[];TRAFFIC_VIEW.counts=null;trafficDraw();
  try{
   const radius=Math.min(15,Math.max(2,Number($('trafficRadius')?.value)||7));
   const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),8500);
   let res;try{res=await fetch(`/api/traffic-live?lat=${encodeURIComponent(area.lat)}&lng=${encodeURIComponent(area.lng)}&km=${radius}`,{signal:ctrl.signal,cache:'no-store'})}finally{clearTimeout(t)}
   const data=await res.json();if(seq!==TRAFFIC_VIEW.seq)return;
   if(!res.ok)throw Error(data.message||'교통정보 조회에 실패했습니다.');
-  TRAFFIC_VIEW.rows=Array.isArray(data.items)?data.items:[];TRAFFIC_VIEW.lastAt=Date.now();
- }catch(e){if(seq!==TRAFFIC_VIEW.seq)return;TRAFFIC_VIEW.rows=[];TRAFFIC_VIEW.lastAt=0;
+  TRAFFIC_VIEW.rows=Array.isArray(data.items)?data.items:[];TRAFFIC_VIEW.counts=data.counts||null;TRAFFIC_VIEW.total=Number(data.total)||TRAFFIC_VIEW.rows.length;TRAFFIC_VIEW.stats=data.stats||null;TRAFFIC_VIEW.lastAt=Date.now();
+ }catch(e){if(seq!==TRAFFIC_VIEW.seq)return;TRAFFIC_VIEW.rows=[];TRAFFIC_VIEW.counts=null;TRAFFIC_VIEW.total=0;TRAFFIC_VIEW.lastAt=0;
   const node=$('trafficInterestResults');if(node)node.innerHTML=`<div class="traffic-empty">${escapeHtml(e.name==='AbortError'?'교통정보 응답이 지연되고 있습니다. 다시 시도해 주세요.':e.message||'교통정보를 불러오지 못했습니다.')}</div>`;
  }finally{if(seq===TRAFFIC_VIEW.seq){TRAFFIC_VIEW.loading=false;const h=$('trafficStatusLine');if(h)h.textContent=`${area.name} 교통상황 · ${new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})} 확인`;if(TRAFFIC_VIEW.rows.length)trafficDraw()}}
 }
@@ -9169,10 +9187,15 @@ function trafficSvg(name){
   check:'<path d="m5 12 4 4L19 6"/>',
   x:'<path d="M18 6 6 18M6 6l12 12"/>',
   chevron:'<path d="m6 9 6 6 6-6"/>',
-  traffic:'<path d="M8 3v18M16 3v18"/><circle cx="12" cy="6" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="18" r="2"/>'
+  traffic:'<path d="M8 3v18M16 3v18"/><circle cx="12" cy="6" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="18" r="2"/>',
+  trafficSmooth:'<path d="M4 8h7M4 12h11M4 16h8"/><path d="m12 9 4 3-4 3"/>',
+  trafficSlow:'<path d="M5 16a7 7 0 1 1 14 0"/><path d="M12 16V10"/><path d="m12 10 3 2"/>',
+  trafficDelayed:'<circle cx="12" cy="12" r="7"/><path d="M12 8v4l3 2"/>',
+  trafficJam:'<path d="M4 17h16"/><path d="M6.5 17v-2.2c0-1 .8-1.8 1.8-1.8h7.4c1 0 1.8.8 1.8 1.8V17"/><path d="M8 17v1.5M16 17v1.5"/><path d="M9 9h6"/><path d="m12 6 3 3-3 3"/>'
  };
  return `<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${paths[name]||paths.pin}</svg>`;
 }
+
 function trafficOpenAreaPicker(){
  const picker=$('trafficAreaPicker'),list=$('trafficAreaPickerList');if(!picker||!list)return;
  const current=new Set(TRAFFIC_VIEW.areas.map(a=>a.name));
@@ -9201,7 +9224,7 @@ function trafficBindPanel(){
  $('trafficRadius')?.addEventListener('change',trafficFetchArea);
 }
 function openTrafficDetail(){
- closeHamburgerMenu();TRAFFIC_VIEW.areas=trafficUniqueAreas(trafficReadInterests());if(!TRAFFIC_VIEW.areas.length)TRAFFIC_VIEW.areas=[{name:'세종',lat:36.48,lng:127.289}];TRAFFIC_VIEW.selected=0;TRAFFIC_VIEW.rows=[];TRAFFIC_VIEW.lastAt=0;
+ closeHamburgerMenu();TRAFFIC_VIEW.areas=trafficUniqueAreas(trafficReadInterests());if(!TRAFFIC_VIEW.areas.length)TRAFFIC_VIEW.areas=[{name:'세종',lat:36.48,lng:127.289}];TRAFFIC_VIEW.selected=0;TRAFFIC_VIEW.rows=[];TRAFFIC_VIEW.counts=null;TRAFFIC_VIEW.total=0;TRAFFIC_VIEW.lastAt=0;
  openInfoModal('실시간 교통정보 상세',`<section id="trafficInterestRoot" class="traffic-interest"><p class="traffic-lead">관심지역을 등록하면 해당 지역의 주요 도로 소통상황을 확인할 수 있습니다.</p><div class="traffic-interest-head"><strong>내 관심지역</strong><button id="trafficRemoveArea" type="button" class="traffic-icon-btn">${trafficSvg('trash')}<span>선택지역 삭제</span></button></div><div id="trafficAreaChips" class="traffic-area-chips"></div><div class="traffic-interest-actions"><button id="trafficOpenAreaPicker" type="button" class="traffic-add-region">${trafficSvg('plus')}<span>지역 추가</span>${trafficSvg('chevron')}</button><button id="trafficUseGps" type="button" class="traffic-icon-btn">${trafficSvg('pin')}<span>현 위치</span></button></div><div id="trafficAreaPicker" class="traffic-area-picker" hidden><div class="traffic-picker-heading"><strong>관심지역 선택</strong><small>지역을 선택한 후 완료를 누르세요.</small></div><div id="trafficAreaPickerList" class="traffic-area-picker-list" role="radiogroup" aria-label="추가할 관심지역"></div><div class="traffic-picker-actions"><button type="button" id="trafficPickerCancel">${trafficSvg('x')} 취소</button><button type="button" id="trafficPickerDone" disabled>${trafficSvg('check')} 완료</button></div></div><div class="traffic-interest-head"><label for="trafficRadius">검색 반경</label><select id="trafficRadius"><option value="5">5km</option><option value="7" selected>7km</option><option value="12">12km</option><option value="15">15km</option></select><button type="button" id="trafficReload" class="traffic-icon-btn">${trafficSvg('refresh')}<span>새로고침</span></button></div><p id="trafficStatusLine" class="traffic-time"></p><div id="trafficInterestResults" aria-live="polite"></div></section>`);
  trafficBindPanel();trafficFetchArea();
 }
