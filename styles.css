@@ -4454,3 +4454,10 @@ html body #app #driveView #driveBottomNormal .dbn-cell>b{max-width:100%!importan
 html body #app #driveView #driveBottomNormal #arrivalTime{top:0!important;line-height:1.25!important;padding-bottom:2px!important}
 .hotspot-actions button svg{width:17px;height:17px;vertical-align:middle;flex:none}.hotspot-actions button{display:inline-flex;align-items:center;justify-content:center;gap:5px}
 @media(orientation:landscape){html body #app #driveView #driveBottomNormal .dbn-cell{padding:3px 3px 7px!important;gap:2px!important}}
+
+/* v7.6.27.34: weak GPS is NOT a translucent ghost: retain one crisp stationary character. */
+body:has(#driveView:not(.hidden)) .maplibregl-marker.character-car-marker.dangollo-gps-unverified{opacity:1!important;filter:none!important}
+body:has(#driveView:not(.hidden)) .maplibregl-marker.character-car-marker,
+body:has(#driveView:not(.hidden)) .maplibregl-marker.character-car-marker img{opacity:1!important;filter:none!important}
+/* Remove perpetual bob/blur from the car; actual position is driven only by verified route coordinates. */
+body:has(#driveView:not(.hidden)) .character-car-marker.rear-version.jofams-car-moving img{animation:none!important}

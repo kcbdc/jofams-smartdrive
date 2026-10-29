@@ -2409,6 +2409,7 @@ function makeDestMarker(){
 }
 function updateUserMarkerMotion(){
   if(state.tripStartedAt&&!state.simulationActive&&!state.navigationStartReleased){
+    state.userMarker?.getElement?.()?.classList.remove('jofams-car-moving');
     if(Number.isFinite(Number(state.driveMarkerRenderedDistance)))state.driveMarkerTargetDistance=Number(state.driveMarkerRenderedDistance);
     return;
   }
@@ -2420,6 +2421,7 @@ function updateUserMarkerMotion(){
 }
 /* 단골로: 목표 GPS는 계단식으로 갱신되지만, 표시 좌표는 매 프레임 경로 위에서 이동한다. */
 function scheduleSmoothDriveMarker(){
+  if(state.tripStartedAt&&!state.simulationActive&&!state.navigationStartReleased)return;
   if(state.driveMarkerRaf||!state.tripStartedAt)return;
   const frame=ts=>{
     state.driveMarkerRaf=0;
@@ -2457,6 +2459,25 @@ function scheduleSmoothDriveMarker(){
 }
 function ensureUserMarker(){
   if(!state.user||!state.map||!pointValid(state.user))return;
+  // 7.6.27.34: departure latch is authoritative for BOTH browser and native GPS.
+  // Capture a single start position; never move on GPS jitter, stale native route distance or redraw.
+  if(state.tripStartedAt&&!state.simulationActive&&!state.navigationStartReleased){
+    if(!Number.isFinite(state.departureVisualDistance)){
+      const rd=finiteOrNull(state.driveMarkerRenderedDistance);
+      const origin=state.navigationStartAnchor;
+      const projected=origin&&state.route?.geometry?.length?routePosOfPoint(Number(origin.lng),Number(origin.lat),state.route.geometry,null,100):null;
+      state.departureVisualDistance=rd!==null?rd:(finiteOrNull(projected?.routeDistance)??0);
+    }
+    const fixed=pointAtRouteDistance(state.departureVisualDistance);
+    state.driveMarkerRenderedDistance=state.departureVisualDistance;
+    state.driveMarkerTargetDistance=state.departureVisualDistance;
+    if(state.driveMarkerRaf){cancelAnimationFrame(state.driveMarkerRaf);state.driveMarkerRaf=0}
+    if(state.userMarker){
+      if(fixed)state.userMarker.setLngLat([fixed.lng,fixed.lat]);
+      state.userMarker.getElement?.()?.classList.remove('jofams-car-moving');
+    }
+  }else if(state.departureVisualDistance!==undefined){state.departureVisualDistance=undefined;}
+
   // GPS/맵매칭이 순간적으로 불안정해도(터널, 산간 등 신호 약한 구간) 캐릭터 마커
   // DOM이 지도에서 떨어져 나가면 다시 붙인다. 경로선은 별도 레이어라 영향받지 않지만
   // 마커만 사라져 보이는 현상은 대부분 이 detach 상태에서 발생한다.
@@ -2471,6 +2492,12 @@ function ensureUserMarker(){
     const initial=state.tripStartedAt&&state.route?.geometry?.length?pointAtRouteDistance(Number(state.driveMarkerRenderedDistance)||0):null;
     state.userMarker=makeCarMarker().setLngLat(initial?[initial.lng,initial.lat]:[state.user.lng,state.user.lat]).addTo(state.map);
     {const rd0=finiteOrNull(state.user.routeDistance);if(rd0!=null&&!state.tripStartedAt)state.driveMarkerRenderedDistance=rd0;}
+  }
+  if(state.tripStartedAt&&!state.simulationActive&&!state.navigationStartReleased){
+    const fixed=pointAtRouteDistance(Number(state.departureVisualDistance)||0);
+    if(fixed)state.userMarker.setLngLat([fixed.lng,fixed.lat]);
+    state.userMarker.getElement?.()?.classList.remove('jofams-car-moving');
+    return;
   }
   if(state.tripStartedAt&&state.drivePositionUncertain&&!state.simulationActive){
     // Do not hide the marker or poison the next valid GNSS fix. Keep last confirmed route point.
@@ -2932,7 +2959,7 @@ function applyGps(pos,fly=false){
       state.deadReckoningDistance=nRouteDistance;
       if(Number.isFinite(Number(state.routeLockedDistance))||forceN)state.routeLockedDistance=nRouteDistance;
       // 터널 복귀/수신 공백(3.5초↑) 뒤 첫 유효 위치는 수신된 자리로 바로 옮긴다. 밀린 구간을 몰아서 채우지 않는다.
-      if(state.tripStartedAt&&!estimated&&((prevWasEstimatedN)||(prevRealAtN&&now-prevRealAtN>3500))){
+      if(state.tripStartedAt&&state.navigationStartReleased&&!estimated&&((prevWasEstimatedN)||(prevRealAtN&&now-prevRealAtN>3500))){
         state.driveMarkerRenderedDistance=nRouteDistance;state.driveMarkerTargetDistance=nRouteDistance;state.driveMarkerTargetAt=now;
         try{state.userMarker?.setLngLat([nLng,nLat])}catch{}
       }
@@ -6111,18 +6138,28 @@ const ROUTE_CAMERA_PREFIX='dangollo-route-camera-icon-';
 let fixedRouteCameraFeatures=[];
 let fixedRouteCameraMap=null;
 function routeCameraGeojson(features=[]){return {type:'FeatureCollection',features};}
+let fixedCameraVisibleSignature='';
+let fixedCameraVisibleSource=null;
 function updateSafetyMarkerVisibility(){
-  if(!state.map?.getSource?.(ROUTE_CAMERA_SOURCE))return;
+  const source=state.map?.getSource?.(ROUTE_CAMERA_SOURCE);
+  if(!source)return;
   const current=finiteOrNull(state.user?.routeDistance);
-  const maxAhead=3000;
+  // A fixed set of route cameras; movement does not recreate the MapLibre source every GPS tick.
+  // A small backward buffer avoids symbol removal/reappearance caused by map-matching jitter.
   const visible=(!state.tripStartedAt||state.routeMode!=='car'||$('driveView')?.classList.contains('hidden')||state.wrongDirectionActive)?[]:
-    fixedRouteCameraFeatures.filter(f=>current===null||(Number(f.properties.routeM)>=current-35&&Number(f.properties.routeM)<=current+maxAhead));
-  try{state.map.getSource(ROUTE_CAMERA_SOURCE).setData(routeCameraGeojson(visible))}catch(e){console.warn('fixed camera source update failed',e)}
+    fixedRouteCameraFeatures.filter(f=>current===null||(Number(f.properties.routeM)>=current-85&&Number(f.properties.routeM)<=current+3200));
+  const signature=visible.map(f=>String(f.properties.icon)+':'+String(Math.round(Number(f.properties.routeM)))).join('|');
+  if(source===fixedCameraVisibleSource&&signature===fixedCameraVisibleSignature)return;
+  try{
+    source.setData(routeCameraGeojson(visible));
+    fixedCameraVisibleSource=source;fixedCameraVisibleSignature=signature;
+  }catch(e){console.warn('fixed camera source update failed',e)}
 }
+
 function clearSafetyMarkers(){
   // 이전 버전 HTML 마커도 제거해 겹침을 근본적으로 차단한다.
   for(const m of state.safetyMarkers||[])try{m.remove()}catch{}
-  state.safetyMarkers=[];fixedRouteCameraFeatures=[];
+  state.safetyMarkers=[];fixedRouteCameraFeatures=[];fixedCameraVisibleSignature='';fixedCameraVisibleSource=null;
   try{state.map?.getSource?.(ROUTE_CAMERA_SOURCE)?.setData(routeCameraGeojson())}catch{}
 }
 function cameraIconImageData(speed){
@@ -6327,6 +6364,7 @@ function renderSafetyMarkers(){
         cameraType:String(e.type||'')}};
   });
   fixedRouteCameraFeatures=features;
+  fixedCameraVisibleSignature='';
   if(ensureFixedCameraLayer(features))updateSafetyMarkerVisibility();
 
 
