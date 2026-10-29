@@ -57,7 +57,7 @@
 <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.27.51" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.27.52" />
 </head>
 <body>
   <main id="app">
@@ -541,13 +541,13 @@
           <button data-admin-tab="shorts">KOMSCO 숏폼</button>
         </div>
         <section id="adminNoticesPanel" class="admin-panel">
-          <div class="admin-form"><label><b>공지 제목</b><input id="adminNoticeTitle" maxlength="120" placeholder="공지 제목"></label><label><b>공지 내용</b><textarea id="adminNoticeBody" rows="6" maxlength="5000" placeholder="공지 내용을 입력하세요."></textarea></label><button id="adminNoticeSaveBtn" class="primary-btn">공지 등록</button></div>
+          <div class="admin-form"><label><b>공지 제목</b><input id="adminNoticeTitle" maxlength="120" placeholder="공지 제목"></label><label><b>공지 내용</b><textarea id="adminNoticeBody" rows="6" placeholder="공지 내용을 입력하세요."></textarea></label><small id="adminNoticeLengthInfo" class="rich-length-indicator" role="status" aria-live="polite">본문 길이를 확인하고 있습니다.</small><button id="adminNoticeSaveBtn" class="primary-btn">공지 등록</button></div>
           <div id="adminNoticeList" class="admin-list"></div>
         </section>
         <section id="adminContentPanel" class="admin-panel hidden">
-          <label><b>앱정보</b><textarea id="adminAppInfoText" rows="7" maxlength="8000"></textarea></label>
-          <label><b>개인정보처리방침</b><textarea id="adminPrivacyText" rows="12" maxlength="15000"></textarea></label>
-          <button id="adminContentSaveBtn" class="primary-btn">수정 내용 저장</button>
+          <label><b>앱정보</b><textarea id="adminAppInfoText" rows="7"></textarea></label>
+          <label><b>개인정보처리방침</b><textarea id="adminPrivacyText" rows="12"></textarea></label>
+          <small id="adminContentLengthInfo" class="rich-length-indicator" role="status" aria-live="polite"></small><button id="adminContentSaveBtn" class="primary-btn">수정 내용 저장</button>
         </section>
         <section id="adminInquiriesPanel" class="admin-panel hidden">
           <div id="adminInquiryList" class="admin-list"></div>
@@ -876,8 +876,8 @@
     <div id="toast" class="toast hidden"></div>
   </main>
 
-  <script>window.__JOFAMS_BUILD__="7.6.27.51";</script>
+  <script>window.__JOFAMS_BUILD__="7.6.27.52";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.27.51"></script>
+  <script type="module" src="/app.js?v=7.6.27.52"></script>
 </body>
 </html>

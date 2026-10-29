@@ -4790,3 +4790,6 @@ html body #app #bottomNav button[data-bottom-nav]:not(.active){background:transp
     height: min(79dvh, 800px) !important;
   }
 }
+
+/* v7.6.27.52 long rich-content submission feedback */
+.rich-length-indicator{display:block;margin:8px 0 12px;color:#59718c;font-size:12px;line-height:1.5;overflow-wrap:anywhere}

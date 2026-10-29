@@ -4799,7 +4799,8 @@ function richInitEditors(){
   textarea.parentNode.insertBefore(toolbar,textarea);textarea.parentNode.insertBefore(editor,textarea);textarea.classList.add('dangollo-rich-source-hidden');
   editor.innerHTML=richContentHTML(textarea.value);
   toolbar.addEventListener('click',e=>{const btn=e.target.closest('[data-rich-mode]');if(!btn)return;const source=btn.dataset.richMode==='source';if(source){textarea.value=richSanitize(editor.innerHTML);editor.hidden=true;textarea.classList.remove('dangollo-rich-source-hidden')}else{editor.innerHTML=richContentHTML(textarea.value);editor.hidden=false;textarea.classList.add('dangollo-rich-source-hidden')}toolbar.querySelectorAll('[data-rich-mode]').forEach(x=>x.classList.toggle('active',x===btn))});
-  editor.addEventListener('paste',e=>{const html=e.clipboardData?.getData('text/html'),text=e.clipboardData?.getData('text/plain');if(!html&&!text)return;e.preventDefault();const safe=richContentHTML(html||text);richInsertHTML(editor,safe)});
+  editor.addEventListener('paste',e=>{const html=e.clipboardData?.getData('text/html'),text=e.clipboardData?.getData('text/plain');if(!html&&!text)return;e.preventDefault();const safe=richContentHTML(html||text);richInsertHTML(editor,safe);richUpdateAdminLength()});
+  editor.addEventListener('input',richUpdateAdminLength);textarea.addEventListener('input',richUpdateAdminLength);
  }
 }
 async function openPrivacy(){const c=await loadPublicContent();openInfoModal('개인정보처리방침',`<div class="info-card privacy-copy">${richContentHTML(c.privacy||'개인정보처리방침이 준비 중입니다.')}</div>`)}
@@ -8954,213 +8955,54 @@ function closeAdminMode(){$('adminModal')?.classList.add('hidden')}
 function switchAdminTab(tab){document.querySelectorAll('[data-admin-tab]').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===tab));['notices','content','inquiries','onnuri','shorts'].forEach(k=>$(`admin${k[0].toUpperCase()+k.slice(1)}Panel`)?.classList.toggle('hidden',k!==tab));if(tab==='notices')loadAdminNotices();if(tab==='content')loadAdminContent();if(tab==='inquiries')loadAdminInquiries();if(tab==='onnuri')loadOnnuriBatchStatus();if(tab==='shorts')loadAdminShorts()}
 async function adminContentRequest(type,method='GET',body=null){const u=new URL('/api/content',location.origin);u.searchParams.set('type',type);const opt={method,headers:{'content-type':'application/json'}};if(body)opt.body=JSON.stringify(body);const r=method==='GET'?await fetch(u):await authFetch(u,opt);const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`HTTP ${r.status}`);return d}
 async function loadAdminNotices(){try{const d=await adminContentRequest('notices');state.adminNotices=d.items||[];const box=$('adminNoticeList');box.innerHTML=state.adminNotices.length?state.adminNotices.map(x=>`<article class="admin-notice-card"><details><summary><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.createdAt||'')}</small></summary><div class="dangollo-rich-copy">${richContentHTML(x.body)}</div></details><button data-admin-notice-delete="${escapeHtml(String(x.id))}">삭제</button></article>`).join(''):'<div class="inquiry-empty">등록된 공지가 없습니다.</div>';box.querySelectorAll('[data-admin-notice-delete]').forEach(b=>b.onclick=()=>deleteAdminNotice(b.dataset.adminNoticeDelete))}catch{toast('공지 목록을 불러오지 못했습니다.')}}
-async function saveAdminNotice(){const title=$('adminNoticeTitle').value.trim(),body=richEditorValue('adminNoticeBody').trim();if(title.length<2||body.length<2)return toast('공지 제목과 내용을 입력해 주세요.');const btn=$('adminNoticeSaveBtn');btn.disabled=true;try{await adminContentRequest('notices','POST',{title,body});$('adminNoticeTitle').value='';richSetEditor('adminNoticeBody','');showPlaceConfirmPopup('공지사항이 등록되었습니다.');loadAdminNotices()}catch{toast('공지 등록에 실패했습니다.')}finally{btn.disabled=false}}
+function richLengthInfo(id){
+ const content=richEditorValue(id);
+ const text=String(content).replace(/<[^>]*>/g,'').replace(/&(?:nbsp|amp|lt|gt|quot|#\d+);/g,' ').trim();
+ return {htmlChars:content.length,textChars:text.length,body:content};
+}
+function richUpdateAdminLength(){
+ const notice=$('adminNoticeLengthInfo');if(notice){const n=richLengthInfo('adminNoticeBody');notice.textContent=`본문 ${n.textChars.toLocaleString('ko-KR')}자 · HTML 저장량 ${n.htmlChars.toLocaleString('ko-KR')}자 (서버 저장 후 완전성 확인)`}
+ const content=$('adminContentLengthInfo');if(content){const a=richLengthInfo('adminAppInfoText'),p=richLengthInfo('adminPrivacyText');content.textContent=`앱정보 HTML ${a.htmlChars.toLocaleString('ko-KR')}자 · 개인정보처리방침 HTML ${p.htmlChars.toLocaleString('ko-KR')}자`}
+}
+function noticeResponseMatches(item,title,body){
+ return Boolean(item&&String(item.title||'')===title&&String(item.body||'')===body);
+}
+async function saveAdminNotice(){
+ const title=$('adminNoticeTitle').value.trim(),body=richEditorValue('adminNoticeBody').trim();
+ if(title.length<2||body.length<2)return toast('공지 제목과 내용을 입력해 주세요.');
+ const btn=$('adminNoticeSaveBtn');btn.disabled=true;btn.textContent='저장 및 본문 확인 중…';
+ try{
+  const posted=await adminContentRequest('notices','POST',{title,body});
+  const retrieved=await adminContentRequest('notices','GET');
+  const items=Array.isArray(retrieved.items)?retrieved.items:[];
+  const saved=posted?.item?.id!=null?items.find(x=>String(x.id)===String(posted.item.id)):
+    [...items].reverse().find(x=>noticeResponseMatches(x,title,body))||[...items].reverse().find(x=>String(x.title||'')===title);
+  if(!noticeResponseMatches(saved,title,body)){
+   // Preserve editor content so it can be recovered if the API or DB truncates the value.
+   const found=saved?String(saved.body||'').length:'확인 불가';
+   alert(`서버에 저장된 공지 원문이 입력 내용과 다릅니다.\n입력 HTML: ${body.length.toLocaleString('ko-KR')}자\n서버 저장 HTML: ${found}자\n서버 글자 제한 또는 변환 여부를 확인해 주세요. 입력한 내용은 지우지 않았습니다.`);
+   return;
+  }
+  $('adminNoticeTitle').value='';richSetEditor('adminNoticeBody','');richUpdateAdminLength();
+  showPlaceConfirmPopup('공지사항 본문 전체 저장을 확인했습니다.');loadAdminNotices();
+ }catch(e){toast(`공지 저장·검증 실패: ${String(e.message||'네트워크 오류').slice(0,90)}`,3500)}
+ finally{btn.disabled=false;btn.textContent='공지 등록'}
+}
 async function deleteAdminNotice(id){if(!confirm('이 공지를 삭제할까요?'))return;try{await adminContentRequest('notices','DELETE',{id});showPlaceConfirmPopup('공지사항이 삭제되었습니다.');loadAdminNotices()}catch{toast('공지 삭제에 실패했습니다.')}}
-async function loadAdminContent(){try{const d=await adminContentRequest('content');const c=d.content||{};richSetEditor('adminAppInfoText',c.appInfo||'');richSetEditor('adminPrivacyText',c.privacy||'')}catch{toast('콘텐츠를 불러오지 못했습니다.')}}
-async function saveAdminContent(){const btn=$('adminContentSaveBtn');btn.disabled=true;try{await adminContentRequest('content','PUT',{appInfo:richEditorValue('adminAppInfoText'),privacy:richEditorValue('adminPrivacyText')});showPlaceConfirmPopup('앱정보와 개인정보처리방침이 수정되었습니다.')}catch{toast('수정 내용 저장에 실패했습니다.')}finally{btn.disabled=false}}
-
-let onnuriBatchRunning=false;
-let onnuriBatchGrandDone=0;
-let onnuriBatchGrandTotal=0;
-let onnuriBatchProgressState={
-  exact:{cursor:0,total:0},
-  market:{cursor:0,total:0},
-  unresolved:{cursor:0,total:0}
-};
-// 7.6.8: 전국 8차 보강(CSV8) 지역별 좌표화 진행 상태. key는 manifest의 지역코드(daejeon, sejong 등).
-let onnuriCsv8Regions={};
-let onnuriCsv8ActiveKey='';
-
-async function loadOnnuriBatchStatus(){
-  const status=$('onnuriBatchStatus');if(status)status.textContent='D1 캐시 상태를 확인하는 중입니다.';
-  try{
-    const r=await authFetch('/api/onnuri-geocode-batch');
-    const d=await r.json();
-    if(!r.ok)throw new Error(d.error||'status failed');
-    $('onnuriBatchTotal').textContent=Number(d.total||0).toLocaleString();
-    $('onnuriBatchExact').textContent=Number(d.exactTotal||0).toLocaleString();
-    $('onnuriBatchMarket').textContent=Number(d.marketFallbackTotal||0).toLocaleString();
-    $('onnuriBatchUnresolved').textContent=Number(d.unresolvedTotal||0).toLocaleString();
-    $('onnuriBatchCached').textContent=Number(d.cached||0).toLocaleString();
-    onnuriBatchGrandTotal=Number(d.total||0);
-    if(d.progress){
-      onnuriBatchProgressState={
-        exact:{cursor:Number(d.progress.exact?.cursor||0),total:Number(d.progress.exact?.total||d.exactTotal||0)},
-        market:{cursor:Number(d.progress.market?.cursor||0),total:Number(d.progress.market?.total||d.marketFallbackTotal||0)},
-        unresolved:{cursor:Number(d.progress.unresolved?.cursor||0),total:Number(d.progress.unresolved?.total||d.unresolvedTotal||0)}
-      };
-      onnuriBatchGrandDone=Number(d.progress.done||0);
-    }else{
-      onnuriBatchGrandDone=Math.min(Number(d.cached||0),onnuriBatchGrandTotal);
-    }
-    if(!onnuriBatchRunning)updateOnnuriBatchProgress(onnuriBatchGrandDone,onnuriBatchGrandTotal);
-    if(status){
-      const pct=onnuriBatchGrandTotal?Math.min(100,Math.round(onnuriBatchGrandDone/onnuriBatchGrandTotal*100)):0;
-      const exactCachedN=Number(d.exactCached||0),exactTotalN=Number(d.exactTotal||0);
-      const kakaoWarn=d.kakaoConfigured===false?' ⚠️ KAKAO_REST_API_KEY가 설정되지 않아, 아직 캐시되지 않은 가맹점은 실시간 좌표 변환도 불가능해 지도에 표시되지 않습니다.':'';
-      status.textContent=`저장된 진행률 ${pct}% · ${onnuriBatchGrandDone.toLocaleString()} / ${onnuriBatchGrandTotal.toLocaleString()} · D1 캐시 ${Number(d.cached||0).toLocaleString()}건 · 정확주소(exact) 캐시완료 ${exactCachedN.toLocaleString()}/${exactTotalN.toLocaleString()}건${kakaoWarn}`;
-    }
-    if(d.csv8?.regions){
-      onnuriCsv8Regions=d.csv8.regions;
-      renderOnnuriCsv8List();
-    }
-  }catch(e){
-    if(status)status.textContent=`상태 확인 실패: ${e?.message||'서버 설정을 확인해 주세요.'}`;
-    const box=$('onnuriCsv8List');
-    if(box)box.textContent='지역 목록을 불러오지 못했습니다.';
+async function loadAdminContent(){try{const d=await adminContentRequest('content');const c=d.content||{};richSetEditor('adminAppInfoText',c.appInfo||'');richSetEditor('adminPrivacyText',c.privacy||'');richUpdateAdminLength()}catch{toast('콘텐츠를 불러오지 못했습니다.')}}
+async function saveAdminContent(){
+ const appInfo=richEditorValue('adminAppInfoText'),privacy=richEditorValue('adminPrivacyText');
+ const btn=$('adminContentSaveBtn');btn.disabled=true;btn.textContent='저장 내용 검증 중…';
+ try{
+  await adminContentRequest('content','PUT',{appInfo,privacy});
+  const verify=await adminContentRequest('content','GET');const saved=verify.content||{};
+  if(String(saved.appInfo||'')!==appInfo||String(saved.privacy||'')!==privacy){
+   alert(`저장 후 서버 내용이 입력 원문과 일치하지 않습니다.\n앱정보: 입력 ${appInfo.length}자 / 저장 ${String(saved.appInfo||'').length}자\n개인정보: 입력 ${privacy.length}자 / 저장 ${String(saved.privacy||'').length}자\n입력 내용은 그대로 보존합니다. 서버 저장 제한을 확인해 주세요.`);return;
   }
+  showPlaceConfirmPopup('앱정보와 개인정보처리방침 전체 저장을 확인했습니다.');
+ }catch(e){toast(`저장·검증 실패: ${String(e.message||'네트워크 오류').slice(0,90)}`,3500)}
+ finally{btn.disabled=false;btn.textContent='수정 내용 저장'}
 }
-function renderOnnuriCsv8List(){
-  const box=$('onnuriCsv8List');if(!box)return;
-  const keys=Object.keys(onnuriCsv8Regions);
-  if(!keys.length){box.textContent='지역 데이터가 없습니다.';return}
-  // 대전·세종을 목록 맨 위로 올려 우선 처리하기 쉽게 한다.
-  keys.sort((a,b)=>{
-    const pa=(a==='daejeon'||a==='sejong')?0:1,pb=(b==='daejeon'||b==='sejong')?0:1;
-    return pa-pb||a.localeCompare(b);
-  });
-  box.innerHTML=keys.map(key=>{
-    const r=onnuriCsv8Regions[key];
-    const total=Number(r.total||0),cursor=Math.min(total,Number(r.cursor||0));
-    const pct=total?Math.min(100,Math.round(cursor/total*100)):0;
-    const done=cursor>=total&&total>0;
-    const running=onnuriBatchRunning&&onnuriCsv8ActiveKey===key;
-    const label=running?'중지':(done?'완료':'실행');
-    return `<div class="onnuri-csv8-row${done?' done':''}${running?' running':''}">
-      <div><b>${escapeHtml(r.name||key)}</b><small>${cursor.toLocaleString()} / ${total.toLocaleString()}건</small></div>
-      <span class="onnuri-csv8-pct">${pct}%</span>
-      <button type="button" data-onnuri-csv8-region="${key}" ${onnuriBatchRunning&&!running?'disabled':''}>${label}</button>
-    </div>`;
-  }).join('');
-  box.querySelectorAll('[data-onnuri-csv8-region]').forEach(b=>b.onclick=()=>toggleOnnuriCsv8Region(b.dataset.onnuriCsv8Region));
-}
-function toggleOnnuriCsv8Region(key){
-  if(onnuriBatchRunning&&onnuriCsv8ActiveKey===key){stopOnnuriBatch();return}
-  if(onnuriBatchRunning)return; // 다른 배치가 이미 실행 중
-  runOnnuriCsv8Region(key);
-}
-async function runOnnuriCsv8Region(key){
-  const r=onnuriCsv8Regions[key];if(!r)return;
-  onnuriBatchRunning=true;
-  onnuriCsv8ActiveKey=key;
-  if($('onnuriBatchStartBtn'))$('onnuriBatchStartBtn').disabled=true;
-  if($('onnuriBatchStopBtn'))$('onnuriBatchStopBtn').disabled=true;
-  renderOnnuriCsv8List();
-  const status=$('onnuriBatchStatus');
-  try{
-    await runOnnuriStage(`csv8:${key}`,`${r.name||key} 좌표화`,Number(r.total||0),Number(r.cursor||0));
-    if(status)status.textContent=onnuriBatchRunning?`${r.name||key} 좌표화가 완료되었습니다.`:'배치를 중지했습니다.';
-  }catch(e){
-    if(status)status.textContent=`배치 중단: ${e?.message||'서버 오류'}`;
-  }finally{
-    onnuriBatchRunning=false;
-    onnuriCsv8ActiveKey='';
-    if($('onnuriBatchStartBtn'))$('onnuriBatchStartBtn').disabled=false;
-    if($('onnuriBatchStopBtn'))$('onnuriBatchStopBtn').disabled=true;
-    loadOnnuriBatchStatus();
-  }
-}
-function updateOnnuriBatchProgress(done,total){
-  const pct=total?Math.min(100,Math.round(done/total*100)):0;
-  if($('onnuriBatchProgress'))$('onnuriBatchProgress').textContent=`${pct}%`;
-  if($('onnuriBatchBar'))$('onnuriBatchBar').style.width=`${pct}%`;
-}
-async function runOnnuriStage(stage,label,total,startCursor=0){
-  let cursor=Math.max(0,Math.min(total,Number(startCursor)||0));
-  if(cursor>=total)return;
-  while(onnuriBatchRunning && cursor<total){
-    if($('onnuriBatchStatus'))$('onnuriBatchStatus').textContent=`${label} ${cursor.toLocaleString()} / ${total.toLocaleString()} 처리 중…`;
-    const r=await authFetch('/api/onnuri-geocode-batch',{
-      method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({stage,cursor,limit:20})
-    });
-    const d=await r.json();
-    if(!r.ok)throw new Error(d.error||'batch failed');
-    const serverCursor=Math.max(cursor,Number(d.nextCursor||cursor));
-    const advanced=serverCursor-cursor;
-    cursor=serverCursor;
-    if(onnuriBatchProgressState[stage])onnuriBatchProgressState[stage].cursor=cursor;
-    onnuriBatchGrandDone=
-      Number(onnuriBatchProgressState.exact?.cursor||0)+
-      Number(onnuriBatchProgressState.market?.cursor||0)+
-      Number(onnuriBatchProgressState.unresolved?.cursor||0);
-    updateOnnuriBatchProgress(onnuriBatchGrandDone,onnuriBatchGrandTotal);
-    if($('onnuriBatchStatus'))$('onnuriBatchStatus').textContent=`${label} ${cursor.toLocaleString()} / ${total.toLocaleString()} · 성공 ${d.success||0} · 캐시 ${d.cachedHits||0} · 실패 ${d.failed||0}`;
-    if(d.done)break;
-    await new Promise(resolve=>setTimeout(resolve,450));
-  }
-}
-async function startOnnuriBatch(){
-  if(onnuriBatchRunning)return;
-  onnuriBatchRunning=true;
-  $('onnuriBatchStartBtn').disabled=true;
-  $('onnuriBatchStopBtn').disabled=false;
-  const status=$('onnuriBatchStatus');
-  try{
-    const rs=await authFetch('/api/onnuri-geocode-batch'),sd=await rs.json();
-    if(!rs.ok)throw new Error(sd.error||'status failed');
-    onnuriBatchGrandTotal=Number(sd.total||0);
-    const p=sd.progress||{};
-    onnuriBatchProgressState={
-      exact:{cursor:Number(p.exact?.cursor||0),total:Number(sd.exactTotal||0)},
-      market:{cursor:Number(p.market?.cursor||0),total:Number(sd.marketFallbackTotal||0)},
-      unresolved:{cursor:Number(p.unresolved?.cursor||0),total:Number(sd.unresolvedTotal||0)}
-    };
-    onnuriBatchGrandDone=
-      onnuriBatchProgressState.exact.cursor+
-      onnuriBatchProgressState.market.cursor+
-      onnuriBatchProgressState.unresolved.cursor;
-    updateOnnuriBatchProgress(onnuriBatchGrandDone,onnuriBatchGrandTotal);
-
-    if(status&&onnuriBatchGrandDone>0){
-      const pct=onnuriBatchGrandTotal?Math.min(100,Math.round(onnuriBatchGrandDone/onnuriBatchGrandTotal*100)):0;
-      status.textContent=`이전 진행률 ${pct}%에서 이어서 시작합니다.`;
-    }
-
-    await runOnnuriStage('exact','실주소',Number(sd.exactTotal||0),onnuriBatchProgressState.exact.cursor);
-    if(onnuriBatchRunning)await runOnnuriStage('market','상점가 대표주소',Number(sd.marketFallbackTotal||0),onnuriBatchProgressState.market.cursor);
-    if(onnuriBatchRunning)await runOnnuriStage('unresolved','미확인 가맹점',Number(sd.unresolvedTotal||0),onnuriBatchProgressState.unresolved.cursor);
-
-    if(onnuriBatchRunning && status)status.textContent='온누리 주소 좌표화 배치가 완료되었습니다. D1 캐시를 갱신합니다.';
-  }catch(e){
-    if(status)status.textContent=`배치 중단: ${e?.message||'서버 오류'}`;
-  }finally{
-    onnuriBatchRunning=false;
-    if($('onnuriBatchStartBtn'))$('onnuriBatchStartBtn').disabled=false;
-    if($('onnuriBatchStopBtn'))$('onnuriBatchStopBtn').disabled=true;
-    loadOnnuriBatchStatus();
-  }
-}
-function stopOnnuriBatch(){
-  onnuriBatchRunning=false;
-  if($('onnuriBatchStatus'))$('onnuriBatchStatus').textContent='배치를 중지했습니다. 현재 진행 위치도 D1에 저장되어 다음 실행 시 이 지점부터 이어집니다.';
-  if($('onnuriBatchStartBtn'))$('onnuriBatchStartBtn').disabled=false;
-  if($('onnuriBatchStopBtn'))$('onnuriBatchStopBtn').disabled=true;
-}
-async function resetOnnuriLegacyProgress(){
-  // 과거 bootstrap 오류로 실제 처리 없이 100%로 잘못 표시된 exact/market/unresolved
-  // 진행률을 0으로 되돌린다. (D1 캐시 자체를 지우지는 않으므로, 이미 좌표가 저장된
-  // 가맹점은 재실행 시 그대로 건너뛰고 실제로 비어 있는 것만 다시 채워진다.)
-  if(onnuriBatchRunning){alert('배치가 실행 중일 때는 초기화할 수 없습니다. 먼저 중지해 주세요.');return}
-  if(!confirm('정확주소/대표주소/미확인 3단계의 저장된 진행률을 모두 0으로 초기화합니다. (실제로는 처리되지 않았는데 100%로 잘못 표시된 경우를 바로잡기 위한 기능입니다.) 계속할까요?'))return;
-  const status=$('onnuriBatchStatus');
-  try{
-    for(const stage of ['exact','market','unresolved']){
-      const r=await authFetch('/api/onnuri-geocode-batch',{
-        method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({stage,reset:true})
-      });
-      if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||`초기화 실패(${stage})`);
-    }
-    if(status)status.textContent='진행률을 초기화했습니다. "주소 자동 채우기 시작"을 다시 눌러주세요.';
-  }catch(e){
-    if(status)status.textContent=`초기화 실패: ${e?.message||'서버 오류'}`;
-  }finally{
-    loadOnnuriBatchStatus();
-  }
-}
-
-
 async function loadAdminInquiries(){try{const r=await authFetch('/api/inquiries?admin=1'),d=await r.json();if(!r.ok)throw new Error();const box=$('adminInquiryList'),items=d.items||[];box.innerHTML=items.length?items.map(x=>`<button data-admin-inquiry="${x.id}" class="inquiry-row"><span><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.email||'')} · ${escapeHtml(x.createdAt||'')}</small></span><em class="${x.status==='answered'?'answered':''}">${inquiryStatusLabel(x.status)}</em></button>`).join(''):'<div class="inquiry-empty">접수된 문의가 없습니다.</div>';box.querySelectorAll('[data-admin-inquiry]').forEach(b=>b.onclick=()=>openAdminInquiry(b.dataset.adminInquiry))}catch{toast('문의 목록을 불러오지 못했습니다.')}}
 async function openAdminInquiry(id){try{const r=await authFetch(`/api/inquiries?id=${encodeURIComponent(id)}&admin=1`),d=await r.json();if(!r.ok)throw new Error();const x=d.item,box=$('adminInquiryDetail');box.innerHTML=`<button id="adminInquiryBack" class="inquiry-back">← 문의 목록</button><h3>${escapeHtml(x.title)}</h3><div class="inquiry-meta"><span>${escapeHtml(x.email||'')}</span><b>${inquiryStatusLabel(x.status)}</b></div><section><b>문의 내용</b><div class="dangollo-rich-copy">${richContentHTML(x.body)}</div></section><label><b>답변</b><textarea id="adminInquiryAnswer" rows="7" maxlength="5000">${escapeHtml(x.answer||'')}</textarea></label><button id="adminInquiryAnswerBtn" class="primary-btn">답변 저장</button>`;$('adminInquiryList').classList.add('hidden');box.classList.remove('hidden');$('adminInquiryBack').onclick=()=>{box.classList.add('hidden');$('adminInquiryList').classList.remove('hidden');loadAdminInquiries()};$('adminInquiryAnswerBtn').onclick=()=>saveAdminInquiryAnswer(id)}catch{toast('문의 내용을 열 수 없습니다.')}}
 async function saveAdminInquiryAnswer(id){const answer=$('adminInquiryAnswer').value.trim();if(answer.length<2)return toast('답변 내용을 입력해 주세요.');try{const r=await authFetch('/api/inquiries',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({id,answer})});if(!r.ok)throw new Error();showPlaceConfirmPopup('1:1 문의 답변이 등록되었습니다.');openAdminInquiry(id)}catch{toast('답변 저장에 실패했습니다.')}}
