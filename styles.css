@@ -4793,3 +4793,30 @@ html body #app #bottomNav button[data-bottom-nav]:not(.active){background:transp
 
 /* v7.6.27.52 long rich-content submission feedback */
 .rich-length-indicator{display:block;margin:8px 0 12px;color:#59718c;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+
+
+/* v7.6.27.53 — KOMSCO Shorts: 1줄/2줄 제목에 관계없이 썸네일 상단 기준 정렬 */
+.komsco-shorts-scroll{align-items:flex-start!important;align-content:flex-start!important;}
+.komsco-shorts-scroll>.komsco-short-card,
+.komsco-shorts-grid>.komsco-short-card{
+ display:flex!important;flex-direction:column!important;align-items:stretch!important;
+ align-self:flex-start!important;justify-content:flex-start!important;
+ min-height:0!important;vertical-align:top!important;
+}
+.komsco-shorts-scroll .komsco-short-thumb-wrap{
+ display:block!important;flex:0 0 158px!important;width:118px!important;
+ height:158px!important;margin:0!important;align-self:flex-start!important;
+}
+.komsco-shorts-grid .komsco-short-thumb-wrap{
+ display:block!important;flex:none!important;width:100%!important;
+ height:auto!important;aspect-ratio:9/13!important;margin:0!important;
+}
+.komsco-shorts-scroll .komsco-short-card>b,
+.komsco-shorts-grid .komsco-short-card>b{
+ display:-webkit-box!important;-webkit-box-orient:vertical!important;
+ -webkit-line-clamp:2!important;overflow:hidden!important;
+ line-height:1.35!important;height:2.7em!important;min-height:2.7em!important;
+ max-height:2.7em!important;margin:6px 0 0!important;
+ flex:0 0 auto!important;align-self:stretch!important;
+ overflow-wrap:anywhere!important;word-break:break-word!important;
+}
