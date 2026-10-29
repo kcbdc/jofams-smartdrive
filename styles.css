@@ -4734,3 +4734,59 @@ html body #app #bottomNav button[data-bottom-nav]:not(.active){background:transp
 #adminNoticeList .admin-notice-card summary b{display:inline;line-height:1.5}
 #adminNoticeList .admin-notice-card .dangollo-rich-copy{margin-top:12px;min-width:0;max-width:100%}
 @media(max-width:420px){#infoModal .info-sheet{height:min(88dvh,800px)}.notice-detail h2{font-size:18px}.notice-index .notice-row{padding:15px 12px}}
+
+/* v7.6.27.51 — 공지 상세 마지막 행이 하단 고정 탭에 가리지 않도록 시트와 스크롤을 분리 */
+#infoModal:not(.hidden) {
+  z-index: 110;
+}
+#infoModal .info-sheet {
+  top: auto !important;
+  bottom: calc(94px + var(--safeB, 0px)) !important;
+  height: min(78dvh, 820px) !important;
+  max-height: calc(100dvh - var(--safeT, 0px) - var(--safeB, 0px) - 118px) !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  padding-bottom: 0 !important;
+}
+#infoModal .info-sheet > header {
+  flex: 0 0 auto !important;
+  position: relative;
+  top: auto;
+  z-index: 2;
+}
+#infoModal #infoModalBody {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  padding: 12px 12px max(70px, env(safe-area-inset-bottom, 0px) + 40px) !important;
+  scroll-padding-bottom: 70px;
+}
+#infoModal .notice-detail,
+#infoModal .notice-detail-content {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible;
+  contain: none;
+}
+#infoModal .notice-detail-content > :last-child {
+  margin-bottom: 28px;
+}
+#infoModal .notice-detail-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+@media(max-width:420px) {
+  #infoModal .info-sheet {
+    height: min(79dvh, 800px) !important;
+  }
+}
