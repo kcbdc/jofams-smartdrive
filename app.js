@@ -2473,7 +2473,11 @@ function ensureUserMarker(){
     {const rd0=finiteOrNull(state.user.routeDistance);if(rd0!=null&&!state.tripStartedAt)state.driveMarkerRenderedDistance=rd0;}
   }
   if(state.tripStartedAt&&state.drivePositionUncertain&&!state.simulationActive){
+    // Do not hide the marker or poison the next valid GNSS fix. Keep last confirmed route point.
     if(state.driveMarkerRaf){cancelAnimationFrame(state.driveMarkerRaf);state.driveMarkerRaf=0;}
+    const last=pointAtRouteDistance(Number(state.driveMarkerRenderedDistance)||Number(state.user?.routeDistance)||0);
+    if(last)state.userMarker.setLngLat([last.lng,last.lat]);
+    const markerEl=state.userMarker.getElement?.();if(markerEl){markerEl.style.opacity='1';markerEl.style.visibility='visible';markerEl.style.display='block'}
     updateUserMarkerMotion();return;
   }
   if(state.tripStartedAt&&state.route?.geometry?.length&&finiteOrNull(state.user.routeDistance)!=null&&state.navigationStartReleased){
@@ -3321,27 +3325,61 @@ function announceTunnelAhead(idx){
 }
 function startDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningLastAt=Date.now();state.deadReckoningTimer=setInterval(deadReckoningTick,500)}
 function stopDeadReckoning(){clearInterval(state.deadReckoningTimer);state.deadReckoningTimer=0;state.gpsEstimated=false;updateGpsEstimateUi();state.deadReckoningDistance=null;state.deadReckoningLastAt=0}
+let dangolloGpsHealthTimer=0;
+let dangolloWatchFallback=false;
+function recoverDangolloLocationWatch(){
+  if(state.simulationActive||!state.tripStartedAt||state.permissionPrefs?.location===false)return;
+  const age=Date.now()-Number(state.lastRealGpsAt||state.lastRawFix?.at||0);
+  // Weak GNSS does not remove the vehicle. Keep last verified route position, clearly marked as uncertain.
+  if(age>4500){
+    ensureUserMarker();
+    const el=state.userMarker?.getElement?.();
+    if(el){el.style.visibility='visible';el.style.display='block';el.style.opacity='1';el.classList.add('dangollo-gps-unverified')}
+  }
+  if(dangolloWatchFallback && age>8000){
+    // Retry high accuracy periodically: low-accuracy fallback must not remain permanent.
+    if(state.watchId!=null){try{navigator.geolocation.clearWatch(state.watchId)}catch{}state.watchId=null}
+    dangolloWatchFallback=false;
+    startWatch();
+  }
+  ensureActiveRouteOverlay();
+}
+function ensureActiveRouteOverlay(){
+  if(!state.tripStartedAt||!state.route?.geometry?.length||!state.map||state.simulationActive)return;
+  const now=Date.now();if(now-Number(state.driveRouteHealthAt||0)<1800)return;
+  state.driveRouteHealthAt=now;
+  try{
+    if(!state.map.isStyleLoaded?.()){state.pendingRouteDraw={route:state.route,options:{fit:false}};return}
+    if(!state.map.getSource('route')||!state.map.getLayer('route-main')||!state.map.getLayer('route-shadow'))drawRoute(state.route,{fit:false});
+    else for(const id of ['route-shadow','route-main','route-traffic','route-direction-arrows']){
+      if(state.map.getLayer(id)&&state.map.getLayoutProperty(id,'visibility')==='none')state.map.setLayoutProperty(id,'visibility','visible');
+    }
+  }catch(e){console.warn('[GPS] route overlay recovery',e)}
+}
 function startWatch(){
   if(state.permissionPrefs?.location===false)return;
   if(nativeBridgeAvailable())setNativeNavigationActive(true);
   if(state.watchId!=null)return;
+  if(!dangolloGpsHealthTimer)dangolloGpsHealthTimer=setInterval(recoverDangolloLocationWatch,2200);
   if(!navigator.geolocation){console.warn('[GPS] geolocation API unavailable');return;}
   const watchError=(err)=>{
     console.warn('[GPS] watchPosition failed',err?.code,err?.message);
     if(err?.code===3 && state.watchId!=null){
       navigator.geolocation.clearWatch(state.watchId);
       state.watchId=null;
+      dangolloWatchFallback=true;
       // Use a less restrictive fix when high-accuracy GPS times out indoors.
       state.watchId=navigator.geolocation.watchPosition(p=>applyGps(p,false),
         e=>console.warn('[GPS] fallback watch failed',e?.code,e?.message),
         {enableHighAccuracy:false,maximumAge:30000,timeout:20000});
     }
   };
+  dangolloWatchFallback=false;
   state.watchId=navigator.geolocation.watchPosition(p=>applyGps(p,false),watchError,
     {enableHighAccuracy:true,maximumAge:10000,timeout:15000});
   startDeadReckoning();
 }
-function stopWatch(){if(nativeBridgeAvailable())setNativeNavigationActive(false);if(state.watchId!=null){navigator.geolocation.clearWatch(state.watchId);state.watchId=null}state.nativeLocationActive=false;stopDeadReckoning()}
+function stopWatch(){clearInterval(dangolloGpsHealthTimer);dangolloGpsHealthTimer=0;dangolloWatchFallback=false;if(nativeBridgeAvailable())setNativeNavigationActive(false);if(state.watchId!=null){navigator.geolocation.clearWatch(state.watchId);state.watchId=null}state.nativeLocationActive=false;stopDeadReckoning()}
 
 
 /* ---------- LIVE FUEL PRICE / OPINET ---------- */
@@ -5477,9 +5515,8 @@ function checkArrival(routeRemain){
   speakNavOnce(`arrival:${state.destination.id||state.destination.name}`,'목적지에 도착했습니다.',0);
   if(state.simulationActive){
     if(state.simulationRaf)cancelAnimationFrame(state.simulationRaf);
-    state.simulationRaf=0;state.simulationActive=false;updateSimulationControls();
-    toast('모의주행이 목적지 정문 부근에 도착했습니다.',1400);
-    setTimeout(stopNavigation,350);
+    stopRouteSimulation({resumeGps:true});
+    toast('모의주행 완료 · 실제 현재 위치로 복귀했습니다.',1800);
   }else setTimeout(stopNavigation,900);
   return true;
 }
@@ -5521,7 +5558,7 @@ function updateProgressUI(idx,force=false){
 
   const guides=(state.route.guides||[])
     .filter(x=>Number(x.routeIndex)>idx)
-    .filter(x=>distanceAlong(idx,Number(x.routeIndex))>=10);
+    .filter(x=>distanceAlong(idx,Number(x.routeIndex))>=3);
   let first=guides[0],second=guides[1];
   if(first){
     const d=guideDisplayDistance(idx,first,remain);
@@ -5627,10 +5664,10 @@ function guideDisplayDistance(idx,guide,remain){
 function guideUiDistanceMeters(d){
   const n=Math.max(10,Number(d)||10);
   if(n<100)return Math.max(10,Math.round(n/10)*10);
-  if(n<1000)return Math.max(100,Math.round(n/50)*50);
-  return Math.max(1000,Math.round(n/100)*100);
+  if(n<1000)return Math.max(100,Math.round(n/10)*10);
+  return Math.max(1000,Math.round(n/50)*50);
 }
-function guideUiDistanceText(d){return km(guideUiDistanceMeters(d))}
+function guideUiDistanceText(d){const meters=guideUiDistanceMeters(d);return meters<1000?`${meters}m`:km(meters)}
 
 
 function guidePanelText(g){
@@ -5686,6 +5723,21 @@ function updateTrafficStatus(seg){
   if(info.key!=='unknown'&&info.key!==state.lastTrafficStatus){state.lastTrafficStatus=info.key;}
 }
 
+async function recenterAndCheckFastRoute(){
+  if(state.simulationActive)stopRouteSimulation({resumeGps:true});
+  if(!state.tripStartedAt){recenterDriveMap();return}
+  const fresh=state.lastRawFix;
+  if(fresh&&pointValid(fresh)&&Date.now()-Number(fresh.at||0)<30000){
+    state.user={...(state.user||{}),lat:fresh.lat,lng:fresh.lng,rawLat:fresh.lat,rawLng:fresh.lng};
+    ensureUserMarker();
+  }
+  recenterDriveMap();
+  if(state.routeMode==='walk'||!state.destination||!state.route?.geometry?.length)return;
+  if(Date.now()-Number(state.lastRealGpsAt||0)>30000){toast('GPS 위치 확인 후 빠른 경로를 재검토합니다.',2200);startWatch();return}
+  // Traffic-aware route check; keep current route unless a verifiably faster route is returned.
+  state.lastLiveRouteAt=0;
+  await liveRouteRefresh();
+}
 function recenterDriveMap(){
   if(!state.user)return toast('현재 위치를 확인할 수 없습니다.');
   const g=state.route?.geometry||[],idx=state.currentRouteIndex||0,next=g[Math.min(g.length-1,idx+3)];
@@ -6549,27 +6601,33 @@ function stopRouteSimulation({resumeGps=true}={}){
   state.simulationRaf=0;
   const wasActive=Boolean(state.simulationActive);
   state.simulationActive=false;
+  window.__DANGOLLO_SIMULATION_ACTIVE__=false;
   state.simulationLastAt=0;
   state.simulationDistance=null;
 
   // 2) GPS 응답을 기다리지 않고 모의주행 직전 실제 위치로 즉시 되돌린다.
-  if(wasActive&&state.preSimulationUser&&state.tripStartedAt){
-    state.user={...state.preSimulationUser};
+  if(wasActive&&state.tripStartedAt){
+    const real=state.lastRawFix;
+    const realUsable=real&&pointValid(real)&&Date.now()-Number(real.at||0)<90000;
+    state.user={...(state.preSimulationUser||state.user||{}),
+      ...(realUsable?{lat:Number(real.lat),lng:Number(real.lng),rawLat:Number(real.lat),rawLng:Number(real.lng),accuracy:Number(real.accuracy)}:{})};
     state.user.speed=Math.max(0,Number(state.user.speed)||0);
 
-    const restoreDistance=Number(state.preSimulationRouteDistance);
+    // Match latest actual GNSS coordinates to the active route, not to a simulated waypoint.
+    const rp=realUsable?directionAwareNearestPointOnRoute(state.user.lng,state.user.lat,Number(state.user.heading),0,state.route?.geometry||[],120):null;
+    const matched=rp&&Number.isFinite(Number(rp.index))?Number(state.routeCumulative?.[rp.index]):NaN;
+    const restoreDistance=Number.isFinite(matched)?matched:Number(state.preSimulationRouteDistance);
     if(Number.isFinite(restoreDistance)){
       state.user.routeDistance=restoreDistance;
       const p=pointAtRouteDistance(restoreDistance);
       if(p){
-        state.user.lng=p.lng;state.user.lat=p.lat;
+        if(!realUsable){state.user.lng=p.lng;state.user.lat=p.lat;}
         state.user.routeIndex=p.index;
         if(!Number.isFinite(Number(state.user.heading)))state.user.heading=p.heading;
       }
       state.driveMarkerRenderedDistance=restoreDistance;
       state.driveMarkerTargetDistance=restoreDistance;
-      state.routeLockedDistance=Number.isFinite(Number(state.preSimulationRouteLockedDistance))
-        ?Number(state.preSimulationRouteLockedDistance):restoreDistance;
+      state.routeLockedDistance=restoreDistance;
       state.deadReckoningDistance=restoreDistance;
     }
 
@@ -6609,6 +6667,7 @@ function stopRouteSimulation({resumeGps=true}={}){
       });
     }
     updateDriving(false);
+    ensureActiveRouteOverlay();
   }
 
   updateSimulationControls();
@@ -8954,7 +9013,7 @@ function bindUI(){
     if($('fuelModalClose'))$('fuelModalClose').onclick=closeFuelModal;
     if($('fuelModal'))$('fuelModal').addEventListener('click',e=>{if(e.target===$('fuelModal'))closeFuelModal()});
   }catch(e){console.warn('fuel UI bind failed',e)}
-  try{$('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=recenterDriveMap;$('mapCompassBtn').onclick=resetDriveCompass;$('map3dBtn').onclick=e=>{e.stopPropagation();state.map3D=!state.map3D;applyDriveMapMode();toggleMapControls(true)};$('mapSatelliteBtn').onclick=e=>{e.stopPropagation();toggleMapSatellite();toggleMapControls(true)};$('mapZoomInBtn').onclick=e=>{e.stopPropagation();state.map?.zoomIn({duration:180});toggleMapControls(true)};$('mapZoomOutBtn').onclick=e=>{e.stopPropagation();state.map?.zoomOut({duration:180});toggleMapControls(true)};$('driveView').addEventListener('click',e=>{if(e.target.closest('button,input,.maneuver-stack,.drive-bottom-card,.safety-alert,.traffic-status,.vms-banner,.lane-assist-layer'))return;toggleMapControls(true)});if($('driveVoiceBtn'))$('driveVoiceBtn').onclick=startVoiceCommand;if($('driveRadioBtn'))$('driveRadioBtn').onclick=toggleRadio;if($('arOpenBtn'))$('arOpenBtn').onclick=startVoiceCommand;if($('driveArBtn'))$('driveArBtn').onclick=()=>{closeDriveMenu();startVoiceCommand()};$('routeInfoBtn').onclick=openRouteInfo;/* simulation controls are bound once by bindDangolloSimulationControls() */$('driveSearchBtn').onclick=openDriveSearch;$('routeInfoClose').onclick=closeRouteInfo;$('routeInfoModal').addEventListener('click',e=>{if(e.target===$('routeInfoModal'))closeRouteInfo()});$('driveSearchClose').onclick=closeDriveSearch;$('driveSearchSubmit').onclick=()=>searchDriveDestinations($('driveSearchInput').value);$('driveSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchDriveDestinations(e.target.value)});$('driveSearchModal').addEventListener('click',e=>{if(e.target===$('driveSearchModal'))closeDriveSearch()});document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{stopRouteSimulation({resumeGps:false});closeDriveMenu();stopWatch();cancelAutoStart();setView('route');loadRouteOptions().catch(e=>console.warn('alternative route calculation failed',e))};$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;}catch(e){console.warn('UI bind section 9 failed',e)}
+  try{$('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=recenterAndCheckFastRoute;$('mapCompassBtn').onclick=resetDriveCompass;$('map3dBtn').onclick=e=>{e.stopPropagation();state.map3D=!state.map3D;applyDriveMapMode();toggleMapControls(true)};$('mapSatelliteBtn').onclick=e=>{e.stopPropagation();toggleMapSatellite();toggleMapControls(true)};$('mapZoomInBtn').onclick=e=>{e.stopPropagation();state.map?.zoomIn({duration:180});toggleMapControls(true)};$('mapZoomOutBtn').onclick=e=>{e.stopPropagation();state.map?.zoomOut({duration:180});toggleMapControls(true)};$('driveView').addEventListener('click',e=>{if(e.target.closest('button,input,.maneuver-stack,.drive-bottom-card,.safety-alert,.traffic-status,.vms-banner,.lane-assist-layer'))return;toggleMapControls(true)});if($('driveVoiceBtn'))$('driveVoiceBtn').onclick=startVoiceCommand;if($('driveRadioBtn'))$('driveRadioBtn').onclick=toggleRadio;if($('arOpenBtn'))$('arOpenBtn').onclick=startVoiceCommand;if($('driveArBtn'))$('driveArBtn').onclick=()=>{closeDriveMenu();startVoiceCommand()};$('routeInfoBtn').onclick=openRouteInfo;/* simulation controls are bound once by bindDangolloSimulationControls() */$('driveSearchBtn').onclick=openDriveSearch;$('routeInfoClose').onclick=closeRouteInfo;$('routeInfoModal').addEventListener('click',e=>{if(e.target===$('routeInfoModal'))closeRouteInfo()});$('driveSearchClose').onclick=closeDriveSearch;$('driveSearchSubmit').onclick=()=>searchDriveDestinations($('driveSearchInput').value);$('driveSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchDriveDestinations(e.target.value)});$('driveSearchModal').addEventListener('click',e=>{if(e.target===$('driveSearchModal'))closeDriveSearch()});document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{closeDriveMenu();recenterAndCheckFastRoute()};$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;}catch(e){console.warn('UI bind section 9 failed',e)}
   try{$('guideVolume').oninput=e=>changeVolume(e.target.value);if($('radioVolume'))$('radioVolume').oninput=e=>setRadioVolume(Number(e.target.value)/100,true);$('myGuideVolume').oninput=e=>changeVolume(e.target.value);$('myCloseBtn').onclick=closeMy;$('myModal').addEventListener('click',e=>{if(e.target===$('myModal'))closeMy()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;$('myFavoritesBtn').onclick=openFavoritesList;$('tripHistoryBtn').onclick=openTripHistory;$('noticeBtn').onclick=openNotices;if($('appPrivacyBtn'))$('appPrivacyBtn').onclick=openAppPrivacy;if($('permissionSettingBtn'))$('permissionSettingBtn').onclick=()=>toggleSettingPanel('permissionSettingBtn','permissionSettingPanel');if($('locationConsentToggle'))$('locationConsentToggle').onchange=e=>setPermissionPreference('location',e.target.checked);if($('cameraConsentToggle'))$('cameraConsentToggle').onchange=e=>setPermissionPreference('camera',e.target.checked);$('infoModalClose').onclick=closeInfoModal;$('infoModal').addEventListener('click',e=>{if(e.target===$('infoModal'))closeInfoModal()});}catch(e){console.warn('UI bind section 10 failed',e)}
   try{if($('hamburgerCloseBtn'))$('hamburgerCloseBtn').onclick=closeHamburgerMenu;if($('hamburgerMenuModal'))$('hamburgerMenuModal').addEventListener('click',e=>{if(e.target===$('hamburgerMenuModal'))closeHamburgerMenu()});}catch(e){console.warn('UI bind section 11 failed',e)}
   try{if($('hambPlaceManageBtn'))$('hambPlaceManageBtn').onclick=openDestinationManager;if($('hambRecentBtn'))$('hambRecentBtn').onclick=openRecentDestinationAll;if($('hambWaypointBtn'))$('hambWaypointBtn').onclick=openWaypointSaved;if($('hambTrafficBtn'))$('hambTrafficBtn').onclick=openTrafficDetail;if($('hambRoutePriorityBtn'))$('hambRoutePriorityBtn').onclick=openRoutePrioritySettings;if($('hambCameraSettingsBtn'))$('hambCameraSettingsBtn').onclick=openCameraAlertSettings;if($('hambSupportBtn'))$('hambSupportBtn').onclick=openSupportTerms;}catch(e){console.warn('UI bind section 12 failed',e)}
@@ -9173,7 +9232,7 @@ function hotspotRenderRow(host,item,opts={}){
   const actions=document.createElement('div');actions.className='hotspot-actions';
   const insta=document.createElement('a');insta.href=hotspotInstagramUrl(item);insta.target='_blank';insta.rel='noopener noreferrer';insta.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg><span>인스타그램</span>'; insta.title='이 장소를 인스타그램에서 검색 (SNS 인기도 미검증)';
   const review=document.createElement('a');review.href=discoverMerchantSearchUrl(item,'review');review.target='_blank';review.rel='noopener noreferrer';review.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5a7.9 7.9 0 0 1-8 8 8.8 8.8 0 0 1-3-.5L4 20l1-4.4A8 8 0 1 1 20 11.5Z"/><path d="M8.5 11.5h7M8.5 14.5h4"/></svg><span>방문후기</span>'; review.title='외부 방문 후기 검색 (평점·인기도 미검증)';
-  const go=document.createElement('button');go.type='button';go.textContent=opts.verified?'경유지로 추가':'목적지로 선택';
+  const go=document.createElement('button');go.type='button';go.innerHTML='<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg><span>'+ (opts.verified?'경유지 추가':'목적지 선택')+'</span>';
   go.onclick=async()=>{
     if(state.tripStartedAt){host.status.textContent='안전한 곳에 정차한 후 장소를 선택해 주세요.';return}
     const pt=normalizedPlace({name:item.name||item.market||'가맹점',address:item.address||'',lat:item.lat,lng:item.lng});

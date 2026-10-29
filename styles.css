@@ -4444,3 +4444,13 @@ body:has(#driveView:not(.hidden)) .maplibregl-marker.dangollo-route-camera.passe
 .hotspot-actions a svg,.discover-links a svg{width:17px;height:17px;flex:0 0 17px}
 .hotspot-actions a:first-child,.discover-links a:first-child{background:linear-gradient(110deg,#fff1f7,#fff6ec);color:#ad4266}
 .hotspot-actions a:nth-child(2),.discover-links a:nth-child(2){background:#f0f5fc;color:#47628b}
+
+/* 7.6.27.33 — navigation HUD safe spacing / balanced control labels */
+html body #app #driveView #driveRefreshBtn::after{content:"현재위치"!important;white-space:nowrap!important}
+html body #app #driveView #driveBottomNormal>.dbn-row{min-width:0!important;overflow:hidden!important}
+html body #app #driveView #driveBottomNormal .dbn-cell{min-width:0!important;box-sizing:border-box!important;padding:8px 3px 15px!important;gap:6px!important;justify-content:center!important}
+html body #app #driveView .dbn-cell>small{position:static!important;flex-shrink:0!important;line-height:1.3!important;margin:0!important}
+html body #app #driveView #driveBottomNormal .dbn-cell>b{max-width:100%!important;line-height:1.2!important;font-size:clamp(15px,3.7vw,30px)!important;overflow:hidden!important;text-overflow:clip!important}
+html body #app #driveView #driveBottomNormal #arrivalTime{top:0!important;line-height:1.25!important;padding-bottom:2px!important}
+.hotspot-actions button svg{width:17px;height:17px;vertical-align:middle;flex:none}.hotspot-actions button{display:inline-flex;align-items:center;justify-content:center;gap:5px}
+@media(orientation:landscape){html body #app #driveView #driveBottomNormal .dbn-cell{padding:3px 3px 7px!important;gap:2px!important}}
