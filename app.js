@@ -1564,14 +1564,17 @@ function discoverMerchantSearchUrl(item,service){
   const addr=String(item?.address||item?.matchedAddress||'').trim();
   const locality=addr.split(/\s+/).slice(0,2).join(' ');
   const q=[name,locality].filter(Boolean).join(' ');
-  if(service==='instagram')return 'https://www.instagram.com/explore/search/keyword/?q='+encodeURIComponent(q);
+  // Instagram's website keyword search can render an empty page in mobile browsers.
+  // Search indexed public Instagram pages instead. This is a discovery link,
+  // not an Instagram API, popularity score, or verification of a merchant's account.
+  if(service==='instagram')return 'https://www.google.com/search?q='+encodeURIComponent('site:instagram.com '+q);
   return 'https://search.naver.com/search.naver?where=view&query='+encodeURIComponent(q+' 방문 후기');
 }
 function discoverMerchantLinks(item,cssClass='discover-links'){
   const link=(type,display,label)=>`<a href="${escapeHtml(discoverMerchantSearchUrl(item,type))}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(item.name||'가맹점')} ${label} (새 창)">${display}</a>`;
   const instagram='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg><span>인스타그램</span>';
   const review='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5a7.9 7.9 0 0 1-8 8 8.8 8.8 0 0 1-3-.5L4 20l1-4.4A8 8 0 1 1 20 11.5Z"/><path d="M8.5 11.5h7M8.5 14.5h4"/></svg><span>후기 검색</span>';
-  return `<span class="${cssClass}">${link('instagram',instagram,'인스타그램 검색')}${link('review',review,'방문후기 검색')}</span>`;
+  return `<span class="${cssClass}">${link('instagram',instagram,'인스타그램 게시물 검색')}${link('review',review,'방문후기 검색')}</span>`;
 }
 function renderWhereToList(){
   const box=$('whereToList');if(!box)return;
@@ -6654,6 +6657,52 @@ function stopRouteSimulation({resumeGps=true}={}){
   state.simulationLastAt=0;
   state.simulationDistance=null;
 
+  // v7.6.27.37: 가상주행 종료는 실주행 복귀가 아닌 '목적지 검색 후 안내 시작 전' 상태로 리셋한다.
+  // 안내 세션 / 경고 / 타이머를 종료하되 목적지·선택 경로는 유지한다.
+  if(wasActive){
+    cancelAutoStart();stopLiveRouteRefresh();stopWatch();stopDeadReckoning();
+    state.tripStartedAt=0;
+    state.navigationStartReleased=false;state.navigationStartAt=0;
+    state.navigationStartAnchor=null;state.stationaryActive=false;
+    state.sectionSpeedResumeBlocked=false;
+    state.safetyEvents=[];state.activeSafetyId=null;
+    resetSectionSpeedState();hideSafetyAlert();clearSafetyMarkers();
+    $('laneAssistLayer')?.classList.add('hidden');
+    $('safetyAlert')?.classList.add('hidden');
+    const flash=$('overspeedFlash');if(flash){flash.classList.remove('active');flash.classList.add('hidden');flash.setAttribute('aria-hidden','true')}
+    document.getElementById('sectionAvgOverspeedFlash')?.classList.remove('on');
+    $('driveView')?.removeAttribute('data-pop');
+    $('driveView')?.classList.remove('has-section-speed');
+    try{stopNavigationRadioImmediately()}catch{}
+    try{releaseNavigationWakeLock()}catch{}
+    // 마지막 모의 좌표 대신 최신 실제 위치를 사용한다.
+    const real=state.lastRawFix;
+    if(real&&pointValid(real)&&Date.now()-Number(real.at||0)<90000){
+      state.user={...(state.preSimulationUser||state.user||{}),lat:Number(real.lat),lng:Number(real.lng),speed:0,simulation:false};
+    }else if(state.preSimulationUser){state.user={...state.preSimulationUser,speed:0,simulation:false}}
+    if(state.route?.geometry?.length){
+      state.routeCumulative=buildCumulative(state.route);
+      state.routeOptions=state.carRouteOptions?.length?state.carRouteOptions:[state.route];
+      state.selectedRoute=Math.max(0,state.routeOptions.indexOf(state.route));
+    }
+    state.preSimulationUser=null;
+    state.preSimulationRouteDistance=null;
+    state.preSimulationRouteLockedDistance=null;
+    state.preSimulationStationaryActive=false;
+    state.preSimulationStationaryGpsAnchor=null;
+    updateSimulationControls();
+    setView('route');
+    renderRouteCards();
+    renderRouteModeSwitch();
+    if($('routeDestinationName'))$('routeDestinationName').textContent=state.destination?.name||'목적지';
+    if($('routeAddressDest'))$('routeAddressDest').textContent=state.destination?.name||'목적지';
+    if($('startBtn')){$('startBtn').disabled=false;$('startBtn').textContent='안내 시작'}
+    if($('autoStartHint'))$('autoStartHint').textContent='모의주행이 종료되었습니다. 안내 시작을 누르면 실제 주행을 시작합니다.';
+    if(state.route?.geometry?.length)drawRoute(state.route,{fit:true});
+    toast('모의주행 종료 · 경로 선택 화면으로 복귀했습니다.',1800);
+    return;
+  }
+
   // 모의주행 상태에서 생성된 구간단속 카드/과속 붉은 오버레이를 즉시 완전 해제.
   // updateDriving()이 오래된 모의주행 위치로 다시 렌더링하지 않도록 잠금.
   if(wasActive){
@@ -8979,6 +9028,77 @@ function openWaypointSaved(){
   });
 }
 async function openAppPrivacy(){const c=await loadPublicContent();openInfoModal('앱정보 / 개인정보처리방침',`<div class="info-card privacy-copy"><h3>단골로 내비</h3><p>${escapeHtml(c.appInfo||'앱정보가 준비 중입니다.').replace(/\n/g,'<br>')}</p><hr><p>${escapeHtml(c.privacy||'개인정보처리방침이 준비 중입니다.').replace(/\n/g,'<br>')}</p></div>`)}
+// v7.6.27.37 — 다른경로: 목적지 유지, 실제 현위치 출발 3가지 경로를 비교한다.
+let dangolloAlternateToken=0;
+const DANGOLLO_ALTERNATE_SPECS=[
+  {kind:'recommend',label:'추천',priority:'RECOMMEND',avoid:null},
+  {kind:'fast',label:'빠른길',priority:'TIME',avoid:null},
+  {kind:'free',label:'무료도로',priority:'RECOMMEND',avoid:'toll'}
+];
+function closeDriveAlternateRoutes(){
+  dangolloAlternateToken++;
+  $('driveAlternateModal')?.classList.add('hidden');
+}
+async function openDriveAlternateRoutes(){
+  if(!state.destination||!state.route)return toast('목적지와 경로를 먼저 설정해 주세요.');
+  if(state.simulationActive)return toast('모의주행을 종료한 후 경로를 변경해 주세요.');
+  const modal=$('driveAlternateModal'),list=$('driveAlternateChoices'),status=$('driveAlternateStatus');
+  if(!modal||!list||!status)return;
+  const token=++dangolloAlternateToken;
+  modal.classList.remove('hidden');
+  const real=state.lastRawFix;
+  const usable=real&&pointValid(real)&&Date.now()-Number(real.at||0)<30000;
+  const origin=usable?{lat:Number(real.lat),lng:Number(real.lng),heading:Number(state.user?.heading)||null}:currentOriginPoint();
+  if(!pointValid(origin)){
+    status.textContent='현재 GPS 위치를 확인하지 못했습니다. 위치 수신 후 다시 시도해 주세요.';
+    list.innerHTML='';return;
+  }
+  status.textContent='추천·빠른길·무료도로를 동시에 조회하고 있습니다.';
+  list.innerHTML='';
+  const results=new Map();
+  const destinationKey=`${state.destination.lat}:${state.destination.lng}`;
+  function render(){
+    if(token!==dangolloAlternateToken)return;
+    list.innerHTML='';
+    for(const spec of DANGOLLO_ALTERNATE_SPECS){
+      const result=results.get(spec.kind);
+      const btn=document.createElement('button');btn.type='button';btn.className='dangollo-alt-choice';
+      const left=document.createElement('span');left.className='dangollo-alt-choice-label';left.textContent=spec.label;
+      const right=document.createElement('span');right.className='dangollo-alt-choice-detail';
+      if(result?.geometry?.length){
+        const fare=Number(result.fare?.toll)||0;
+        right.textContent=`${mins(result.duration)} · ${km(result.distance)} · ${fare?fare.toLocaleString()+'원':'통행료 0원'}`;
+        btn.onclick=()=>{
+          if(token!==dangolloAlternateToken||!state.tripStartedAt||!state.destination||`${state.destination.lat}:${state.destination.lng}`!==destinationKey)return;
+          // 타 경로 선택이 승인된 경우에만 주행 경로 교체.
+          state.route={...result,_label:spec.label,_class:spec.kind==='recommend'?'':spec.kind,_character:state.character};
+          state.routePreference=spec.kind;
+          state.routeOptions=[state.route];
+          state.selectedRoute=0;
+          state.routeOriginUsed={lat:origin.lat,lng:origin.lng};
+          closeDriveAlternateRoutes();
+          resumeNavigationWithSelectedRoute();
+        };
+      }else{
+        right.textContent=result===false?'조회 실패':'조회 중…';btn.disabled=true;
+      }
+      btn.append(left,right);list.append(btn);
+    }
+  }
+  render();
+  await Promise.allSettled(DANGOLLO_ALTERNATE_SPECS.map(async spec=>{
+    try{
+      const rr=await routeRequest(spec.priority,spec.avoid,null,'car',origin);
+      if(token!==dangolloAlternateToken)return;
+      results.set(spec.kind,rr?.geometry?.length?rr:false);
+    }catch(err){console.warn('[다른경로]',spec.label,err);results.set(spec.kind,false)}
+    if(token!==dangolloAlternateToken)return;
+    render();
+    const count=[...results.values()].filter(x=>x?.geometry?.length).length;
+    status.textContent=count?`${count}개 경로가 준비되었습니다. 원하는 경로를 선택하세요.`:'경로 계산 중입니다.';
+  }));
+  if(token===dangolloAlternateToken&&!([...results.values()].some(x=>x?.geometry?.length)))status.textContent='경로를 조회하지 못했습니다. 네트워크·위치 상태를 확인하고 다시 시도해 주세요.';
+}
 function openDriveMenu(){$('driveMenu').classList.remove('hidden')}
 function closeDriveMenu(){$('driveMenu').classList.add('hidden')}
 function openMy(){closeBottomPanels('my');$('myModal').classList.remove('hidden');renderProfile();syncCharacterUI();updateVolumeUI();updateTripHistorySummary()}
@@ -9075,7 +9195,7 @@ function bindUI(){
     if($('fuelModalClose'))$('fuelModalClose').onclick=closeFuelModal;
     if($('fuelModal'))$('fuelModal').addEventListener('click',e=>{if(e.target===$('fuelModal'))closeFuelModal()});
   }catch(e){console.warn('fuel UI bind failed',e)}
-  try{$('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=recenterAndCheckFastRoute;$('mapCompassBtn').onclick=resetDriveCompass;$('map3dBtn').onclick=e=>{e.stopPropagation();state.map3D=!state.map3D;applyDriveMapMode();toggleMapControls(true)};$('mapSatelliteBtn').onclick=e=>{e.stopPropagation();toggleMapSatellite();toggleMapControls(true)};$('mapZoomInBtn').onclick=e=>{e.stopPropagation();state.map?.zoomIn({duration:180});toggleMapControls(true)};$('mapZoomOutBtn').onclick=e=>{e.stopPropagation();state.map?.zoomOut({duration:180});toggleMapControls(true)};$('driveView').addEventListener('click',e=>{if(e.target.closest('button,input,.maneuver-stack,.drive-bottom-card,.safety-alert,.traffic-status,.vms-banner,.lane-assist-layer'))return;toggleMapControls(true)});if($('driveVoiceBtn'))$('driveVoiceBtn').onclick=startVoiceCommand;if($('driveRadioBtn'))$('driveRadioBtn').onclick=toggleRadio;if($('arOpenBtn'))$('arOpenBtn').onclick=startVoiceCommand;if($('driveArBtn'))$('driveArBtn').onclick=()=>{closeDriveMenu();startVoiceCommand()};$('routeInfoBtn').onclick=openRouteInfo;/* simulation controls are bound once by bindDangolloSimulationControls() */$('driveSearchBtn').onclick=openDriveSearch;$('routeInfoClose').onclick=closeRouteInfo;$('routeInfoModal').addEventListener('click',e=>{if(e.target===$('routeInfoModal'))closeRouteInfo()});$('driveSearchClose').onclick=closeDriveSearch;$('driveSearchSubmit').onclick=()=>searchDriveDestinations($('driveSearchInput').value);$('driveSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchDriveDestinations(e.target.value)});$('driveSearchModal').addEventListener('click',e=>{if(e.target===$('driveSearchModal'))closeDriveSearch()});document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{closeDriveMenu();recenterAndCheckFastRoute()};$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;}catch(e){console.warn('UI bind section 9 failed',e)}
+  try{$('driveMenuBtn').onclick=openDriveMenu;$('driveRefreshBtn').onclick=recenterAndCheckFastRoute;$('mapCompassBtn').onclick=resetDriveCompass;$('map3dBtn').onclick=e=>{e.stopPropagation();state.map3D=!state.map3D;applyDriveMapMode();toggleMapControls(true)};$('mapSatelliteBtn').onclick=e=>{e.stopPropagation();toggleMapSatellite();toggleMapControls(true)};$('mapZoomInBtn').onclick=e=>{e.stopPropagation();state.map?.zoomIn({duration:180});toggleMapControls(true)};$('mapZoomOutBtn').onclick=e=>{e.stopPropagation();state.map?.zoomOut({duration:180});toggleMapControls(true)};$('driveView').addEventListener('click',e=>{if(e.target.closest('button,input,.maneuver-stack,.drive-bottom-card,.safety-alert,.traffic-status,.vms-banner,.lane-assist-layer'))return;toggleMapControls(true)});if($('driveVoiceBtn'))$('driveVoiceBtn').onclick=startVoiceCommand;if($('driveRadioBtn'))$('driveRadioBtn').onclick=toggleRadio;if($('arOpenBtn'))$('arOpenBtn').onclick=startVoiceCommand;if($('driveArBtn'))$('driveArBtn').onclick=()=>{closeDriveMenu();startVoiceCommand()};$('routeInfoBtn').onclick=openRouteInfo;/* simulation controls are bound once by bindDangolloSimulationControls() */$('driveSearchBtn').onclick=openDriveSearch;$('routeInfoClose').onclick=closeRouteInfo;$('routeInfoModal').addEventListener('click',e=>{if(e.target===$('routeInfoModal'))closeRouteInfo()});$('driveSearchClose').onclick=closeDriveSearch;$('driveSearchSubmit').onclick=()=>searchDriveDestinations($('driveSearchInput').value);$('driveSearchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchDriveDestinations(e.target.value)});$('driveSearchModal').addEventListener('click',e=>{if(e.target===$('driveSearchModal'))closeDriveSearch()});document.querySelector('.bottom-modal-backdrop').onclick=closeDriveMenu;$('otherRouteBtn').onclick=()=>{closeDriveMenu();openDriveAlternateRoutes()};$('driveAlternateClose')?.addEventListener('click',closeDriveAlternateRoutes);$('driveAlternateModal')?.addEventListener('click',e=>{if(e.target===$('driveAlternateModal'))closeDriveAlternateRoutes()});$('driveSettingBtn').onclick=()=>{closeDriveMenu();openMy()};$('shareBtn').onclick=shareArrival;$('endNavBtn').onclick=stopNavigation;}catch(e){console.warn('UI bind section 9 failed',e)}
   try{$('guideVolume').oninput=e=>changeVolume(e.target.value);if($('radioVolume'))$('radioVolume').oninput=e=>setRadioVolume(Number(e.target.value)/100,true);$('myGuideVolume').oninput=e=>changeVolume(e.target.value);$('myCloseBtn').onclick=closeMy;$('myModal').addEventListener('click',e=>{if(e.target===$('myModal'))closeMy()});$('googleLoginBtn').onclick=loginGoogle;$('logoutBtn').onclick=logout;$('myFavoritesBtn').onclick=openFavoritesList;$('tripHistoryBtn').onclick=openTripHistory;$('noticeBtn').onclick=openNotices;if($('appPrivacyBtn'))$('appPrivacyBtn').onclick=openAppPrivacy;if($('permissionSettingBtn'))$('permissionSettingBtn').onclick=()=>toggleSettingPanel('permissionSettingBtn','permissionSettingPanel');if($('locationConsentToggle'))$('locationConsentToggle').onchange=e=>setPermissionPreference('location',e.target.checked);if($('cameraConsentToggle'))$('cameraConsentToggle').onchange=e=>setPermissionPreference('camera',e.target.checked);$('infoModalClose').onclick=closeInfoModal;$('infoModal').addEventListener('click',e=>{if(e.target===$('infoModal'))closeInfoModal()});}catch(e){console.warn('UI bind section 10 failed',e)}
   try{if($('hamburgerCloseBtn'))$('hamburgerCloseBtn').onclick=closeHamburgerMenu;if($('hamburgerMenuModal'))$('hamburgerMenuModal').addEventListener('click',e=>{if(e.target===$('hamburgerMenuModal'))closeHamburgerMenu()});}catch(e){console.warn('UI bind section 11 failed',e)}
   try{if($('hambPlaceManageBtn'))$('hambPlaceManageBtn').onclick=openDestinationManager;if($('hambRecentBtn'))$('hambRecentBtn').onclick=openRecentDestinationAll;if($('hambWaypointBtn'))$('hambWaypointBtn').onclick=openWaypointSaved;if($('hambTrafficBtn'))$('hambTrafficBtn').onclick=openTrafficDetail;if($('hambRoutePriorityBtn'))$('hambRoutePriorityBtn').onclick=openRoutePrioritySettings;if($('hambCameraSettingsBtn'))$('hambCameraSettingsBtn').onclick=openCameraAlertSettings;if($('hambSupportBtn'))$('hambSupportBtn').onclick=openSupportTerms;}catch(e){console.warn('UI bind section 12 failed',e)}
@@ -9292,7 +9412,7 @@ function hotspotRenderRow(host,item,opts={}){
   meta.textContent=`${item.payment==='onnuri'?'온누리':'지역사랑'} 가맹점${distance}${opts.extra!=null?` · 추가 우회 약 ${opts.extra.toFixed(1)}분`:''}`;
   const address=document.createElement('small');address.textContent=hotspotText(item.address||item.matchedAddress||item.market||'주소 상세 확인 필요');
   const actions=document.createElement('div');actions.className='hotspot-actions';
-  const insta=document.createElement('a');insta.href=hotspotInstagramUrl(item);insta.target='_blank';insta.rel='noopener noreferrer';insta.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg><span>인스타그램</span>'; insta.title='이 장소를 인스타그램에서 검색 (SNS 인기도 미검증)';
+  const insta=document.createElement('a');insta.href=hotspotInstagramUrl(item);insta.target='_blank';insta.rel='noopener noreferrer';insta.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg><span>인스타그램</span>'; insta.title='공개된 인스타그램 게시물 검색결과 보기 (Google 검색 · SNS 인기도 미검증)';
   const review=document.createElement('a');review.href=discoverMerchantSearchUrl(item,'review');review.target='_blank';review.rel='noopener noreferrer';review.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5a7.9 7.9 0 0 1-8 8 8.8 8.8 0 0 1-3-.5L4 20l1-4.4A8 8 0 1 1 20 11.5Z"/><path d="M8.5 11.5h7M8.5 14.5h4"/></svg><span>방문후기</span>'; review.title='외부 방문 후기 검색 (평점·인기도 미검증)';
   const go=document.createElement('button');go.type='button';go.innerHTML='<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg><span>'+ (opts.verified?'경유지 추가':'목적지 선택')+'</span>';
   go.onclick=async()=>{

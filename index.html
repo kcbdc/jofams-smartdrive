@@ -57,7 +57,7 @@
 <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.27.35" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.27.36" />
 </head>
 <body>
   <main id="app">
@@ -395,7 +395,7 @@
           <small class="traffic-legend-note">* 극심은 속도 기준 추가 분류이며, 통제는 교통 API의 통행불가 상태입니다.</small>
         </div>
         <div class="drive-menu-actions">
-          <button id="otherRouteBtn"><span data-icon="routes"></span><b>현재위치</b></button>
+          <button id="otherRouteBtn"><span data-icon="routes"></span><b>다른경로</b></button>
           <button id="driveSettingBtn"><span data-icon="settings"></span><b>주행설정</b></button>
           <button id="shareBtn"><span data-icon="share"></span><b>도착공유</b></button>
           <button id="driveArBtn" type="button" aria-label="음성으로 가맹점 경유 길안내"><span class="dangollo-mic-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5.5 10.5a6.5 6.5 0 0 0 13 0M12 17v4M8.5 21h7"/><path d="M19 4.5l1.8 1.8M20 9.5h2" stroke-width="1.6"/></svg></span><b>음성 지시</b></button>
@@ -404,6 +404,17 @@
       </section>
     </div>
 
+
+
+    <!-- v7.6.27.37: 주행 중 경로 재선택; 실제 경로 API 3종 조회 -->
+    <div id="driveAlternateModal" class="dangollo-alt-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="driveAlternateTitle">
+      <section class="dangollo-alt-sheet">
+        <header><div><strong id="driveAlternateTitle">다른경로 선택</strong><small>현재 위치에서 목적지까지 다시 계산합니다.</small></div><button id="driveAlternateClose" type="button" aria-label="닫기">×</button></header>
+        <p id="driveAlternateStatus" role="status" aria-live="polite">경로를 확인하고 있습니다.</p>
+        <div id="driveAlternateChoices" class="dangollo-alt-choices"></div>
+        <p class="dangollo-alt-safety">안전한 곳에 정차한 뒤 경로를 선택해 주세요. 교통 정보는 경로 API의 최신 응답을 기준으로 합니다.</p>
+      </section>
+    </div>
 
     <!-- HAMBURGER / DRIVING MENU -->
     <div id="hamburgerMenuModal" class="modal hidden hamburger-menu-modal">
@@ -850,6 +861,6 @@
 
   <script>window.__JOFAMS_BUILD__="7.6.27.33";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.27.35"></script>
+  <script type="module" src="/app.js?v=7.6.27.36"></script>
 </body>
 </html>

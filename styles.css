@@ -4466,3 +4466,26 @@ body:has(#driveView:not(.hidden)) .character-car-marker.rear-version.jofams-car-
 html body #app #driveView #sectionSpeedPanel:not(.hidden){z-index:99!important;isolation:isolate!important;}
 html body #app #driveView #sectionSpeedPanel.hidden{display:none!important;visibility:hidden!important;pointer-events:none!important;}
 html body #app #driveView:not(.has-section-speed) #sectionSpeedPanel{display:none!important;}
+
+/* v7.6.27.37: high-priority driving safety overlays */
+html body #app #driveView #sectionSpeedPanel:not(.hidden){z-index:121!important}
+html body #app #driveView #safetyAlert:not(.hidden){z-index:120!important;isolation:isolate!important}
+html body #app #driveView #overspeedFlash.active{z-index:119!important;isolation:isolate!important}
+html body #app #driveView #overspeedFlash.active>div{z-index:120!important}
+html body #app #driveView .maneuver-stack{z-index:78!important}
+/* Alternative-route selection, above all driving overlays, below independent system dialogs */
+.dangollo-alt-backdrop{position:fixed;inset:0;z-index:3000;display:flex;align-items:flex-end;justify-content:center;background:rgba(8,18,32,.55);padding:12px 10px max(18px,env(safe-area-inset-bottom,0px))}
+.dangollo-alt-backdrop.hidden{display:none!important}
+.dangollo-alt-sheet{width:min(100%,540px);max-height:85dvh;overflow:auto;box-sizing:border-box;background:#fff;border-radius:24px;padding:20px 16px 18px;box-shadow:0 18px 50px rgba(0,0,0,.25);color:#182939}
+.dangollo-alt-sheet header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.dangollo-alt-sheet header strong{font-size:21px;font-weight:850}
+.dangollo-alt-sheet header small{display:block;font-size:12px;color:#6b7a8b;margin-top:5px}
+#driveAlternateClose{width:36px;height:36px;border:0;border-radius:50%;background:#f0f4f7;font-size:25px;color:#364457}
+#driveAlternateStatus{font-size:13px;color:#506779;margin:18px 0 12px}
+.dangollo-alt-choices{display:grid;gap:10px}
+.dangollo-alt-choice{border:1px solid #dce7ea;border-radius:15px;background:#f7fbfa;display:flex;align-items:center;justify-content:space-between;text-align:left;gap:9px;padding:15px 13px;min-height:62px;color:#163b32}
+.dangollo-alt-choice:disabled{opacity:.56}
+.dangollo-alt-choice:not(:disabled):active{transform:scale(.99);background:#e9f5ef}
+.dangollo-alt-choice-label{font-size:17px;font-weight:800;white-space:nowrap}
+.dangollo-alt-choice-detail{font-size:12px;color:#53687b;text-align:right}
+.dangollo-alt-safety{font-size:12px;line-height:1.5;color:#82909a;margin:15px 2px 0}
