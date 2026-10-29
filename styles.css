@@ -4657,3 +4657,28 @@ html body #app #bottomNav button[data-bottom-nav]:not(.active){background:transp
 
 /* v7.6.27.45 관심지역 실시간 교통 상세 */
 .traffic-interest{padding:8px 12px 24px;min-width:0;max-width:100%;box-sizing:border-box;color:#22334c}.traffic-interest *{box-sizing:border-box}.traffic-lead{font-size:13px;color:#647489;line-height:1.6;margin:4px 0 20px}.traffic-interest-head{display:flex;align-items:center;gap:12px;justify-content:space-between;margin:14px 0 9px;font-size:14px}.traffic-interest-head button{border:0;background:#edf5ff;color:#22609d;border-radius:10px;padding:9px 10px;font-weight:700}.traffic-interest-head select{border:1px solid #d9e1ea;border-radius:10px;background:white;padding:9px;min-width:72px}.traffic-area-chips{display:flex;gap:8px;flex-wrap:wrap}.traffic-area-chip{border:1px solid #d9e1ea;border-radius:999px;background:white;padding:10px 15px;font-size:13px;font-weight:700;color:#53657a}.traffic-area-chip.active{background:#e8f2ff;border-color:#9bc3fa;color:#1262b4}.traffic-interest-actions{display:flex;gap:8px;margin:12px 0 16px}.traffic-interest-actions select{min-width:0;flex:1;border:1px solid #d7e0ea;border-radius:12px;padding:10px;background:#fff;font-size:14px}.traffic-interest-actions button{border:0;background:#e9f4ee;color:#176f4c;border-radius:12px;font-weight:700;padding:10px 13px;white-space:nowrap}.traffic-time{font-size:12px;color:#647489;margin:16px 0}.traffic-empty{border-radius:14px;padding:30px 15px;text-align:center;font-size:13px;color:#647489;background:#f5f8fc;line-height:1.6}.traffic-summary-row{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0}.traffic-summary{padding:7px 10px;border-radius:100px;background:#f2f5f9;font-size:12px;font-weight:700}.traffic-summary.smooth{background:#e6f7ed;color:#137f4e}.traffic-summary.slow{background:#fff4e2;color:#9b6613}.traffic-summary.jam{background:#ffeded;color:#ba3535}.traffic-road-row{display:flex;gap:10px;align-items:center;border-bottom:1px solid #e9eef4;padding:14px 2px;min-width:0}.traffic-dot{height:10px;width:10px;flex:0 0 10px;border-radius:50%;background:#eab348}.traffic-dot.smooth{background:#13a56d}.traffic-dot.jam{background:#dc4242}.traffic-road-name{display:flex;flex:1;flex-direction:column;min-width:0;gap:4px}.traffic-road-name b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.traffic-road-name small{font-size:11px;color:#798799;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.traffic-road-metric{display:flex;flex-direction:column;gap:3px;align-items:flex-end;flex-shrink:0}.traffic-road-metric b{font-size:14px}.traffic-road-metric small{font-size:11px;color:#6b7888}.traffic-data-footnote{color:#8b96a7;font-size:11px;line-height:1.6;margin-top:18px}
+
+/* v7.6.27.46 교통정보 SVG 및 관심지역 확정 선택 */
+.traffic-interest .traffic-icon-btn,.traffic-interest .traffic-add-region{display:inline-flex;align-items:center;justify-content:center;gap:7px;}
+.traffic-interest .traffic-add-region{flex:1;min-width:0;background:#fff;border:1px solid #d7e0ea;border-radius:12px;color:#263c53;padding:12px;font-size:14px;font-weight:700;}
+.traffic-interest .traffic-add-region svg:last-child{margin-left:auto;}
+.traffic-interest .traffic-icon-btn svg,.traffic-interest .traffic-add-region svg{flex-shrink:0;}
+.traffic-interest .traffic-summary{display:inline-flex;align-items:center;gap:4px;}
+.traffic-interest .traffic-summary svg{width:13px;height:13px;}
+.traffic-area-picker[hidden]{display:none!important;}
+.traffic-area-picker{background:#f8fafc;border:1px solid #dce5ef;border-radius:16px;padding:14px;margin:8px 0 18px;}
+.traffic-picker-heading{display:flex;flex-direction:column;gap:4px;margin-bottom:10px;}
+.traffic-picker-heading strong{font-size:15px;}
+.traffic-picker-heading small{font-size:12px;color:#65778c;}
+.traffic-area-picker-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:235px;overflow-y:auto;overscroll-behavior:contain;}
+.traffic-picker-choice{position:relative;display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #dce5ef;padding:12px;border-radius:12px;font-size:13px;font-weight:650;cursor:pointer;min-width:0;}
+.traffic-picker-choice:has(input:checked){background:#eaf3ff;border-color:#7caff0;color:#185ea6;}
+.traffic-picker-choice input{position:absolute;width:1px;height:1px;opacity:0;}
+.traffic-picker-radio-ui{width:17px;height:17px;flex:none;border:2px solid #9aacc0;border-radius:50%;background:#fff;}
+.traffic-picker-choice input:checked~.traffic-picker-radio-ui{border:5px solid #2879cb;}
+.traffic-picker-choice:focus-within{outline:2px solid #2879cb;outline-offset:2px;}
+.traffic-picker-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:13px;}
+.traffic-picker-actions button{display:flex;align-items:center;justify-content:center;gap:7px;border-radius:11px;padding:12px;border:1px solid #dce5ef;background:white;font-weight:700;font-size:14px;}
+.traffic-picker-actions #trafficPickerDone{background:#176eaf;color:white;border-color:#176eaf;}
+.traffic-picker-actions #trafficPickerDone:disabled{opacity:.45;}
+@media(max-width:365px){.traffic-interest .traffic-icon-btn{padding:9px 8px;font-size:12px;}.traffic-area-picker-list{grid-template-columns:repeat(2,minmax(0,1fr));}}
