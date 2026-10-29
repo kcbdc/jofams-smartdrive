@@ -9121,7 +9121,59 @@ function openDestinationManager(){
   $('manageHomeFromMenu').onclick=()=>{closeInfoModal();openPlaceModal('home')};$('manageWorkFromMenu').onclick=()=>{closeInfoModal();openPlaceModal('work')};
 }
 function openRecentDestinationAll(){closeHamburgerMenu();const items=state.recentDestinations||[];const html=items.length?`<div class="recent-all-toolbar"><span>총 ${items.length}건</span><button type="button" id="clearRecentDestinationsBtn" class="danger-text-btn">전체 삭제</button></div><div class="favorite-list">${items.map((x,i)=>`<article class="favorite-list-item"><div><b>${escapeHtml(x.name||'목적지')}</b><small>${escapeHtml(x.address||'')}</small></div><div class="favorite-item-actions"><button data-recent-go="${i}">길찾기</button><button data-recent-delete-all="${i}" class="danger">삭제</button></div></article>`).join('')}</div>`:'<div class="empty-info">최근 목적지가 없습니다.</div>';openInfoModal('최근 목적지 전체보기',html);document.querySelectorAll('[data-recent-go]').forEach(b=>b.onclick=()=>{const p=items[Number(b.dataset.recentGo)];closeInfoModal();if(p)chooseDestination(p)});document.querySelectorAll('[data-recent-delete-all]').forEach(b=>b.onclick=async()=>{await deleteRecentDestinationAt(Number(b.dataset.recentDeleteAll),items);openRecentDestinationAll()});const clear=$('clearRecentDestinationsBtn');if(clear)clear.onclick=clearRecentDestinations}
-function openTrafficDetail(){closeHamburgerMenu();const seg=(state.route?.roadSegments||[]).find(s=>state.currentRouteIndex>=Number(s.startIndex||0)&&state.currentRouteIndex<=Number(s.endIndex||0));const info=trafficClassFromValues(seg?.trafficSpeed,seg?.trafficState);openInfoModal('실시간 교통정보 상세',`<div class="info-card"><h3>${escapeHtml(info.label)}</h3><p>${seg?.name?`현재 구간: <b>${escapeHtml(seg.name)}</b>`:'주행 중 경로를 선택하면 현재 구간 교통상태가 표시됩니다.'}</p><p>${Number(seg?.trafficSpeed)>0?`평균 통행속도 약 <b>${Math.round(Number(seg.trafficSpeed))}km/h</b>`:'현재 제공되는 평균속도 정보가 없습니다.'}</p></div>`)}
+// v7.6.27.45 관심지역별 국가교통정보센터 소통정보; GPS와 내비 주행 여부에 독립.
+const TRAFFIC_FAVORITES_KEY='dangollo.traffic.interests.v1';
+const TRAFFIC_PRESETS=[
+ ['서울',37.5665,126.9780],['세종',36.4800,127.2890],['대전',36.3504,127.3845],['청주',36.6424,127.4890],
+ ['천안',36.8151,127.1139],['부산',35.1796,129.0756],['대구',35.8714,128.6014],['인천',37.4563,126.7052],
+ ['광주',35.1595,126.8526],['울산',35.5384,129.3114],['수원',37.2636,127.0286],['춘천',37.8813,127.7298],
+ ['전주',35.8242,127.1480],['창원',35.2279,128.6811],['포항',36.0190,129.3435],['제주',33.4996,126.5312]
+];
+const TRAFFIC_VIEW={areas:[],selected:0,rows:[],loading:false,lastAt:0,seq:0};
+function trafficReadInterests(){try{const a=JSON.parse(localStorage.getItem(TRAFFIC_FAVORITES_KEY)||'[]');return Array.isArray(a)?a.filter(x=>x&&typeof x.name==='string'&&pointValid(x)).slice(0,5):[]}catch{return[]}}
+function trafficSaveInterests(){try{localStorage.setItem(TRAFFIC_FAVORITES_KEY,JSON.stringify(TRAFFIC_VIEW.areas.slice(0,5)))}catch{}}
+function trafficUniqueAreas(a){const out=[];for(const x of a){if(!pointValid(x))continue;if(out.some(y=>y.name===x.name||Math.hypot(y.lat-x.lat,y.lng-x.lng)<.008))continue;out.push(x)}return out.slice(0,5)}
+function trafficPresetArea(name){const x=TRAFFIC_PRESETS.find(a=>a[0]===name);return x?{name:x[0],lat:x[1],lng:x[2]}:null}
+function trafficDraw(){
+ const root=$('trafficInterestRoot');if(!root)return;
+ const areas=$('trafficAreaChips');if(areas)areas.innerHTML=TRAFFIC_VIEW.areas.map((x,i)=>`<button type="button" class="traffic-area-chip ${i===TRAFFIC_VIEW.selected?'active':''}" data-traffic-select="${i}">${escapeHtml(x.name)}</button>`).join('');
+ const area=TRAFFIC_VIEW.areas[TRAFFIC_VIEW.selected];
+ const h=$('trafficStatusLine');if(h)h.textContent=TRAFFIC_VIEW.loading?'실시간 교통정보를 확인하는 중입니다…':(TRAFFIC_VIEW.lastAt?`${escapeHtml(area?.name||'관심지역')} · ${new Date(TRAFFIC_VIEW.lastAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})} 조회`:'관심지역을 선택해 도로 교통상황을 확인하세요.');
+ const result=$('trafficInterestResults');if(!result)return;
+ if(TRAFFIC_VIEW.loading&&!TRAFFIC_VIEW.rows.length){result.innerHTML='<div class="traffic-empty">도로별 실시간 정보를 불러오는 중입니다…</div>';return}
+ if(!TRAFFIC_VIEW.rows.length){result.innerHTML='<div class="traffic-empty">조회 가능한 고속도로·국도 교통정보가 없습니다. 관심지역 또는 조회 범위를 바꿔 보세요.</div>';return}
+ const cnt=TRAFFIC_VIEW.rows.reduce((a,r)=>(a[r.level]=(a[r.level]||0)+1,a),{});
+ const chips=['원활','서행','지체','정체'].map(n=>`<span class="traffic-summary ${n==='원활'?'smooth':n==='정체'?'jam':'slow'}">${n} ${cnt[n]||0}</span>`).join('');
+ result.innerHTML=`<div class="traffic-summary-row">${chips}</div>${TRAFFIC_VIEW.rows.map(r=>`<article class="traffic-road-row"><span class="traffic-dot ${r.level==='원활'?'smooth':r.level==='정체'?'jam':'slow'}"></span><div class="traffic-road-name"><b>${escapeHtml(r.road)}</b><small>${escapeHtml(r.direction||'주행방향 정보 없음')} · ${escapeHtml(r.at||'시각 정보 없음')}</small></div><div class="traffic-road-metric"><b>${r.speed}km/h</b><small>${escapeHtml(r.level)}</small></div></article>`).join('')}<p class="traffic-data-footnote">국가교통정보센터 제공 · 고속도로·국도 주요 구간. 소통 등급은 도로 유형별 통행속도에 따른 참고 분류이며, 실제 통제 여부를 나타내지 않습니다.</p>`;
+}
+async function trafficFetchArea(){
+ const area=TRAFFIC_VIEW.areas[TRAFFIC_VIEW.selected];if(!area)return;
+ const seq=++TRAFFIC_VIEW.seq;TRAFFIC_VIEW.loading=true;TRAFFIC_VIEW.rows=[];trafficDraw();
+ try{
+  const radius=Math.min(15,Math.max(2,Number($('trafficRadius')?.value)||7));
+  const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),8500);
+  let res;try{res=await fetch(`/api/traffic-live?lat=${encodeURIComponent(area.lat)}&lng=${encodeURIComponent(area.lng)}&km=${radius}`,{signal:ctrl.signal,cache:'no-store'})}finally{clearTimeout(t)}
+  const data=await res.json();if(seq!==TRAFFIC_VIEW.seq)return;
+  if(!res.ok)throw Error(data.message||'교통정보 조회에 실패했습니다.');
+  TRAFFIC_VIEW.rows=Array.isArray(data.items)?data.items:[];TRAFFIC_VIEW.lastAt=Date.now();
+ }catch(e){if(seq!==TRAFFIC_VIEW.seq)return;TRAFFIC_VIEW.rows=[];TRAFFIC_VIEW.lastAt=0;
+  const node=$('trafficInterestResults');if(node)node.innerHTML=`<div class="traffic-empty">${escapeHtml(e.name==='AbortError'?'교통정보 응답이 지연되고 있습니다. 다시 시도해 주세요.':e.message||'교통정보를 불러오지 못했습니다.')}</div>`;
+ }finally{if(seq===TRAFFIC_VIEW.seq){TRAFFIC_VIEW.loading=false;const h=$('trafficStatusLine');if(h)h.textContent=`${area.name} 교통상황 · ${new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})} 확인`;if(TRAFFIC_VIEW.rows.length)trafficDraw()}}
+}
+function trafficBindPanel(){
+ $('trafficAreaChips')?.addEventListener('click',e=>{const b=e.target.closest('[data-traffic-select]');if(!b)return;TRAFFIC_VIEW.selected=Number(b.dataset.trafficSelect);trafficFetchArea()});
+ $('trafficPresetSelect')?.addEventListener('change',e=>{const area=trafficPresetArea(e.target.value);if(!area)return;TRAFFIC_VIEW.areas=trafficUniqueAreas([...TRAFFIC_VIEW.areas,area]);TRAFFIC_VIEW.selected=TRAFFIC_VIEW.areas.findIndex(x=>x.name===area.name);trafficSaveInterests();e.target.value='';trafficFetchArea()});
+ $('trafficUseGps')?.addEventListener('click',()=>{const r=state.lastRawFix;const loc=(r&&pointValid(r)&&Date.now()-Number(r.at||0)<120000)?r:state.user;if(!pointValid(loc)){toast('현재 위치를 먼저 확인해 주세요.',2200);return}const area={name:'현 위치',lat:Number(loc.lat),lng:Number(loc.lng)};TRAFFIC_VIEW.areas=trafficUniqueAreas([...TRAFFIC_VIEW.areas.filter(x=>x.name!=='현 위치'),area]);TRAFFIC_VIEW.selected=TRAFFIC_VIEW.areas.findIndex(x=>x.name==='현 위치');trafficSaveInterests();trafficFetchArea()});
+ $('trafficRemoveArea')?.addEventListener('click',()=>{if(TRAFFIC_VIEW.areas.length<=1){toast('관심지역을 최소 1개 유지해 주세요.');return}TRAFFIC_VIEW.areas.splice(TRAFFIC_VIEW.selected,1);TRAFFIC_VIEW.selected=0;trafficSaveInterests();trafficFetchArea()});
+ $('trafficReload')?.addEventListener('click',trafficFetchArea);
+ $('trafficRadius')?.addEventListener('change',trafficFetchArea);
+}
+function openTrafficDetail(){
+ closeHamburgerMenu();TRAFFIC_VIEW.areas=trafficUniqueAreas(trafficReadInterests());if(!TRAFFIC_VIEW.areas.length)TRAFFIC_VIEW.areas=[{name:'세종',lat:36.48,lng:127.289}];TRAFFIC_VIEW.selected=0;TRAFFIC_VIEW.rows=[];TRAFFIC_VIEW.lastAt=0;
+ const options=TRAFFIC_PRESETS.map(x=>`<option value="${escapeHtml(x[0])}">${escapeHtml(x[0])}</option>`).join('');
+ openInfoModal('실시간 교통정보 상세',`<section id="trafficInterestRoot" class="traffic-interest"><p class="traffic-lead">관심지역을 등록하면 해당 지역의 주요 도로 소통상황을 확인할 수 있습니다.</p><div class="traffic-interest-head"><strong>내 관심지역</strong><button id="trafficRemoveArea" type="button">선택지역 삭제</button></div><div id="trafficAreaChips" class="traffic-area-chips"></div><div class="traffic-interest-actions"><select id="trafficPresetSelect"><option value="">+ 지역 추가</option>${options}</select><button id="trafficUseGps" type="button">◎ 현 위치</button></div><div class="traffic-interest-head"><label for="trafficRadius">검색 반경</label><select id="trafficRadius"><option value="5">5km</option><option value="7" selected>7km</option><option value="12">12km</option><option value="15">15km</option></select><button type="button" id="trafficReload">↻ 새로고침</button></div><p id="trafficStatusLine" class="traffic-time"></p><div id="trafficInterestResults" aria-live="polite"></div></section>`);
+ trafficBindPanel();trafficFetchArea();
+}
 function openRoutePrioritySettings(){closeHamburgerMenu();renderUserSettingsUI();$('routePriorityModal')?.classList.remove('hidden')}
 function openCameraAlertSettings(){closeHamburgerMenu();renderUserSettingsUI();$('cameraAlertModal')?.classList.remove('hidden')}
 function openSupportTerms(){closeHamburgerMenu();openInquiryModal()}
