@@ -4719,13 +4719,96 @@ function deleteTripHistoryAt(index){if(!Number.isInteger(index)||index<0||index>
 function clearTripHistory(){if(!(state.tripHistory||[]).length)return;if(!confirm('저장된 주행기록을 모두 삭제할까요?'))return;state.tripHistory=[];saveTripHistory();updateTripHistorySummary();openTripHistory();toast('주행기록을 모두 삭제했습니다.')}
 
 function openAppInfo(){openInfoModal('앱정보','<div class="info-card"><h3>단골로 내비</h3><p><b>버전</b> 7.5.7.7</p><p>2D 컬러 지도, 실시간 교통상태, AR 안내, 단속카메라·스쿨존·사고·공사 안내, 다른시간 출발 AI 소요시간 예측과 다임·순식·훈민 캐릭터 음성 안내를 제공합니다.</p></div>')}
-async function openPrivacy(){const c=await loadPublicContent();openInfoModal('개인정보처리방침',`<div class="info-card privacy-copy">${escapeHtml(c.privacy||'개인정보처리방침이 준비 중입니다.').replace(/\n/g,'<br>')}</div>`)}
+/* v7.6.27.49 — 관리자 HTML/리치텍스트 편집 + 안전한 사용자 표시.
+   콘텐츠는 기존 /api/content 문자열 스키마 그대로 저장한다. 표시할 때마다 허용목록으로 정제한다. */
+const RICH_TAGS=new Set(['P','DIV','BR','H1','H2','H3','H4','H5','H6','STRONG','B','EM','I','U','S','DEL','UL','OL','LI','BLOCKQUOTE','HR','A','TABLE','THEAD','TBODY','TFOOT','TR','TH','TD','SPAN','CODE','PRE','SUB','SUP']);
+const RICH_DROP=new Set(['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','SVG','MATH','FORM','INPUT','BUTTON','TEXTAREA','SELECT','OPTION','LINK','META','BASE','IMG','VIDEO','AUDIO','SOURCE','PICTURE','CANVAS','NOSCRIPT','TEMPLATE']);
+function richSafeStyle(value){
+ const out=[];for(const part of String(value||'').split(';')){
+  const i=part.indexOf(':');if(i<0)continue;const k=part.slice(0,i).trim().toLowerCase(),v=part.slice(i+1).trim();
+  if(!['text-align','color','background-color','font-weight','font-style','text-decoration'].includes(k))continue;
+  if(/url\s*\(|expression\s*\(|var\s*\(|[<>{}\\]/i.test(v)||v.length>65)continue;
+  if(k==='text-align'&&!/^(left|right|center|justify)$/.test(v))continue;
+  if((k==='color'||k==='background-color')&&!/^(#[\da-f]{3,8}|rgb\(\s*[\d\s,.%]+\)|rgba\(\s*[\d\s,.%]+\)|[a-z]{3,20})$/i.test(v))continue;
+  if(k==='font-weight'&&!/^(bold|normal|[1-9]00)$/.test(v))continue;
+  if(k==='font-style'&&!/^(italic|normal)$/.test(v))continue;
+  if(k==='text-decoration'&&!/^(underline|line-through|none)$/.test(v))continue;
+  out.push(`${k}:${v}`);
+ }return out.join(';');
+}
+function richSanitize(input){
+ const doc=new DOMParser().parseFromString('<div id="rich-content-root">'+String(input||'')+'</div>','text/html');
+ const root=doc.getElementById('rich-content-root');if(!root)return '';
+ function visit(node){
+  for(const child of [...node.childNodes]){
+   if(child.nodeType===8){child.remove();continue}
+   if(child.nodeType!==1)continue;
+   const tag=child.tagName;
+   if(RICH_DROP.has(tag)){child.remove();continue}
+   if(!RICH_TAGS.has(tag)){visit(child);child.replaceWith(...Array.from(child.childNodes));continue}
+   const href=tag==='A'?child.getAttribute('href'):null;
+   const colspan=tag==='TD'||tag==='TH'?child.getAttribute('colspan'):null;
+   const rowspan=tag==='TD'||tag==='TH'?child.getAttribute('rowspan'):null;
+   const style=richSafeStyle(child.getAttribute('style'));
+   for(const attr of [...child.attributes])child.removeAttribute(attr.name);
+   if(style)child.setAttribute('style',style);
+   if(tag==='A'&&href){try{const u=new URL(href,'https://example.invalid/');if(['https:','http:'].includes(u.protocol)&&u.hostname!=='example.invalid'){child.setAttribute('href',u.href);child.setAttribute('target','_blank');child.setAttribute('rel','noopener noreferrer nofollow')}}catch{}}
+   if(colspan&&/^[1-9]\d?$/.test(colspan))child.setAttribute('colspan',colspan);
+   if(rowspan&&/^[1-9]\d?$/.test(rowspan))child.setAttribute('rowspan',rowspan);
+   visit(child);
+  }
+ }visit(root);return root.innerHTML;
+}
+function richMarkdown(input){
+ const raw=String(input||'').replace(/\r\n?/g,'\n');const lines=raw.split('\n');
+ const inline=x=>escapeHtml(x).replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g,(_m,t,u)=>`<a href="${escapeHtml(u)}">${t}</a>`).replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>').replace(/__([^_\n]+)__/g,'<strong>$1</strong>').replace(/\*([^*\n]+)\*/g,'<em>$1</em>').replace(/`([^`\n]+)`/g,'<code>$1</code>');
+ let out=[],list='',quote=false,pre=false,table=false;
+ const close=()=>{if(list){out.push(`</${list}>`);list=''}if(quote){out.push('</blockquote>');quote=false}if(table){out.push('</tbody></table>');table=false}};
+ for(let i=0;i<lines.length;i++){
+  const line=lines[i],trim=line.trim();
+  if(/^```/.test(trim)){close();if(pre){out.push('</code></pre>');pre=false}else{out.push('<pre><code>');pre=true}continue}
+  if(pre){out.push(escapeHtml(line)+'\n');continue}
+  if(!trim){close();continue}
+  if(/^\|.*\|$/.test(trim)&&i+1<lines.length&&/^\|?\s*:?-{3,}/.test(lines[i+1].trim())){
+   close();const cells=trim.replace(/^\||\|$/g,'').split('|').map(v=>v.trim());out.push('<table><thead><tr>'+cells.map(v=>`<th>${inline(v)}</th>`).join('')+'</tr></thead><tbody>');table=true;i++;continue;
+  }
+  if(table&&/^\|.*\|$/.test(trim)){const cells=trim.replace(/^\||\|$/g,'').split('|').map(v=>v.trim());out.push('<tr>'+cells.map(v=>`<td>${inline(v)}</td>`).join('')+'</tr>');continue}
+  if(table){out.push('</tbody></table>');table=false}
+  const hm=trim.match(/^(#{1,6})\s+(.+)$/);if(hm){close();out.push(`<h${hm[1].length}>${inline(hm[2])}</h${hm[1].length}>`);continue}
+  if(/^(-{3,}|\*{3,})$/.test(trim)){close();out.push('<hr>');continue}
+  const lm=trim.match(/^(?:[-*+]\s+|\d+[.)]\s+)(.*)$/);if(lm){const type=/^\d/.test(trim)?'ol':'ul';if(list!==type){close();out.push(`<${type}>`);list=type}out.push(`<li>${inline(lm[1])}</li>`);continue}
+  if(trim.startsWith('>')){if(!quote){close();out.push('<blockquote>');quote=true}out.push(`<p>${inline(trim.replace(/^>\s?/,''))}</p>`);continue}
+  close();out.push(`<p>${inline(trim)}</p>`);
+ }close();if(pre)out.push('</code></pre>');return out.join('');
+}
+function richContentHTML(value){
+ const str=String(value||'').trim();if(!str)return '';
+ const html=/<\/?[a-z][\s\S]*?>/i.test(str)?str:richMarkdown(str);
+ return richSanitize(html);
+}
+function richEditorValue(id){const textarea=$(id),editor=$(id+'Rich');return editor&&!editor.hidden?richSanitize(editor.innerHTML):richContentHTML(textarea?.value||'')}
+function richSetEditor(id,value){const textarea=$(id),editor=$(id+'Rich');if(!textarea)return;textarea.value=String(value||'');if(editor)editor.innerHTML=richContentHTML(value)}
+function richInsertHTML(editor,html){const sel=window.getSelection();if(!sel||!sel.rangeCount||!editor.contains(sel.anchorNode)){editor.focus();editor.insertAdjacentHTML('beforeend',html);return}
+ const range=sel.getRangeAt(0);range.deleteContents();const fragment=range.createContextualFragment(html);const last=fragment.lastChild;range.insertNode(fragment);if(last){range.setStartAfter(last);range.collapse(true);sel.removeAllRanges();sel.addRange(range)}
+}
+function richInitEditors(){
+ for(const id of ['adminNoticeBody','adminAppInfoText','adminPrivacyText']){
+  const textarea=$(id);if(!textarea||$(id+'Rich'))continue;
+  const editor=document.createElement('div');editor.id=id+'Rich';editor.className='dangollo-rich-editor dangollo-rich-copy';editor.setAttribute('contenteditable','true');editor.setAttribute('role','textbox');editor.setAttribute('aria-multiline','true');editor.setAttribute('aria-label',textarea.closest('label')?.querySelector('b')?.textContent||'서식 있는 내용');editor.dataset.placeholder='GPT 답변을 붙여넣으세요. HTML·Markdown·표 서식을 지원합니다.';
+  const toolbar=document.createElement('div');toolbar.className='dangollo-rich-toolbar';toolbar.innerHTML='<span>GPT 복사 내용 붙여넣기</span><button type="button" data-rich-mode="visual" class="active">서식 보기</button><button type="button" data-rich-mode="source">HTML 소스</button>';
+  textarea.parentNode.insertBefore(toolbar,textarea);textarea.parentNode.insertBefore(editor,textarea);textarea.classList.add('dangollo-rich-source-hidden');
+  editor.innerHTML=richContentHTML(textarea.value);
+  toolbar.addEventListener('click',e=>{const btn=e.target.closest('[data-rich-mode]');if(!btn)return;const source=btn.dataset.richMode==='source';if(source){textarea.value=richSanitize(editor.innerHTML);editor.hidden=true;textarea.classList.remove('dangollo-rich-source-hidden')}else{editor.innerHTML=richContentHTML(textarea.value);editor.hidden=false;textarea.classList.add('dangollo-rich-source-hidden')}toolbar.querySelectorAll('[data-rich-mode]').forEach(x=>x.classList.toggle('active',x===btn))});
+  editor.addEventListener('paste',e=>{const html=e.clipboardData?.getData('text/html'),text=e.clipboardData?.getData('text/plain');if(!html&&!text)return;e.preventDefault();const safe=richContentHTML(html||text);richInsertHTML(editor,safe)});
+ }
+}
+async function openPrivacy(){const c=await loadPublicContent();openInfoModal('개인정보처리방침',`<div class="info-card privacy-copy">${richContentHTML(c.privacy||'개인정보처리방침이 준비 중입니다.')}</div>`)}
 async function logTrip(event){try{await fetch('/api/trip',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({event,destination:state.destination?.name||null,distance:state.route?.distance||null,duration:state.tripStartedAt?Math.round((Date.now()-state.tripStartedAt)/1000):null,character:state.character,provider:state.route?.provider||null,guideType:null})})}catch{}}
 const NOTICE_ITEMS=[
   {date:'2026.09.01',title:'MVP 7.5 AR 리본·단속카메라 로컬데이터 개선',body:'AR 지도 리본 시야각 조정, 로컬 무인단속카메라 데이터 적용, 제한속도 표시 보강, 터널 추정주행과 120초 경로 갱신을 유지합니다.'},
   {date:'2026.09.01',title:'안전운전 정보 안내',body:'단속카메라, 스쿨존, 사고·공사 및 교통정보는 실제 도로 표지와 교통법규를 우선하여 이용해 주세요.'}
 ];
-async function openNotices(){try{const d=await fetch('/api/content?type=notices').then(r=>r.json());const items=Array.isArray(d.items)&&d.items.length?d.items:NOTICE_ITEMS;openInfoModal('공지사항',`<div class="notice-list">${items.map(x=>`<article><time>${escapeHtml(x.date||x.createdAt||'')}</time><b>${escapeHtml(x.title)}</b><p>${escapeHtml(x.body).replace(/\n/g,'<br>')}</p></article>`).join('')}</div>`)}catch{openInfoModal('공지사항',`<div class="notice-list">${NOTICE_ITEMS.map(x=>`<article><time>${escapeHtml(x.date)}</time><b>${escapeHtml(x.title)}</b><p>${escapeHtml(x.body)}</p></article>`).join('')}</div>`)}}
+async function openNotices(){try{const d=await fetch('/api/content?type=notices').then(r=>r.json());const items=Array.isArray(d.items)&&d.items.length?d.items:NOTICE_ITEMS;openInfoModal('공지사항',`<div class="notice-list">${items.map(x=>`<article><time>${escapeHtml(x.date||x.createdAt||'')}</time><b>${escapeHtml(x.title)}</b><div class="dangollo-rich-copy">${richContentHTML(x.body)}</div></article>`).join('')}</div>`)}catch{openInfoModal('공지사항',`<div class="notice-list">${NOTICE_ITEMS.map(x=>`<article><time>${escapeHtml(x.date)}</time><b>${escapeHtml(x.title)}</b><div class="dangollo-rich-copy">${richContentHTML(x.body)}</div></article>`).join('')}</div>`)}}
 function applyNightMode(){const h=new Date().getHours(),night=h>=19||h<6;document.body.classList.toggle('night-map',night);return night}
 /* 7.6.1.9: 가로 회전 시 실제 브라우저 전체화면(Fullscreen API)까지 적용한다.
    - 기존에는 Chrome/WebView의 "전체화면 종료 방법" 안내 팝업을 피하려고 CSS 레이아웃 확장만 사용했지만,
@@ -8835,7 +8918,7 @@ function updateAdminUI(){
     ?'공지·콘텐츠·1:1 문의·온누리 주소 관리'
     :'관리자 권한 확인 후 진입';
 }
-async function openAdminMode(){
+async function openAdminMode(){richInitEditors();
   if(!isAdminUser())await verifyAdminAccess();
   if(!isAdminUser())return toast(`관리자 계정만 이용할 수 있습니다.${localAdminEmail()?` (현재: ${localAdminEmail()})`:''}`);
   $('adminAccountLabel').textContent=state.adminVerifiedEmail||localAdminEmail()||'인증 필요';
@@ -8845,11 +8928,11 @@ async function openAdminMode(){
 function closeAdminMode(){$('adminModal')?.classList.add('hidden')}
 function switchAdminTab(tab){document.querySelectorAll('[data-admin-tab]').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===tab));['notices','content','inquiries','onnuri','shorts'].forEach(k=>$(`admin${k[0].toUpperCase()+k.slice(1)}Panel`)?.classList.toggle('hidden',k!==tab));if(tab==='notices')loadAdminNotices();if(tab==='content')loadAdminContent();if(tab==='inquiries')loadAdminInquiries();if(tab==='onnuri')loadOnnuriBatchStatus();if(tab==='shorts')loadAdminShorts()}
 async function adminContentRequest(type,method='GET',body=null){const u=new URL('/api/content',location.origin);u.searchParams.set('type',type);const opt={method,headers:{'content-type':'application/json'}};if(body)opt.body=JSON.stringify(body);const r=method==='GET'?await fetch(u):await authFetch(u,opt);const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`HTTP ${r.status}`);return d}
-async function loadAdminNotices(){try{const d=await adminContentRequest('notices');state.adminNotices=d.items||[];const box=$('adminNoticeList');box.innerHTML=state.adminNotices.length?state.adminNotices.map(x=>`<article><div><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.createdAt||'')}</small></div><button data-admin-notice-delete="${x.id}">삭제</button><p>${escapeHtml(x.body).replace(/\n/g,'<br>')}</p></article>`).join(''):'<div class="inquiry-empty">등록된 공지가 없습니다.</div>';box.querySelectorAll('[data-admin-notice-delete]').forEach(b=>b.onclick=()=>deleteAdminNotice(b.dataset.adminNoticeDelete))}catch{toast('공지 목록을 불러오지 못했습니다.')}}
-async function saveAdminNotice(){const title=$('adminNoticeTitle').value.trim(),body=$('adminNoticeBody').value.trim();if(title.length<2||body.length<2)return toast('공지 제목과 내용을 입력해 주세요.');const btn=$('adminNoticeSaveBtn');btn.disabled=true;try{await adminContentRequest('notices','POST',{title,body});$('adminNoticeTitle').value='';$('adminNoticeBody').value='';showPlaceConfirmPopup('공지사항이 등록되었습니다.');loadAdminNotices()}catch{toast('공지 등록에 실패했습니다.')}finally{btn.disabled=false}}
+async function loadAdminNotices(){try{const d=await adminContentRequest('notices');state.adminNotices=d.items||[];const box=$('adminNoticeList');box.innerHTML=state.adminNotices.length?state.adminNotices.map(x=>`<article><div><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.createdAt||'')}</small></div><button data-admin-notice-delete="${x.id}">삭제</button><div class="dangollo-rich-copy">${richContentHTML(x.body)}</div></article>`).join(''):'<div class="inquiry-empty">등록된 공지가 없습니다.</div>';box.querySelectorAll('[data-admin-notice-delete]').forEach(b=>b.onclick=()=>deleteAdminNotice(b.dataset.adminNoticeDelete))}catch{toast('공지 목록을 불러오지 못했습니다.')}}
+async function saveAdminNotice(){const title=$('adminNoticeTitle').value.trim(),body=richEditorValue('adminNoticeBody').trim();if(title.length<2||body.length<2)return toast('공지 제목과 내용을 입력해 주세요.');const btn=$('adminNoticeSaveBtn');btn.disabled=true;try{await adminContentRequest('notices','POST',{title,body});$('adminNoticeTitle').value='';richSetEditor('adminNoticeBody','');showPlaceConfirmPopup('공지사항이 등록되었습니다.');loadAdminNotices()}catch{toast('공지 등록에 실패했습니다.')}finally{btn.disabled=false}}
 async function deleteAdminNotice(id){if(!confirm('이 공지를 삭제할까요?'))return;try{await adminContentRequest('notices','DELETE',{id});showPlaceConfirmPopup('공지사항이 삭제되었습니다.');loadAdminNotices()}catch{toast('공지 삭제에 실패했습니다.')}}
-async function loadAdminContent(){try{const d=await adminContentRequest('content');const c=d.content||{};$('adminAppInfoText').value=c.appInfo||'';$('adminPrivacyText').value=c.privacy||''}catch{toast('콘텐츠를 불러오지 못했습니다.')}}
-async function saveAdminContent(){const btn=$('adminContentSaveBtn');btn.disabled=true;try{await adminContentRequest('content','PUT',{appInfo:$('adminAppInfoText').value,privacy:$('adminPrivacyText').value});showPlaceConfirmPopup('앱정보와 개인정보처리방침이 수정되었습니다.')}catch{toast('수정 내용 저장에 실패했습니다.')}finally{btn.disabled=false}}
+async function loadAdminContent(){try{const d=await adminContentRequest('content');const c=d.content||{};richSetEditor('adminAppInfoText',c.appInfo||'');richSetEditor('adminPrivacyText',c.privacy||'')}catch{toast('콘텐츠를 불러오지 못했습니다.')}}
+async function saveAdminContent(){const btn=$('adminContentSaveBtn');btn.disabled=true;try{await adminContentRequest('content','PUT',{appInfo:richEditorValue('adminAppInfoText'),privacy:richEditorValue('adminPrivacyText')});showPlaceConfirmPopup('앱정보와 개인정보처리방침이 수정되었습니다.')}catch{toast('수정 내용 저장에 실패했습니다.')}finally{btn.disabled=false}}
 
 let onnuriBatchRunning=false;
 let onnuriBatchGrandDone=0;
@@ -9054,7 +9137,7 @@ async function resetOnnuriLegacyProgress(){
 
 
 async function loadAdminInquiries(){try{const r=await authFetch('/api/inquiries?admin=1'),d=await r.json();if(!r.ok)throw new Error();const box=$('adminInquiryList'),items=d.items||[];box.innerHTML=items.length?items.map(x=>`<button data-admin-inquiry="${x.id}" class="inquiry-row"><span><b>${escapeHtml(x.title)}</b><small>${escapeHtml(x.email||'')} · ${escapeHtml(x.createdAt||'')}</small></span><em class="${x.status==='answered'?'answered':''}">${inquiryStatusLabel(x.status)}</em></button>`).join(''):'<div class="inquiry-empty">접수된 문의가 없습니다.</div>';box.querySelectorAll('[data-admin-inquiry]').forEach(b=>b.onclick=()=>openAdminInquiry(b.dataset.adminInquiry))}catch{toast('문의 목록을 불러오지 못했습니다.')}}
-async function openAdminInquiry(id){try{const r=await authFetch(`/api/inquiries?id=${encodeURIComponent(id)}&admin=1`),d=await r.json();if(!r.ok)throw new Error();const x=d.item,box=$('adminInquiryDetail');box.innerHTML=`<button id="adminInquiryBack" class="inquiry-back">← 문의 목록</button><h3>${escapeHtml(x.title)}</h3><div class="inquiry-meta"><span>${escapeHtml(x.email||'')}</span><b>${inquiryStatusLabel(x.status)}</b></div><section><b>문의 내용</b><p>${escapeHtml(x.body).replace(/\n/g,'<br>')}</p></section><label><b>답변</b><textarea id="adminInquiryAnswer" rows="7" maxlength="5000">${escapeHtml(x.answer||'')}</textarea></label><button id="adminInquiryAnswerBtn" class="primary-btn">답변 저장</button>`;$('adminInquiryList').classList.add('hidden');box.classList.remove('hidden');$('adminInquiryBack').onclick=()=>{box.classList.add('hidden');$('adminInquiryList').classList.remove('hidden');loadAdminInquiries()};$('adminInquiryAnswerBtn').onclick=()=>saveAdminInquiryAnswer(id)}catch{toast('문의 내용을 열 수 없습니다.')}}
+async function openAdminInquiry(id){try{const r=await authFetch(`/api/inquiries?id=${encodeURIComponent(id)}&admin=1`),d=await r.json();if(!r.ok)throw new Error();const x=d.item,box=$('adminInquiryDetail');box.innerHTML=`<button id="adminInquiryBack" class="inquiry-back">← 문의 목록</button><h3>${escapeHtml(x.title)}</h3><div class="inquiry-meta"><span>${escapeHtml(x.email||'')}</span><b>${inquiryStatusLabel(x.status)}</b></div><section><b>문의 내용</b><div class="dangollo-rich-copy">${richContentHTML(x.body)}</div></section><label><b>답변</b><textarea id="adminInquiryAnswer" rows="7" maxlength="5000">${escapeHtml(x.answer||'')}</textarea></label><button id="adminInquiryAnswerBtn" class="primary-btn">답변 저장</button>`;$('adminInquiryList').classList.add('hidden');box.classList.remove('hidden');$('adminInquiryBack').onclick=()=>{box.classList.add('hidden');$('adminInquiryList').classList.remove('hidden');loadAdminInquiries()};$('adminInquiryAnswerBtn').onclick=()=>saveAdminInquiryAnswer(id)}catch{toast('문의 내용을 열 수 없습니다.')}}
 async function saveAdminInquiryAnswer(id){const answer=$('adminInquiryAnswer').value.trim();if(answer.length<2)return toast('답변 내용을 입력해 주세요.');try{const r=await authFetch('/api/inquiries',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({id,answer})});if(!r.ok)throw new Error();showPlaceConfirmPopup('1:1 문의 답변이 등록되었습니다.');openAdminInquiry(id)}catch{toast('답변 저장에 실패했습니다.')}}
 
 /* ---------- 1:1 INQUIRY ---------- */
@@ -9086,7 +9169,7 @@ async function submitInquiry(){
   try{await inquiryRequest('POST',{title,body});showPlaceConfirmPopup('1:1 문의가 등록되었습니다.');backInquiryList()}catch(e){toast(e.message==='LOGIN_REQUIRED'?'로그인이 필요합니다.':'문의 등록에 실패했습니다.',2800)}finally{btn.disabled=false;btn.textContent='문의 등록'}
 }
 async function openInquiryDetail(id){
-  try{const d=await inquiryRequest('GET',null,id),x=d.item;if(!x)return;const box=$('inquiryDetail');box.innerHTML=`<button id="inquiryDetailBack" class="inquiry-back">← 목록</button><h3>${escapeHtml(x.title)}</h3><div class="inquiry-meta"><span>${escapeHtml(x.createdAt||'')}</span><b>${inquiryStatusLabel(x.status)}</b></div><section><b>문의 내용</b><p>${escapeHtml(x.body).replace(/\n/g,'<br>')}</p></section>${x.answer?`<section class="answer"><b>답변</b><p>${escapeHtml(x.answer).replace(/\n/g,'<br>')}</p></section>`:''}`;$('inquiryListWrap').classList.add('hidden');$('inquiryCompose').classList.add('hidden');box.classList.remove('hidden');$('inquiryDetailBack').onclick=backInquiryList;
+  try{const d=await inquiryRequest('GET',null,id),x=d.item;if(!x)return;const box=$('inquiryDetail');box.innerHTML=`<button id="inquiryDetailBack" class="inquiry-back">← 목록</button><h3>${escapeHtml(x.title)}</h3><div class="inquiry-meta"><span>${escapeHtml(x.createdAt||'')}</span><b>${inquiryStatusLabel(x.status)}</b></div><section><b>문의 내용</b><div class="dangollo-rich-copy">${richContentHTML(x.body)}</div></section>${x.answer?`<section class="answer"><b>답변</b><p>${escapeHtml(x.answer).replace(/\n/g,'<br>')}</p></section>`:''}`;$('inquiryListWrap').classList.add('hidden');$('inquiryCompose').classList.add('hidden');box.classList.remove('hidden');$('inquiryDetailBack').onclick=backInquiryList;
   }catch{toast('문의 내용을 열 수 없습니다.',2200)}
 }
 
@@ -9257,7 +9340,7 @@ function openWaypointSaved(){
     e.stopPropagation();deleteSavedWaypointCourse(b.dataset.menuCourseDelete);openWaypointSaved();
   });
 }
-async function openAppPrivacy(){const c=await loadPublicContent();openInfoModal('앱정보 / 개인정보처리방침',`<div class="info-card privacy-copy"><h3>단골로 내비</h3><p>${escapeHtml(c.appInfo||'앱정보가 준비 중입니다.').replace(/\n/g,'<br>')}</p><hr><p>${escapeHtml(c.privacy||'개인정보처리방침이 준비 중입니다.').replace(/\n/g,'<br>')}</p></div>`)}
+async function openAppPrivacy(){const c=await loadPublicContent();openInfoModal('앱정보 / 개인정보처리방침',`<div class="info-card privacy-copy"><h3>단골로 내비</h3><div class="dangollo-rich-copy">${richContentHTML(c.appInfo||'앱정보가 준비 중입니다.')}</div><hr><div class="dangollo-rich-copy">${richContentHTML(c.privacy||'개인정보처리방침이 준비 중입니다.')}</div></div>`)}
 // v7.6.27.37 — 다른경로: 목적지 유지, 실제 현위치 출발 3가지 경로를 비교한다.
 let dangolloAlternateToken=0;
 const DANGOLLO_ALTERNATE_SPECS=[

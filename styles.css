@@ -4682,3 +4682,26 @@ html body #app #bottomNav button[data-bottom-nav]:not(.active){background:transp
 .traffic-picker-actions #trafficPickerDone{background:#176eaf;color:white;border-color:#176eaf;}
 .traffic-picker-actions #trafficPickerDone:disabled{opacity:.45;}
 @media(max-width:365px){.traffic-interest .traffic-icon-btn{padding:9px 8px;font-size:12px;}.traffic-area-picker-list{grid-template-columns:repeat(2,minmax(0,1fr));}}
+
+/* v7.6.27.49 rich content: headings, tables, list formatting and mobile overflow */
+.dangollo-rich-copy{font-size:14px;line-height:1.75;color:#26364a;overflow-wrap:anywhere;word-break:keep-all;min-width:0}
+.dangollo-rich-copy h1,.dangollo-rich-copy h2,.dangollo-rich-copy h3,.dangollo-rich-copy h4{font-weight:800;line-height:1.35;margin:1em 0 .5em;color:#163951}
+.dangollo-rich-copy h1{font-size:1.55em}.dangollo-rich-copy h2{font-size:1.32em}.dangollo-rich-copy h3{font-size:1.18em}.dangollo-rich-copy h4{font-size:1.08em}
+.dangollo-rich-copy p{font-size:inherit;line-height:inherit;margin:.65em 0;color:inherit}
+.dangollo-rich-copy ul,.dangollo-rich-copy ol{margin:.7em 0;padding-left:1.65em;list-style-position:outside}
+.dangollo-rich-copy ul{list-style:disc}.dangollo-rich-copy ol{list-style:decimal}.dangollo-rich-copy li{display:list-item;margin:.2em 0}
+.dangollo-rich-copy strong,.dangollo-rich-copy b{font-weight:800}.dangollo-rich-copy em,.dangollo-rich-copy i{font-style:italic}
+.dangollo-rich-copy blockquote{border-left:4px solid #a9cde9;padding:9px 12px;margin:1em 0;background:#f4f8fc;border-radius:0 9px 9px 0}
+.dangollo-rich-copy table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:13px 0;white-space:normal}
+.dangollo-rich-copy th,.dangollo-rich-copy td{padding:9px 11px;border:1px solid #dce6f0;text-align:left;min-width:65px;vertical-align:top}
+.dangollo-rich-copy th{background:#edf4fb;font-weight:800}.dangollo-rich-copy a{color:#1765c6;text-decoration:underline;overflow-wrap:anywhere}
+.dangollo-rich-copy pre{max-width:100%;overflow-x:auto;background:#f3f6fa;padding:12px;border-radius:10px;white-space:pre-wrap}
+.dangollo-rich-copy code{background:#f1f4f7;padding:1px 4px;border-radius:4px}.dangollo-rich-copy hr{border:0;border-top:1px solid #d9e3ed;margin:16px 0}
+.dangollo-rich-toolbar{display:flex;align-items:center;gap:7px;margin:7px 0 0;flex-wrap:wrap}.dangollo-rich-toolbar span{font-size:12px;color:#62758d;margin-right:auto}
+.dangollo-rich-toolbar button{padding:7px 10px;border:1px solid #d8e3ed;background:#fff;color:#52677e;border-radius:8px;font-size:12px;font-weight:700}
+.dangollo-rich-toolbar button.active{background:#eaf3ff;border-color:#9ac2ef;color:#1860ab}
+.admin-panel .dangollo-rich-editor{display:block;width:100%;min-height:140px;max-height:38vh;overflow:auto;box-sizing:border-box;border:1px solid #ccdbe8;border-radius:12px;background:#fff;padding:13px;outline:0;margin-top:5px}
+.admin-panel .dangollo-rich-editor:focus{border-color:#3380d1;box-shadow:0 0 0 3px rgba(51,128,209,.14)}
+.dangollo-rich-editor:empty:before{content:attr(data-placeholder);color:#9aa8b7;pointer-events:none}
+.admin-panel textarea.dangollo-rich-source-hidden{display:none!important}
+.notice-list article>.dangollo-rich-copy{margin-top:10px;font-size:13px}.privacy-copy>.dangollo-rich-copy{margin:10px 0}
