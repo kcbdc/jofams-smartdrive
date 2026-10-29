@@ -1,0 +1,17 @@
+// National Traffic Information Center: highway/national road observed speed.
+// Cloudflare Pages secret: ITS_API_KEY. Never expose secret in client JavaScript.
+const reply=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
+function parseRecords(d){const candidates=[d?.body?.items,d?.body?.items?.item,d?.response?.body?.items?.item,d?.response?.body?.items,d?.items,d?.data,d?.list,d?.response?.data];for(const x of candidates){if(Array.isArray(x))return x;if(x&&typeof x==='object'){if(Array.isArray(x.item))return x.item;if(Array.isArray(x.data))return x.data}}return []}
+function groupRows(list){const result=[],seen=new Set();for(const a of list){if(!a||typeof a!=='object')continue;const speed=Number(a.speed??a.trvlSpeed??a.avgSpeed??a.spd);if(!Number.isFinite(speed)||speed<=0||speed>180)continue;const road=String(a.roadName??a.routeName??a.routeNm??a.roadNm??'').trim();if(!road)continue;const dir=String(a.drcType??a.direction??a.routeWay??'').trim();const key=`${road}|${dir}|${Math.round(speed/5)}`;if(seen.has(key))continue;seen.add(key);const high=/고속|express|ex\b/i.test(road)||String(a.roadType??'').toLowerCase()==='ex';const level=high?(speed>=80?'원활':speed>=50?'서행':speed>=30?'지체':'정체'):(speed>=50?'원활':speed>=30?'서행':speed>=15?'지체':'정체');result.push({road:road.slice(0,72),direction:dir.slice(0,28),speed:Math.round(speed),level,at:String(a.createDate??a.date??a.collectDate??'').slice(0,30)})}return result.sort((a,b)=>({정체:0,지체:1,서행:2,원활:3}[a.level])-({정체:0,지체:1,서행:2,원활:3}[b.level])).slice(0,60)}
+export async function onRequestGet({request,env}){
+ const u=new URL(request.url);const lat=Number(u.searchParams.get('lat')),lng=Number(u.searchParams.get('lng')),km=Math.min(15,Math.max(2,Number(u.searchParams.get('km'))||7));
+ if(!u.searchParams.has('lat')||!u.searchParams.has('lng')||!Number.isFinite(lat)||!Number.isFinite(lng)||lat<33||lat>39||lng<124||lng>132)return reply({message:'올바른 국내 위치가 아닙니다.'},400);
+ const key=String(env.ITS_API_KEY||'').trim();if(!key)return reply({message:'교통정보 연동을 위해 Cloudflare 환경변수 ITS_API_KEY를 등록해 주세요.',code:'KEY_REQUIRED'},503);
+ const dlat=km/111,dlong=km/(111*Math.max(.5,Math.cos(lat*Math.PI/180)));
+ const api=new URL('https://openapi.its.go.kr:9443/trafficInfo');api.searchParams.set('apiKey',key);api.searchParams.set('type','all');api.searchParams.set('drcType','all');api.searchParams.set('minX',(lng-dlong).toFixed(5));api.searchParams.set('maxX',(lng+dlong).toFixed(5));api.searchParams.set('minY',(lat-dlat).toFixed(5));api.searchParams.set('maxY',(lat+dlat).toFixed(5));api.searchParams.set('getType','json');
+ let res;try{res=await fetch(api.toString(),{headers:{accept:'application/json'},signal:AbortSignal.timeout(7500),cf:{cacheTtl:80,cacheEverything:true}})}catch{return reply({message:'국가교통정보센터 서버 연결이 지연되고 있습니다.'},502)}
+ if(!res.ok)return reply({message:`교통정보 제공기관 응답 오류 (${res.status}). 인증키와 API 승인 상태를 확인해 주세요.`},502);
+ let raw;try{raw=await res.json()}catch{return reply({message:'교통정보 응답 형식이 올바르지 않습니다.'},502)}
+ const code=String(raw?.response?.header?.resultCode??raw?.result?.resultCode??raw?.resultCode??'');if(code&&code!=='00'&&code!=='0'&&code!=='200')return reply({message:'제공기관에서 조회를 거절했습니다. ITS_API_KEY 승인 상태를 확인해 주세요.'},502);
+ return reply({items:groupRows(parseRecords(raw)),source:'국가교통정보센터(국토교통부)',observedAt:new Date().toISOString()});
+}
