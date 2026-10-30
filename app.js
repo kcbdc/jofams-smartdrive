@@ -1683,7 +1683,7 @@ function previewWhereMerchantOnMap(item,type){
     const el=document.createElement('div');el.className='where-map-preview-pin';
     el.setAttribute('aria-label','선택한 가맹점 위치');
     el.innerHTML='<svg viewBox="0 0 40 52" aria-hidden="true"><path d="M20 2C10 2 3 10 3 20c0 13 17 29 17 29s17-16 17-29C37 10 30 2 20 2Z" fill="#13865c" stroke="white" stroke-width="3"/><circle cx="20" cy="20" r="7" fill="white"/></svg>';
-    state.whereMapPreviewMarker=new maplibregl.Marker({element:el,anchor:'bottom',offset:[0,-20]}).setLngLat([lng,lat]).addTo(state.map);
+    state.whereMapPreviewMarker=new maplibregl.Marker({element:el,anchor:'bottom',offset:[0,-37]}).setLngLat([lng,lat]).addTo(state.map);
   }catch(e){console.warn('[where-to] preview marker',e)}
   // Show the decision card immediately, not after another asynchronous marker query.
   showMapPlacePrompt(place);
