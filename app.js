@@ -3019,7 +3019,7 @@ function applyGps(pos,fly=false){
       const impossibleForward=nRouteDistance!=null&&Number.isFinite(Number(state.routeLockedDistance))&&nRouteDistance-Number(state.routeLockedDistance)>Math.max(90,nSpeed*Math.max(1,(now-(state.lastGpsTickAt||now))/1000)*3+35);
       if(state.wrongDirectionActive||!rawDistanceValid||nativeProjectionMismatch||impossibleForward){
         state.user={lat:rawLatN,lng:rawLngN,rawLat:rawLatN,rawLng:rawLngN,speed:nSpeed,heading:c.heading,accuracy:Number(c.accuracy)||0,routeDistance:null,mapSnapped:false,estimated:false,native:true};
-        clearUncertainGuidance();updateGpsEstimateUi();return;
+        clearUncertainGuidance();ensureUserMarker();updateGpsEstimateUi();return;
       }
       state.drivePositionUncertain=false;
       state.userMarker?.getElement?.()?.classList.remove('dangollo-gps-unverified');
@@ -3170,7 +3170,7 @@ function applyGps(pos,fly=false){
     if(state.wrongDirectionActive){
       stateObj.lat=rawLat;stateObj.lng=rawLng;stateObj.mapSnapped=false;
       stateObj.routeDistance=null;stateObj.routeIndex=null;
-      state.user=stateObj;clearUncertainGuidance();updateGpsEstimateUi();
+      state.user=stateObj;clearUncertainGuidance();ensureUserMarker();updateGpsEstimateUi();
       return;
     }
     // 주행 화면 위치는 항상 현재 경로에 강제 스냅.
@@ -3205,7 +3205,7 @@ function applyGps(pos,fly=false){
     }else{
       stateObj.lng=rawLng;stateObj.lat=rawLat;stateObj.mapSnapped=false;
       stateObj.routeIndex=null;stateObj.routeDistance=null;stateObj.matchConfidence=0;
-      state.user=stateObj;clearUncertainGuidance();updateGpsEstimateUi();
+      state.user=stateObj;clearUncertainGuidance();ensureUserMarker();updateGpsEstimateUi();
       return;
       const fused=fuseGpsFix({lat:rawLat,lng:rawLng,heading:stateObj.heading,speed:stateObj.speed,accuracy:stateObj.accuracy},now);
       stateObj.lng=fused.lng;stateObj.lat=fused.lat;
@@ -5027,7 +5027,7 @@ function remainingWaypointsForReroute(){
   return (state.waypoints||[]).filter(pointValid).filter(w=>nearestIndex(w.lng,w.lat,g)>idx+8);
 }
 async function liveRouteRefresh(){
-  if(state.routeMode==='walk'||!state.tripStartedAt||!state.user||!state.destination||state.gpsEstimated||Date.now()-state.lastLiveRouteAt<40000)return;state.lastLiveRouteAt=Date.now();
+  if(state.routeMode==='walk'||!state.tripStartedAt||!state.user||!state.destination||state.gpsEstimated||state.rerouteBusy||Date.now()-state.lastLiveRouteAt<40000)return;state.lastLiveRouteAt=Date.now();
   try{
     const spec=routePreferenceSpec(),r=await routeRequest(spec.priority,spec.avoid,remainingWaypointsForReroute());if(!r?.geometry?.length||!state.route)return;
     const old=state.route,total=state.routeCumulative.at(-1)||old.distance||1,done=state.routeCumulative[state.currentRouteIndex]||0,remainingRatio=Math.max(0,Math.min(1,(total-done)/total)),oldRemain=Number(old.duration||0)*remainingRatio,newEta=Number(r.duration||0);
@@ -5037,7 +5037,16 @@ async function liveRouteRefresh(){
     try{const src=state.map?.getSource?.('route-traffic');if(src)src.setData(buildTrafficGeoJson(old));}catch(err){console.warn('traffic overlay update',err)}
     renderTrafficRouteRail(state.currentRouteIndex);updateTrafficStatus((old.roadSegments||[]).find(x=>state.currentRouteIndex>=x.startIndex&&state.currentRouteIndex<=x.endIndex));
     const improvement=oldRemain-newEta,relative=oldRemain>0?improvement/oldRemain:0;
-    if(improvement>=120||relative>=.10&&improvement>=60){state.route={...r,_label:'실시간 경로',_character:state.character};state.routeCumulative=buildCumulative(state.route);invalidateDrivePoiRoute();state.mapMatch={index:0,routeDistance:0,score:Infinity,confidence:0,at:0};drawRoute(state.route,{fit:false});await loadSafetyEvents(state.route);updateDriving(true);toast('실시간 교통을 반영해 더 빠른 경로로 변경했습니다.')}
+    // A routeRequest result starts at current GPS and may have different geometry.
+    // Replacing the active route here resets progress to index 0 and causes the
+    // maneuver HUD to jump while stopped in traffic. Never auto-apply it.
+    // The user can select a different route explicitly in the drive menu.
+    if(improvement>=120||(relative>=.10&&improvement>=60)){
+      if(Date.now()-Number(state.lastFasterRouteNoticeAt||0)>180000){
+        state.lastFasterRouteNoticeAt=Date.now();
+        toast('더 빠른 경로가 있을 수 있습니다. 메뉴의 다른경로에서 선택하세요.',3000);
+      }
+    }
   }catch(e){console.warn('live route refresh failed',e)}
 }
 function startLiveRouteRefresh(){clearInterval(state.liveRouteTimer);state.lastLiveRouteAt=0;setTimeout(liveRouteRefresh,12000);state.liveRouteTimer=setInterval(liveRouteRefresh,45000)}
@@ -5325,6 +5334,12 @@ function updateDriving(force=false){
     idx=match?.index??nearestIndex(state.user.lng,state.user.lat,g);
   }
   idx=Math.max(0,Math.min(g.length-1,Math.round(idx)));
+  if(!state.simulationActive&&state.tripStartedAt&&state.navigationStartReleased&&
+    (state.stationaryActive||(Number(state.user?.speed)||0)<0.35)&&
+    Number.isFinite(Number(state.driveMarkerRenderedDistance))){
+    const fixed=pointAtRouteDistance(Number(state.driveMarkerRenderedDistance));
+    if(fixed&&Number.isFinite(Number(fixed.index)))idx=Math.max(0,Math.min(g.length-1,Math.round(fixed.index)));
+  }
   state.currentRouteIndex=idx;
   updateTunnelRouteLock(idx);
   announceTunnelAhead(idx);
@@ -5355,8 +5370,12 @@ function updateDriving(force=false){
     }
   }
   if(!state.simulationActive&&(state.drivePositionUncertain||state.wrongDirectionActive)){
+    // Never remove/reposition the marker from a single unreliable GPS fix.
     clearUncertainGuidance();
-    checkOffRoute(idx);
+    ensureUserMarker();
+    keepDriveCharacterVisible();
+    ensureSafetyMarkersPresent();
+    // Do not infer a new turn or reroute from uncertain location.
     return;
   }
   updateProgressUI(idx,force);
@@ -5972,26 +5991,37 @@ function updateTrafficStatus(seg){
   if(info.key!=='unknown'&&info.key!==state.lastTrafficStatus){state.lastTrafficStatus=info.key;}
 }
 
+// v7.6.27.60 — Recenter is a camera operation, not a new GNSS/map-match fix.
+// Never overwrite the route-snapped position with raw GPS just because a user taps the button.
 async function recenterAndCheckFastRoute(){
   if(state.simulationActive)stopRouteSimulation({resumeGps:true});
-  if(!state.tripStartedAt){recenterDriveMap();return}
-  const fresh=state.lastRawFix;
-  if(fresh&&pointValid(fresh)&&Date.now()-Number(fresh.at||0)<30000){
-    state.user={...(state.user||{}),lat:fresh.lat,lng:fresh.lng,rawLat:fresh.lat,rawLng:fresh.lng};
-    ensureUserMarker();
-  }
+  // Keep the last verified marker on its route. If the GNSS signal is uncertain,
+  // re-acquire samples rather than injecting a raw coordinate into navigation state.
+  ensureUserMarker();
   recenterDriveMap();
-  if(state.routeMode==='walk'||!state.destination||!state.route?.geometry?.length)return;
-  if(Date.now()-Number(state.lastRealGpsAt||0)>30000){toast('GPS 위치 확인 후 빠른 경로를 재검토합니다.',2200);startWatch();return}
-  // Traffic-aware route check; keep current route unless a verifiably faster route is returned.
+  if(!state.tripStartedAt||state.routeMode==='walk'||!state.destination||!state.route?.geometry?.length)return;
+  const fresh=state.lastRawFix;
+  const recent=Boolean(fresh&&pointValid(fresh)&&Date.now()-Number(fresh.at||0)<12000);
+  const accurate=recent&&Number(fresh.accuracy)>0&&Number(fresh.accuracy)<=45;
+  if(!accurate){toast('GPS 위치를 확인하는 중입니다. 기존 경로와 차량 표시를 유지합니다.',2600);startWatch();return;}
+  const projection=routePosOfPoint(Number(fresh.lng),Number(fresh.lat),state.route.geometry,null,85);
+  if(!projection||projection.distance>Math.max(28,Number(fresh.accuracy)*1.6)){
+    // True off-route decisions require successive reliable fixes, not one button tap.
+    toast('위치 오차를 확인 중입니다. 경로 변경은 안정된 GPS 수신 후 진행합니다.',2700);
+    startWatch();return;
+  }
+  if(state.rerouteBusy)return;
   state.lastLiveRouteAt=0;
   await liveRouteRefresh();
 }
 function recenterDriveMap(){
   if(!state.user)return toast('현재 위치를 확인할 수 없습니다.');
-  const g=state.route?.geometry||[],idx=state.currentRouteIndex||0,next=g[Math.min(g.length-1,idx+3)];
-  const heading=Number.isFinite(state.user.heading)?state.user.heading:(next?bearing(state.user.lat,state.user.lng,next[1],next[0]):0);
-  state.map?.easeTo({center:[state.user.lng,state.user.lat],zoom:driveMapZoom(),pitch:driveMapPitch(),bearing:heading,duration:350,padding:driveCameraPadding()});
+  ensureUserMarker();
+  const rendered=Number.isFinite(Number(state.driveMarkerRenderedDistance))&&state.route?.geometry?.length
+    ?pointAtRouteDistance(Number(state.driveMarkerRenderedDistance)):null;
+  const center=rendered?[rendered.lng,rendered.lat]:[state.user.lng,state.user.lat];
+  const heading=driveCameraBearing();
+  state.map?.easeTo({center,zoom:driveMapZoom(),pitch:driveMapPitch(),bearing:heading,duration:350,padding:driveCameraPadding()});
   toast('현재 위치로 지도를 맞췄습니다.',1200);
 }
 async function reroute(originOverride=null){
