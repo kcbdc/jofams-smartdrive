@@ -10,6 +10,6 @@ jobs:
           fetch-depth: 0
       - name: Push to GitLab
         run: |
-          git remote add gitlab https://oauth2:${{ secrets.GITLAB_TOKEN }}@gitlab.aigov.go.kr/그룹명/프로젝트명.git
+          git remote add gitlab https://oauth2:${{ secrets.GITLAB_TOKEN }}@gitlab.aigov.go.kr/cross/jofams-smartdrive
           git push gitlab --all --force
           git push gitlab --tags --force
