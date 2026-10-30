@@ -1666,6 +1666,7 @@ function previewWhereMerchantOnMap(item,type){
   cancelAutoStart(); // previous search countdown must never start this preview
   state.whereMapPreviewActive=true;
   state.whereMapPreviewReturn=true;
+  const previewToken=state.whereMapPreviewToken=(Number(state.whereMapPreviewToken)||0)+1;
   closeWhereTo();
   setView('home');
   setHomeSheetCollapsed(true);
@@ -1682,21 +1683,36 @@ function previewWhereMerchantOnMap(item,type){
     const el=document.createElement('div');el.className='where-map-preview-pin';
     el.setAttribute('aria-label','선택한 가맹점 위치');
     el.innerHTML='<svg viewBox="0 0 40 52" aria-hidden="true"><path d="M20 2C10 2 3 10 3 20c0 13 17 29 17 29s17-16 17-29C37 10 30 2 20 2Z" fill="#13865c" stroke="white" stroke-width="3"/><circle cx="20" cy="20" r="7" fill="white"/></svg>';
-    state.whereMapPreviewMarker=new maplibregl.Marker({element:el,anchor:'bottom',offset:[0,-66]}).setLngLat([lng,lat]).addTo(state.map);
+    state.whereMapPreviewMarker=new maplibregl.Marker({element:el,anchor:'bottom',offset:[0,-20]}).setLngLat([lng,lat]).addTo(state.map);
   }catch(e){console.warn('[where-to] preview marker',e)}
   // Show the decision card immediately, not after another asynchronous marker query.
   showMapPlacePrompt(place);
   if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').textContent='목록으로';
   if($('mapPlacePromptGo'))$('mapPlacePromptGo').textContent='길안내 선택';
-  // The location-preview is authoritative. Recenter immediately, then once more
-  // after the home sheet resizes. GPS home recenter must not override the preview.
-  const targetZoom=Math.max(Number(state.map.getZoom())||0,16.7);
-  try{state.map.stop();state.map.jumpTo({center:[lng,lat],zoom:targetZoom,pitch:0,bearing:0})}catch{}
+  // The preview is authoritative: home transitions and delayed GPS callbacks
+  // must not return the camera to the driver's location. Center AFTER resize.
+  const targetZoom=17.6;
   const markerRef=state.whereMapPreviewMarker;
-  requestAnimationFrame(()=>{
-    if(!state.whereMapPreviewActive||state.whereMapPreviewMarker!==markerRef)return;
-    try{state.map.resize();state.map.jumpTo({center:[lng,lat],zoom:targetZoom,pitch:0,bearing:0})}catch{}
-  });
+  const previewPadding=()=>{
+    const rect=state.map.getContainer().getBoundingClientRect();
+    const h=Math.max(200,rect.height||window.innerHeight);
+    return {top:Math.min(95,h*.13),bottom:Math.min(260,h*.27),left:20,right:20};
+  };
+  const moveToStore=(animated)=>{
+    if(!state.whereMapPreviewActive||state.whereMapPreviewMarker!==markerRef||state.whereMapPreviewToken!==previewToken)return;
+    try{
+      state.map.stop();state.map.resize();
+      const camera={center:[lng,lat],zoom:targetZoom,pitch:0,bearing:0,padding:previewPadding()};
+      if(animated)state.map.easeTo({...camera,duration:500,essential:true});
+      else state.map.jumpTo(camera);
+    }catch(e){console.warn('[where-to] preview camera',e)}
+  };
+  // Delayed home layout work previously re-centered the map at 80/280ms.
+  // Reapply the chosen store after the sheet has finished its transition.
+  moveToStore(false);
+  requestAnimationFrame(()=>moveToStore(true));
+  setTimeout(()=>moveToStore(false),380);
+  setTimeout(()=>moveToStore(false),850);
 }
 function focusOnnuriItem(item){previewWhereMerchantOnMap(item,'onnuri')}
 function focusVoucherItem(item){previewWhereMerchantOnMap(item,'local')}
@@ -1704,6 +1720,7 @@ function clearWhereMapPreview(){
   try{state.whereMapPreviewMarker?.remove()}catch{}
   state.whereMapPreviewMarker=null;
   state.whereMapPreviewActive=false;
+  state.whereMapPreviewToken=(Number(state.whereMapPreviewToken)||0)+1;
 }
 function cancelMapPlacePreview(){
   if(dangolloFestival.returnMap){dangolloFestival.returnMap=false;closeMapPlacePrompt();clearWhereMapPreview();festivalOpen();return}
@@ -1724,7 +1741,7 @@ async function refreshWhereTo(){
     if(!pointValid(state.user)){if(label)label.textContent='위치 확인이 필요합니다';return}
     if(label)label.textContent='현재 위치 기준 · 가까운 순';
     renderWhereToList();
-    if(state.map){try{state.map.jumpTo({center:[Number(state.user.lng),Number(state.user.lat)],zoom:15.7})}catch{}}
+    if(state.map&&!state.whereMapPreviewActive){try{state.map.jumpTo({center:[Number(state.user.lng),Number(state.user.lat)],zoom:15.7})}catch{}}
     // A slow endpoint cannot delay painting the other merchant list.
     void Promise.resolve().then(()=>loadLocalVoucherMap({force:false})).then(()=>renderWhereToList()).catch(e=>console.warn('[where-to] local',e));
     void Promise.resolve().then(()=>loadOnnuriMap({force:false})).then(()=>renderWhereToList()).catch(e=>console.warn('[where-to] onnuri',e));
@@ -2393,7 +2410,7 @@ function scheduleLocalVoucherRefresh(force=false){
 
 function refreshMapLayout({fitRoute=false}={}){
   if(!state.map)return;
-  const run=()=>{try{state.map.resize();if(state.route?.geometry?.length){drawRoute(state.route,{fit:fitRoute})}else if(state.user){state.map.jumpTo({center:[state.user.lng,state.user.lat]})}}catch(e){console.warn('map resize failed',e)}};
+  const run=()=>{try{state.map.resize();if(state.whereMapPreviewActive)return;if(state.route?.geometry?.length){drawRoute(state.route,{fit:fitRoute})}else if(state.user){state.map.jumpTo({center:[state.user.lng,state.user.lat]})}}catch(e){console.warn('map resize failed',e)}};
   requestAnimationFrame(run);setTimeout(run,80);setTimeout(run,280);
 }
 
