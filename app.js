@@ -1129,7 +1129,7 @@ async function initMap(){
       permissionStatus('geolocation').then(async status=>{
         try{
           const u=await locate(status==='granted');
-          if(u&&pointValid(u)&&state.map){state.map.easeTo({center:[u.lng,u.lat],zoom:15.5,duration:450});if(!state.fuelData&&!state.fuelLoading)loadFuelPrices(state.fuelProduct).catch(()=>{});}
+          if(u&&pointValid(u)&&state.map){if(!state.whereMapPreviewActive)state.map.easeTo({center:[u.lng,u.lat],zoom:15.5,duration:450});if(!state.fuelData&&!state.fuelLoading)loadFuelPrices(state.fuelProduct).catch(()=>{});}
         }catch(e){console.warn('initial current location failed',e)}
         setTimeout(()=>{scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh()},250);
       });
@@ -1682,13 +1682,21 @@ function previewWhereMerchantOnMap(item,type){
     const el=document.createElement('div');el.className='where-map-preview-pin';
     el.setAttribute('aria-label','선택한 가맹점 위치');
     el.innerHTML='<svg viewBox="0 0 40 52" aria-hidden="true"><path d="M20 2C10 2 3 10 3 20c0 13 17 29 17 29s17-16 17-29C37 10 30 2 20 2Z" fill="#13865c" stroke="white" stroke-width="3"/><circle cx="20" cy="20" r="7" fill="white"/></svg>';
-    state.whereMapPreviewMarker=new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat([lng,lat]).addTo(state.map);
+    state.whereMapPreviewMarker=new maplibregl.Marker({element:el,anchor:'bottom',offset:[0,-66]}).setLngLat([lng,lat]).addTo(state.map);
   }catch(e){console.warn('[where-to] preview marker',e)}
   // Show the decision card immediately, not after another asynchronous marker query.
   showMapPlacePrompt(place);
   if($('mapPlacePromptCancel'))$('mapPlacePromptCancel').textContent='목록으로';
   if($('mapPlacePromptGo'))$('mapPlacePromptGo').textContent='길안내 선택';
-  try{state.map.easeTo({center:[lng,lat],zoom:Math.max(Number(state.map.getZoom())||0,16.7),pitch:0,bearing:0,duration:450})}catch{}
+  // The location-preview is authoritative. Recenter immediately, then once more
+  // after the home sheet resizes. GPS home recenter must not override the preview.
+  const targetZoom=Math.max(Number(state.map.getZoom())||0,16.7);
+  try{state.map.stop();state.map.jumpTo({center:[lng,lat],zoom:targetZoom,pitch:0,bearing:0})}catch{}
+  const markerRef=state.whereMapPreviewMarker;
+  requestAnimationFrame(()=>{
+    if(!state.whereMapPreviewActive||state.whereMapPreviewMarker!==markerRef)return;
+    try{state.map.resize();state.map.jumpTo({center:[lng,lat],zoom:targetZoom,pitch:0,bearing:0})}catch{}
+  });
 }
 function focusOnnuriItem(item){previewWhereMerchantOnMap(item,'onnuri')}
 function focusVoucherItem(item){previewWhereMerchantOnMap(item,'local')}
@@ -5110,7 +5118,7 @@ function setView(view){
         if(!state.tripStartedAt){
           const u=await locate(false);
           if(u&&pointValid(u))refreshDangolloHomeWeather();
-          if(u&&pointValid(u)&&state.map&&!state.homeSheetCollapsed)state.map.easeTo({center:[u.lng,u.lat],zoom:15.5,duration:380});
+          if(u&&pointValid(u)&&state.map&&!state.homeSheetCollapsed&&!state.whereMapPreviewActive)state.map.easeTo({center:[u.lng,u.lat],zoom:15.5,duration:380});
         }
       }catch{}
       scheduleLocalVoucherRefresh();scheduleOnnuriRefresh();scheduleHomeCameraRefresh();

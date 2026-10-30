@@ -4849,3 +4849,8 @@ html body #app #driveView .drive-bottom-destination:not(.hidden) #driveDestinati
 }
 /* Road traffic rail uses current routing-provider traffic, never a simulated live reading. */
 html body #app #driveView #trafficRouteSegments i{transition:background-color .45s ease!important;}
+
+/* v7.6.27.56 - merchant preview pin never overlaps merchant SVG */
+.where-map-preview-pin{z-index:1000!important;overflow:visible!important;filter:drop-shadow(0 4px 8px rgba(0,64,40,.35))}
+.where-map-preview-pin svg{width:40px;height:52px;display:block}
+.maplibregl-marker:has(>.where-map-preview-pin){z-index:1100!important;pointer-events:none!important}
