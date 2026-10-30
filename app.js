@@ -5243,6 +5243,7 @@ function startNavigation(opts={}){
       rp.muted=false;
       rp.volume=state.radioDucked?state.radioVolume*.25:state.radioVolume;
       ensureRadioLoudnessNormalizer().catch(e=>console.warn('radio normalizer init failed',e));
+      radioWanted=true;radioSession++;
       const playPromise=rp.play();
       if(playPromise?.then)playPromise.then(()=>{
         state.radioPlaying=true;updateRadioUI();
@@ -7706,6 +7707,7 @@ const RADIO_INDEX_KEY='jofams.radioIndex';
 const RADIO_LEVEL_VERSION_KEY='jofams.radioLevelVersion';
 const RADIO_LEVEL_VERSION='60-normalized-v1';
 let radioAudioCtx=null,radioMediaSource=null,radioPreAnalyser=null,radioAutoGain=null,radioLimiter=null,radioAgcTimer=0;
+let radioWanted=false,radioAdvancePending=false,radioSession=0;
 
 function radioPlayer(){return $('radioPlayer')}
 async function ensureRadioLoudnessNormalizer(){
@@ -7795,7 +7797,7 @@ async function loadRadioSchedule(){
   try{
     const r=await fetch('/assets/radio/schedule.json',{cache:'no-cache'});
     const d=await r.json();
-    state.radioSchedule=Array.isArray(d.items)?d.items:[];
+    state.radioSchedule=(Array.isArray(d.items)?d.items:Array.isArray(d)?d:[]).filter(x=>x&&typeof x.src==='string'&&x.src.trim());
   }catch(e){console.warn('radio schedule load failed',e);state.radioSchedule=[]}
   return state.radioSchedule;
 }
@@ -7812,6 +7814,7 @@ function radioToggleMarkup(isOn){
 
 function stopNavigationRadioImmediately(){
   state.radioStopEpoch=(Number(state.radioStopEpoch)||0)+1;
+  radioWanted=false;radioSession++;radioAdvancePending=false;
   state.radioPlaying=false;
   state.radioDucked=false;
   try{
@@ -7834,9 +7837,10 @@ function updateRadioUI(){
 }
 async function radioLoadIndex(index,autoplay=false){
   const stopEpoch=Number(state.radioStopEpoch)||0;
+  const session=radioSession;
   const el=radioPlayer();if(!el){console.warn('radio player element missing');return false}
   if(!state.radioSchedule?.length)await loadRadioSchedule();
-  if(stopEpoch!==(Number(state.radioStopEpoch)||0))return false;
+  if(stopEpoch!==(Number(state.radioStopEpoch)||0)||session!==radioSession)return false;
   // schedule.json 로딩이 늦어도 기본 음원으로 즉시 재생 가능하게 한다.
   if(!state.radioSchedule?.length){
     state.radioSchedule=[{id:'radio-1',name:'가상 라디오',src:'/assets/radio/radio_1.mp3'}];
@@ -7846,16 +7850,17 @@ async function radioLoadIndex(index,autoplay=false){
   const item=state.radioSchedule[state.radioIndex];
   const wanted=new URL(item.src,location.href).href;
   if(el.src!==wanted)el.src=item.src;
+  else if(el.ended||el.currentTime>0){try{el.currentTime=0}catch{}}
   el.volume=state.radioDucked?state.radioVolume*.25:state.radioVolume;
   el.load?.();
   updateRadioUI();
   if(autoplay){
     try{
       await ensureRadioLoudnessNormalizer();
-      if(stopEpoch!==(Number(state.radioStopEpoch)||0))return false;
+      if(stopEpoch!==(Number(state.radioStopEpoch)||0)||session!==radioSession)return false;
       await el.play();
-      if(stopEpoch!==(Number(state.radioStopEpoch)||0)){el.pause();return false}
-      state.radioPlaying=true;updateRadioUI();return true;
+      if(stopEpoch!==(Number(state.radioStopEpoch)||0)||session!==radioSession){el.pause();return false}
+      radioWanted=true;state.radioPlaying=true;updateRadioUI();return true;
     }catch(e){
       console.warn('radio autoplay blocked',e);state.radioPlaying=false;updateRadioUI();return false;
     }
@@ -7865,41 +7870,75 @@ async function radioLoadIndex(index,autoplay=false){
 async function toggleRadio(){
   const el=radioPlayer();
   if(!el){toast('라디오 재생기를 불러오지 못했습니다.');return}
+  if(radioWanted&&!el.paused){
+    radioWanted=false;radioSession++;radioAdvancePending=false;
+    el.pause();state.radioPlaying=false;updateRadioUI();return;
+  }
+  // 사용자가 다시 누를 때 종료된 트랙을 처음부터 반복하지 않고 다음 트랙을 연다.
+  if(el.ended || (radioWanted&&el.paused&&state.radioSchedule?.length>1)){
+    radioWanted=true;radioSession++;
+    try{await radioLoadIndex(state.radioIndex+1,true)}catch(e){console.warn('radio next track failed',e)}
+    return;
+  }
+  radioWanted=true;radioSession++;
   try{
-    if(el.paused){
-      if(!el.getAttribute('src'))el.src='/assets/radio/radio_1.mp3';
-      el.volume=state.radioDucked?state.radioVolume*.25:state.radioVolume;
-      await ensureRadioLoudnessNormalizer();
-      await el.play();
-      state.radioPlaying=true;
-    }else{
-      el.pause();
-      state.radioPlaying=false;
+    if(!state.radioSchedule?.length)await loadRadioSchedule();
+    if(!el.getAttribute('src')){
+      const item=state.radioSchedule?.[state.radioIndex]||state.radioSchedule?.[0];
+      el.src=item?.src||'/assets/radio/radio_1.mp3';
     }
+    el.volume=state.radioDucked?state.radioVolume*.25:state.radioVolume;
+    await ensureRadioLoudnessNormalizer();
+    if(!radioWanted)return;
+    await el.play();state.radioPlaying=true;
   }catch(e){
-    console.warn('radio toggle failed',e);
-    state.radioPlaying=false;
+    console.warn('radio toggle failed',e);radioWanted=false;state.radioPlaying=false;
     toast('라디오 재생에 실패했습니다.');
   }
   updateRadioUI();
 }
-async function nextRadio(){await radioLoadIndex(state.radioIndex+1,true)}
+async function nextRadio(){
+  radioWanted=true;
+  await radioLoadIndex(state.radioIndex+1,true);
+}
+async function radioAdvanceOnEnd(){
+  // ended 이벤트 직전/직후 pause, updateRadioUI 순서와 무관하게 다음 파일 재생.
+  if(!radioWanted||radioAdvancePending)return;
+  radioAdvancePending=true;
+  const session=radioSession;
+  try{
+    if(!state.radioSchedule?.length)await loadRadioSchedule();
+    if(!radioWanted||session!==radioSession)return;
+    const count=state.radioSchedule?.length||0;
+    if(count<2){
+      radioWanted=false;
+      console.warn('radio playlist contains fewer than 2 tracks; check /assets/radio/schedule.json');
+      toast('다음 라디오 파일이 없습니다. 재생목록을 확인해 주세요.',3500);
+      return;
+    }
+    const succeeded=await radioLoadIndex(state.radioIndex+1,true);
+    if(!succeeded&&radioWanted)toast('다음 라디오 재생에 실패했습니다.',2800);
+  }catch(e){console.warn('radio automatic next track failed',e)}
+  finally{radioAdvancePending=false;updateRadioUI()}
+}
 async function initVirtualRadio(){
   const player=radioPlayer();
-  if(player&&!player.getAttribute('src'))player.src='/assets/radio/radio_1.mp3';
   const levelVersion=localStorage.getItem(RADIO_LEVEL_VERSION_KEY);
   if(levelVersion!==RADIO_LEVEL_VERSION){state.radioVolume=.6;try{localStorage.setItem(RADIO_VOLUME_KEY,'0.6');localStorage.setItem(RADIO_LEVEL_VERSION_KEY,RADIO_LEVEL_VERSION)}catch{}}
   else{const rv=Number(localStorage.getItem(RADIO_VOLUME_KEY));if(Number.isFinite(rv))state.radioVolume=Math.max(0,Math.min(1,rv));}
   const nv=Number(localStorage.getItem(NAV_VOLUME_KEY));if(Number.isFinite(nv))state.voiceVolume=Math.max(0,Math.min(1,nv));
   const ri=Number(localStorage.getItem(RADIO_INDEX_KEY));if(Number.isFinite(ri))state.radioIndex=Math.max(0,ri);
-  await loadRadioSchedule();
-  await radioLoadIndex(state.radioIndex,false);
-  setRadioVolume(state.radioVolume,false);setNavVolume(state.voiceVolume,false);updateRadioUI();
-  const el=radioPlayer();if(el){
-    el.onended=()=>{if(state.tripStartedAt&&state.radioPlaying)radioLoadIndex(state.radioIndex+1,true)};
-    el.onplay=()=>{state.radioPlaying=true;updateRadioUI()};
-    el.onpause=()=>{state.radioPlaying=false;updateRadioUI()};
+  // 리스너를 먼저 연결해 초기 로딩 중 시작한 재생의 ended도 놓치지 않는다.
+  if(player){
+    player.onended=()=>{void radioAdvanceOnEnd()};
+    player.onplay=()=>{radioWanted=true;state.radioPlaying=true;updateRadioUI()};
+    player.onpause=()=>{state.radioPlaying=false;updateRadioUI()};
+    player.onerror=()=>{if(radioWanted&&!radioAdvancePending)void radioAdvanceOnEnd()};
   }
+  await loadRadioSchedule();
+  // 첫 주행 라디오가 먼저 시작했을 경우 초기화가 해당 음원을 끊거나 처음으로 되돌리지 않는다.
+  if(player&&(player.paused&&!radioWanted))await radioLoadIndex(state.radioIndex,false);
+  setRadioVolume(state.radioVolume,false);setNavVolume(state.voiceVolume,false);updateRadioUI();
 }
 window.addEventListener('jofams-native-audio-duck',e=>setRadioDucked(Boolean(e?.detail?.ducked)));
 
