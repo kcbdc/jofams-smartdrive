@@ -1,0 +1,15 @@
+name: Sync to GitLab
+on: [push, delete]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push to GitLab
+        run: |
+          git remote add gitlab https://oauth2:${{ secrets.GITLAB_TOKEN }}@gitlab.aigov.go.kr/그룹명/프로젝트명.git
+          git push gitlab --all --force
+          git push gitlab --tags --force
