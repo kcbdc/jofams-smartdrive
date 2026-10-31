@@ -79,6 +79,10 @@ details p{font-size:14px;color:var(--muted);margin:8px 0 0}
 footer{text-align:center;padding:30px 20px 36px;color:var(--muted);font-size:13px}
 footer .big{font-size:18px;font-weight:900;color:var(--text);margin-bottom:6px}
 @media(min-width:640px){.route,.feat.three{grid-template-columns:repeat(3,1fr)}.hero h1{font-size:42px}}
+
+/* v7.6.27.65: 매뉴얼 내부 맨 위로 버튼 */
+.manual-top-button{position:fixed;right:18px;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);z-index:999;display:flex;align-items:center;justify-content:center;gap:5px;min-width:58px;height:48px;padding:0 14px;border:0;border-radius:26px;background:#0f9d6a;color:white;font:700 14px "Noto Sans KR",sans-serif;box-shadow:0 5px 18px rgba(0,0,0,.25);cursor:pointer}
+.manual-top-button:focus-visible{outline:3px solid #f08a24;outline-offset:3px}
 </style>
 </head>
 <body>
@@ -88,7 +92,7 @@ footer .big{font-size:18px;font-weight:900;color:var(--text);margin-bottom:6px}
   <h1>단골로 <span style="opacity:.8;font-weight:500;font-size:.5em">DANGOLRO</span></h1>
   <p class="sub">가는 길에, 우리 동네 혜택까지!</p>
   <p>실시간 길안내와 지역사랑상품권·온누리상품권 가맹점 추천을 결합한 스마트 내비게이션입니다. 경로 주변의 알뜰한 소비 혜택까지 발견해 보세요.</p>
-  <a class="btn" href="https://jofams-smartdrive.pages.dev/" target="_blank" rel="noopener">서비스 바로가기 →</a>
+  <a class="btn" id="manualServiceShortcut" href="https://jofams-smartdrive.pages.dev/">서비스 바로가기 →</a>
 </header>
 
 <nav class="toc" aria-label="목차">
@@ -332,5 +336,23 @@ footer .big{font-size:18px;font-weight:900;color:var(--text);margin-bottom:6px}
   <p>본 매뉴얼은 2026년 10월 기준 서비스 화면과 제공 기능을 바탕으로 작성되었습니다.</p>
 </footer>
 
+
+<button id="manualTopButton" class="manual-top-button" type="button" aria-label="설명서 맨 위로 이동">↑ TOP</button>
+<script>
+(function(){
+  var shortcut=document.getElementById('manualServiceShortcut');
+  if(shortcut)shortcut.addEventListener('click',function(event){
+    if(window.parent!==window){
+      event.preventDefault();
+      window.parent.postMessage({type:'DANGOLRO_MANUAL_CLOSE'},window.location.origin);
+    }
+  });
+  var topButton=document.getElementById('manualTopButton');
+  if(topButton)topButton.addEventListener('click',function(){
+    window.scrollTo({top:0,behavior:'smooth'});
+    document.documentElement.scrollTo({top:0,behavior:'smooth'});
+  });
+})();
+</script>
 </body>
 </html>

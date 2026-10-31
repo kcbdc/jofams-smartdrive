@@ -10019,3 +10019,14 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     if(e.key==='Escape'&&!document.getElementById('userManualModal')?.classList.contains('hidden'))closeManual();
   });
 })();
+
+/* v7.6.27.65: 매뉴얼 iframe '서비스 바로가기'는 앱 내 레이어만 닫음 */
+window.addEventListener('message',function(event){
+  if(event.origin!==window.location.origin)return;
+  if(event.data?.type!=='DANGOLRO_MANUAL_CLOSE')return;
+  const modal=document.getElementById('userManualModal');
+  if(!modal||modal.classList.contains('hidden'))return;
+  modal.classList.add('hidden');
+  modal.style.removeProperty('display');
+  document.body.classList.remove('dangolro-manual-open');
+});
