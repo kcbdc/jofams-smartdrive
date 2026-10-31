@@ -57,7 +57,7 @@
 <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.27.62" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.27.63" />
 </head>
 <body>
   <main id="app">
@@ -413,6 +413,18 @@
         <p id="driveAlternateStatus" role="status" aria-live="polite">경로를 확인하고 있습니다.</p>
         <div id="driveAlternateChoices" class="dangollo-alt-choices"></div>
         <p class="dangollo-alt-safety">안전한 곳에 정차한 뒤 경로를 선택해 주세요. 교통 정보는 경로 API의 최신 응답을 기준으로 합니다.</p>
+      </section>
+    </div>
+
+    
+    <!-- 사용설명서: 현재 화면 위에 표시되는 독립 스크롤 레이어 -->
+    <div id="userManualModal" class="dangolro-manual-overlay hidden" role="dialog" aria-modal="true" aria-label="단골로 사용설명서">
+      <section class="dangolro-manual-sheet">
+        <header class="dangolro-manual-header">
+          <div class="dangolro-manual-heading"><span aria-hidden="true">🚗</span><strong>단골로(DANGOLRO) 사용설명서</strong></div>
+          <button id="userManualCloseBtn" type="button" class="dangolro-manual-close" aria-label="사용설명서 닫기">×</button>
+        </header>
+        <iframe id="userManualFrame" title="단골로 사용설명서" src="about:blank" data-src="/dangolro-user-manual.html" loading="lazy"></iframe>
       </section>
     </div>
 
@@ -879,6 +891,6 @@
 
   <script>window.__JOFAMS_BUILD__="7.6.27.61";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.27.62"></script>
+  <script type="module" src="/app.js?v=7.6.27.63"></script>
 </body>
 </html>
