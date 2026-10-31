@@ -57,7 +57,7 @@
 <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@6.6.0/dist/maplibre-gl.css'" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/styles.css?v=7.6.27.65" />
+  <link rel="stylesheet" href="/styles.css?v=7.6.27.66" />
 </head>
 <body>
   <main id="app">
@@ -70,6 +70,14 @@
         <b>단골로 내비</b>
         <button id="myBtn" class="circle-btn dangollo-top-action" type="button" aria-label="마이페이지 열기"><svg viewBox="0 0 28 28" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="10" r="4.2"/><path d="M5.8 23c.8-4.7 3.7-7 8.2-7s7.4 2.3 8.2 7"/><path d="M21.5 6.2h1.8M22.4 5.3v1.8"/></svg></button>
       </header>
+
+      <nav class="dangolro-home-top-quick" aria-label="집 회사 즐겨찾기 빠른 이동">
+        <div class="dangolro-home-top-left">
+          <button id="homeShortcut" type="button"><span data-icon="home"></span><b>집</b><small id="homeLabel">등록</small></button>
+          <button id="workShortcut" type="button"><span data-icon="office"></span><b>회사</b><small id="workLabel">등록</small></button>
+        </div>
+        <button id="favoriteShortcut" class="dangolro-home-top-favorite" type="button"><span data-icon="star"></span><b>즐겨찾기</b><small id="favoriteLabel">0곳</small></button>
+      </nav>
 
       <div class="home-sheet" id="homeSheet">
         <button id="homeSheetToggle" class="home-sheet-toggle" type="button" aria-label="홈 메뉴 내리기" aria-expanded="true">
@@ -88,11 +96,7 @@
         <div class="home-ai-example"><span>AI 조건 검색</span><button id="homeAiExampleBtn" type="button">세종시청 가는 길에 온누리 식당 5분 이내</button><button id="homeAiRecentBtn" type="button" hidden>최근 지시</button></div>
 
         <div class="hotspot-home-entry"><button id="hotspotOpenBtn" type="button" class="hotspot-open-btn" aria-haspopup="dialog"><span class="hotspot-emoji" aria-hidden="true">🍜</span><span class="hotspot-open-copy"><b>길 위의 핫플</b><small>가는 길 맛집·카페 · 상품권 혜택 · SNS 찾아보기</small></span><span class="hotspot-chevron" aria-hidden="true">›</span></button></div>
-        <div class="shortcut-row">
-          <button id="homeShortcut"><span data-icon="home"></span><b>집</b><small id="homeLabel">등록</small></button>
-          <button id="workShortcut"><span data-icon="office"></span><b>회사</b><small id="workLabel">등록</small></button>
-          <button id="favoriteShortcut"><span data-icon="star"></span><b>즐겨찾기</b><small id="favoriteLabel">0곳</small></button>
-        </div>
+
         <div class="saved-place-manage-row" aria-label="집 회사 위치 관리">
           <button id="homeManageBtn" type="button"><span data-icon="settings"></span><b>집 위치 관리</b></button>
           <button id="workManageBtn" type="button"><span data-icon="settings"></span><b>회사 위치 관리</b></button>
@@ -891,6 +895,6 @@
 
   <script>window.__JOFAMS_BUILD__="7.6.27.61";</script>
   <script src="/config.js?v=7.5.7.8"></script>
-  <script type="module" src="/app.js?v=7.6.27.65"></script>
+  <script type="module" src="/app.js?v=7.6.27.66"></script>
 </body>
 </html>

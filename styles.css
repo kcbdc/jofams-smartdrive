@@ -4869,3 +4869,13 @@ body.dangolro-manual-open{overflow:hidden}
 
 /* v64: 레이어를 body 직속으로 이동해 앱 내부 stacking context를 회피 */
 body > #userManualModal{position:fixed!important;inset:0!important;z-index:2147483640!important;pointer-events:auto!important}
+
+/* v7.6.27.66: 홈 상단 헤더와 콘텐츠 사이 집/회사/즐겨찾기 퀵바 */
+.dangolro-home-top-quick{position:relative;z-index:8;display:flex;align-items:center;justify-content:space-between;gap:8px;margin:7px 14px 8px;padding:0 3px;min-height:43px;box-sizing:border-box}
+.dangolro-home-top-left{display:flex;align-items:center;gap:7px;min-width:0}
+.dangolro-home-top-quick button{display:inline-flex;align-items:center;gap:4px;min-height:40px;min-width:0;padding:7px 10px;border:1px solid #dce9e3;border-radius:24px;background:rgba(255,255,255,.97);color:#1e4638;box-shadow:0 3px 10px rgba(0,0,0,.09);font:inherit;cursor:pointer;white-space:nowrap}
+.dangolro-home-top-quick button [data-icon]{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;flex-shrink:0}
+.dangolro-home-top-quick button b{font-size:13px;font-weight:800}
+.dangolro-home-top-quick button small{font-size:11px;font-weight:700;color:#2788c9;overflow:hidden;text-overflow:ellipsis;max-width:68px}
+.dangolro-home-top-quick .dangolro-home-top-favorite{margin-left:auto;background:#f3fbf7;border-color:#cfe9db}
+@media(max-width:390px){.dangolro-home-top-quick{margin-left:9px;margin-right:9px;gap:4px}.dangolro-home-top-left{gap:4px}.dangolro-home-top-quick button{padding:7px 7px;gap:3px}.dangolro-home-top-quick button b{font-size:12px}.dangolro-home-top-quick button small{max-width:43px;font-size:10px}}
