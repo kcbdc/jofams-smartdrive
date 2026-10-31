@@ -4879,3 +4879,42 @@ body > #userManualModal{position:fixed!important;inset:0!important;z-index:21474
 .dangolro-home-top-quick button small{font-size:11px;font-weight:700;color:#2788c9;overflow:hidden;text-overflow:ellipsis;max-width:68px}
 .dangolro-home-top-quick .dangolro-home-top-favorite{margin-left:auto;background:#f3fbf7;border-color:#cfe9db}
 @media(max-width:390px){.dangolro-home-top-quick{margin-left:9px;margin-right:9px;gap:4px}.dangolro-home-top-left{gap:4px}.dangolro-home-top-quick button{padding:7px 7px;gap:3px}.dangolro-home-top-quick button b{font-size:12px}.dangolro-home-top-quick button small{max-width:43px;font-size:10px}}
+
+/* v7.6.27.67: quick actions must sit between the fixed header and home content.
+   Previous relative nav was covered by the absolutely positioned home sheet. */
+#homeView .dangolro-home-top-quick{
+ position:absolute!important;z-index:11!important;
+ top:calc(var(--safeT) + 84px)!important;
+ left:12px!important;right:12px!important;
+ margin:0!important;padding:0!important;
+ height:48px!important;min-height:48px!important;
+ display:flex!important;align-items:center!important;justify-content:space-between!important;
+ gap:5px!important;pointer-events:auto!important;
+}
+#homeView .dangolro-home-top-left{display:flex!important;gap:6px!important;flex:0 1 auto!important;min-width:0!important}
+#homeView .dangolro-home-top-quick button{
+ display:inline-flex!important;align-items:center!important;justify-content:center!important;
+ min-height:42px!important;padding:7px 10px!important;gap:5px!important;
+ border-radius:999px!important;background:#fff!important;border:1px solid #e9eeeb!important;
+ color:#15221d!important;box-shadow:0 2px 7px rgba(0,0,0,.045)!important;
+ white-space:nowrap!important;
+}
+#homeView .dangolro-home-top-quick button b{font-size:14px!important;font-weight:800!important}
+#homeView .dangolro-home-top-quick button small{font-size:13px!important;color:#2079c6!important;max-width:70px!important}
+#homeView .dangolro-home-top-quick button [data-icon]{width:21px!important;height:21px!important;color:#151b1b!important}
+#homeView .dangolro-home-top-quick button [data-icon] svg{width:21px!important;height:21px!important}
+#homeView .dangolro-home-top-favorite{margin-left:auto!important}
+#homeView #homeSheet.home-sheet{
+ top:calc(var(--safeT) + 144px)!important;
+ max-height:calc(100dvh - var(--safeT) - 144px)!important;
+ border-radius:24px 24px 0 0!important;
+}
+@media(max-width:380px){
+ #homeView .dangolro-home-top-quick{left:8px!important;right:8px!important;gap:3px!important}
+ #homeView .dangolro-home-top-left{gap:3px!important}
+ #homeView .dangolro-home-top-quick button{padding:6px 7px!important;gap:3px!important}
+ #homeView .dangolro-home-top-quick button b{font-size:12px!important}
+ #homeView .dangolro-home-top-quick button small{font-size:11px!important;max-width:45px!important}
+}
+/* The new quickbar replaces the duplicate in-content management shortcut row. */
+#homeView .saved-place-manage-row{display:none!important}
