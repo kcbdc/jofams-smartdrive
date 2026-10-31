@@ -4854,3 +4854,18 @@ html body #app #driveView #trafficRouteSegments i{transition:background-color .4
 .where-map-preview-pin{z-index:1000!important;overflow:visible!important;filter:drop-shadow(0 4px 8px rgba(0,64,40,.35))}
 .where-map-preview-pin svg{width:40px;height:52px;display:block}
 .maplibregl-marker:has(>.where-map-preview-pin){z-index:1100!important;pointer-events:none!important}
+
+/* v7.6.27.63: 메인메뉴 사용설명서 인앱 레이어 */
+.dangolro-manual-overlay{position:fixed;inset:0;z-index:2147483000;background:rgba(10,20,24,.55);display:flex;align-items:center;justify-content:center;padding:calc(env(safe-area-inset-top,0px) + 12px) 12px calc(env(safe-area-inset-bottom,0px) + 12px)}
+.dangolro-manual-overlay.hidden{display:none!important}
+.dangolro-manual-sheet{display:flex;flex-direction:column;width:min(100%,780px);height:min(92dvh,1000px);max-height:100%;overflow:hidden;background:#fff;border-radius:24px;box-shadow:0 18px 55px rgba(0,0,0,.3)}
+.dangolro-manual-header{flex:0 0 auto;min-height:70px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 18px;border-bottom:1px solid #e7ecea;color:#1b2a22}
+.dangolro-manual-heading{display:flex;align-items:center;gap:9px;min-width:0;font-size:clamp(15px,3.6vw,20px)}
+.dangolro-manual-heading strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dangolro-manual-close{flex:0 0 44px;width:44px;height:44px;border:1px solid #e3e8e5;border-radius:50%;background:#fff;color:#26352e;font-size:32px;line-height:1;cursor:pointer}
+#userManualFrame{display:block;flex:1 1 auto;width:100%;min-height:0;border:0;background:#fff}
+body.dangolro-manual-open{overflow:hidden}
+@media(max-width:480px){.dangolro-manual-overlay{padding:calc(env(safe-area-inset-top,0px) + 8px) 9px calc(env(safe-area-inset-bottom,0px) + 8px)}.dangolro-manual-sheet{height:94dvh;border-radius:22px}.dangolro-manual-header{padding:10px 13px;min-height:64px}}
+
+/* v64: 레이어를 body 직속으로 이동해 앱 내부 stacking context를 회피 */
+body > #userManualModal{position:fixed!important;inset:0!important;z-index:2147483640!important;pointer-events:auto!important}
