@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>단골로 사용자 매뉴얼</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#f4f8f5;--surface:#ffffff;--text:#1b2a22;--muted:#5d6f64;--line:#e1ebe4;
+  --green:#0f9d6a;--green-soft:#e2f6ec;--orange:#f08a24;--orange-soft:#fff0df;
+  --tip:#fff8e1;--tip-text:#7a5b00;--warn:#ffeceb;--warn-text:#a32c25;--shadow:0 6px 20px rgba(15,60,40,.07);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){color-scheme:dark;
+    --bg:#0e1612;--surface:#17231c;--text:#e8f2ec;--muted:#9ab0a2;--line:#27382e;
+    --green:#3ddc97;--green-soft:#173a2b;--orange:#ffa94d;--orange-soft:#3a2a15;
+    --tip:#33290f;--tip-text:#f3d98a;--warn:#3a1c1b;--warn-text:#ff9d96;--shadow:none}
+}
+:root[data-theme="dark"]{color-scheme:dark;
+  --bg:#0e1612;--surface:#17231c;--text:#e8f2ec;--muted:#9ab0a2;--line:#27382e;
+  --green:#3ddc97;--green-soft:#173a2b;--orange:#ffa94d;--orange-soft:#3a2a15;
+  --tip:#33290f;--tip-text:#f3d98a;--warn:#3a1c1b;--warn-text:#ff9d96;--shadow:none}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-behavior:smooth;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Noto Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;line-height:1.7;word-break:keep-all}
+a{color:var(--green)}
+.hero{background:linear-gradient(135deg,#0f9d6a 0%,#14b8a6 55%,#f08a24 130%);color:#fff;padding:48px 22px 56px;text-align:center;border-radius:0 0 32px 32px}
+.hero .logo{font-size:54px;line-height:1}
+.hero h1{margin:10px 0 4px;font-size:34px;font-weight:900;letter-spacing:-.5px}
+.hero .sub{font-size:17px;font-weight:700;opacity:.95;margin:0 0 14px}
+.hero p{max-width:520px;margin:0 auto 22px;opacity:.92;font-size:15px}
+.btn{display:inline-block;background:#fff;color:#0b7a52;font-weight:700;padding:12px 24px;border-radius:999px;text-decoration:none;box-shadow:0 6px 16px rgba(0,0,0,.18)}
+.wrap{max-width:760px;margin:0 auto;padding:0 16px}
+.toc{display:flex;gap:8px;overflow-x:auto;padding:18px 16px;margin:0 auto;max-width:760px;scrollbar-width:none}
+.toc::-webkit-scrollbar{display:none}
+.toc a{flex:none;text-decoration:none;font-size:13px;font-weight:500;color:var(--text);background:var(--surface);border:1px solid var(--line);padding:7px 14px;border-radius:999px}
+.toc a b{color:var(--green);margin-right:4px}
+section{background:var(--surface);border-radius:22px;padding:24px 20px;margin:0 0 18px;box-shadow:var(--shadow);border:1px solid var(--line)}
+h2{margin:0 0 6px;font-size:21px;font-weight:900;display:flex;align-items:center;gap:10px}
+h2 .no{background:var(--green);color:#fff;font-size:13px;font-weight:700;padding:3px 10px;border-radius:999px}
+h3{margin:22px 0 8px;font-size:16px;font-weight:700}
+h3 small{color:var(--green);font-weight:700;margin-right:6px}
+p{margin:6px 0}
+.lead{color:var(--muted);font-size:14px}
+ol.steps{list-style:none;counter-reset:s;padding:0;margin:8px 0}
+ol.steps li{counter-increment:s;position:relative;padding:6px 0 6px 38px;font-size:15px}
+ol.steps li::before{content:counter(s);position:absolute;left:0;top:7px;width:26px;height:26px;border-radius:50%;background:var(--green-soft);color:var(--green);font-weight:700;font-size:13px;display:grid;place-items:center}
+ul.dots{margin:8px 0;padding-left:20px;font-size:15px}
+ul.dots li{margin:3px 0}
+ul.dots li::marker{color:var(--green)}
+.tip,.warn,.note{border-radius:14px;padding:12px 14px;margin:14px 0 4px;font-size:14px}
+.tip{background:var(--tip);color:var(--tip-text)}
+.warn{background:var(--warn);color:var(--warn-text)}
+.note{color:var(--muted);font-size:13px;padding:0;margin:10px 0 0}
+.route{display:grid;gap:10px;margin:10px 0}
+.route div{border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-size:14px}
+.route b{display:block;color:var(--green);font-size:15px}
+.feat{display:grid;gap:12px;margin:12px 0}
+.feat>div{border-radius:16px;padding:14px 16px;background:var(--green-soft)}
+.feat>div.on{background:var(--orange-soft)}
+.feat>div.gas{background:var(--bg);border:1px solid var(--line)}
+.feat h4{margin:0 0 4px;font-size:16px}
+.feat ol{margin:0;padding-left:20px;font-size:14px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.chips span{background:var(--green-soft);color:var(--green);padding:6px 12px;border-radius:999px;font-size:13px;font-weight:500}
+.ex{background:var(--bg);border-left:4px solid var(--green);border-radius:10px;padding:8px 14px;margin:8px 0;font-size:14px}
+.tbl{overflow-x:auto;margin:10px 0}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}
+th{background:var(--green-soft);color:var(--green);font-weight:700}
+th:first-child{border-radius:10px 0 0 10px}th:last-child{border-radius:0 10px 10px 0}
+details{border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:10px 0;background:var(--bg)}
+summary{font-weight:700;cursor:pointer;font-size:15px}
+details p{font-size:14px;color:var(--muted);margin:8px 0 0}
+.safe li{margin:6px 0}
+footer{text-align:center;padding:30px 20px 36px;color:var(--muted);font-size:13px}
+footer .big{font-size:18px;font-weight:900;color:var(--text);margin-bottom:6px}
+@media(min-width:640px){.route,.feat.three{grid-template-columns:repeat(3,1fr)}.hero h1{font-size:42px}}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="logo">🚗</div>
+  <h1>단골로 <span style="opacity:.8;font-weight:500;font-size:.5em">DANGOLRO</span></h1>
+  <p class="sub">가는 길에, 우리 동네 혜택까지!</p>
+  <p>실시간 길안내와 지역사랑상품권·온누리상품권 가맹점 추천을 결합한 스마트 내비게이션입니다. 경로 주변의 알뜰한 소비 혜택까지 발견해 보세요.</p>
+  <a class="btn" href="https://jofams-smartdrive.pages.dev/" target="_blank" rel="noopener">서비스 바로가기 →</a>
+</header>
+
+<nav class="toc" aria-label="목차">
+  <a href="#s1"><b>01</b>시작하기</a><a href="#s2"><b>02</b>길안내</a><a href="#s3"><b>03</b>경로상 혜택</a><a href="#s4"><b>04</b>AI 검색</a><a href="#s5"><b>05</b>편의시설·유가</a><a href="#s6"><b>06</b>교통정보</a><a href="#s7"><b>07</b>다른시간 출발</a><a href="#s8"><b>08</b>즐겨찾기</a><a href="#s9"><b>09</b>편의기능</a><a href="#s10"><b>10</b>모의주행</a><a href="#s11"><b>11</b>어디갈까</a><a href="#s12"><b>12</b>MY</a><a href="#s13"><b>13</b>FAQ</a><a href="#s14"><b>14</b>안전안내</a>
+</nav>
+
+<main class="wrap">
+
+<section id="s1">
+  <h2><span class="no">01</span>단골로 시작하기</h2>
+  <h3><small>STEP 1</small>서비스 접속</h3>
+  <ol class="steps">
+    <li>스마트폰에서 Chrome 또는 Safari 등 웹브라우저를 실행합니다.</li>
+    <li>단골로 홈페이지에 접속합니다.</li>
+    <li>원활한 이용을 위해 위치정보 접근을 허용합니다.</li>
+    <li>홈 화면에서 목적지 검색과 다양한 편의기능을 이용합니다.</li>
+  </ol>
+  <div class="tip">💡 <b>이용 TIP</b> 브라우저의 ‘홈 화면에 추가’ 기능을 이용하면 일반 앱처럼 아이콘을 눌러 편리하게 실행할 수 있습니다.</div>
+  <h3><small>STEP 2</small>Google 로그인</h3>
+  <ol class="steps">
+    <li>하단 MY 메뉴를 선택합니다.</li>
+    <li>‘Google 로그인’ 버튼을 누릅니다.</li>
+    <li>Google 계정을 선택하여 로그인합니다.</li>
+    <li>즐겨찾기와 최근 목적지 등 계정 기반 개인화 기능을 이용할 수 있습니다.</li>
+  </ol>
+  <p class="note">※ 일부 기능은 로그인하지 않아도 이용할 수 있습니다.</p>
+</section>
+
+<section id="s2">
+  <h2><span class="no">02</span>목적지 검색 및 길안내</h2>
+  <h3><small>STEP 1</small>목적지 검색</h3>
+  <ol class="steps">
+    <li>홈 화면의 ‘목적지 검색하고 경로상 혜택도’ 검색창을 선택합니다.</li>
+    <li>장소명 또는 주소를 입력합니다.</li>
+    <li>검색 결과에서 원하는 목적지를 선택합니다.</li>
+    <li>출발지와 목적지가 설정되면 경로를 확인합니다.</li>
+  </ol>
+  <h3><small>STEP 2</small>경로 선택</h3>
+  <p class="lead">운전 목적에 따라 세 가지 경로를 제공합니다.</p>
+  <div class="route">
+    <div><b>⭐ 추천 경로</b>시간·거리·통행료 등을 종합적으로 고려</div>
+    <div><b>⚡ 빠른길</b>예상 소요시간을 우선하여 탐색</div>
+    <div><b>🆓 무료도로</b>통행료가 없는 도로를 우선하여 탐색</div>
+  </div>
+  <p class="note">‘세 경로 AI 비교’ 기능으로 경로별 특징과 차이를 비교할 수 있습니다.</p>
+  <h3><small>STEP 3</small>길안내 시작</h3>
+  <ol class="steps">
+    <li>경로와 예상 도착시간을 확인합니다.</li>
+    <li>‘안내 시작’ 버튼을 누릅니다.</li>
+    <li>지도에서 현재 위치와 진행 방향을 확인합니다.</li>
+    <li>음성 안내와 함께 목적지까지 이동합니다.</li>
+  </ol>
+  <p class="lead">길안내 중 확인 가능한 정보</p>
+  <div class="chips"><span>남은 거리·예상 소요시간</span><span>도착 예정시간</span><span>제한속도·단속카메라</span><span>교통 혼잡 상태</span><span>추천 가맹점·주유소</span></div>
+  <div class="warn">⚠️ <b>안전 운전 안내</b> 길안내는 참고정보입니다. 실제 교통표지, 신호 및 교통법규를 우선하고, 운전 중 경로 변경이나 화면 조작은 삼가 주세요.</div>
+</section>
+
+<section id="s3">
+  <h2><span class="no">03</span>경로상 혜택 찾기</h2>
+  <p class="lead">단골로의 핵심 기능! 길안내 화면의 ‘경로상 추천’ 메뉴에서 선택하세요.</p>
+  <div class="feat">
+    <div><h4>💚 지역사랑상품권 가맹점</h4><ol><li>길안내 화면에서 ‘지역사랑’ 선택</li><li>이동 경로 주변 가맹점 확인</li><li>원하는 가맹점을 선택해 위치 확인</li><li>필요하면 경유지로 추가</li></ol></div>
+    <div class="on"><h4>🧡 온누리상품권 가맹점</h4><ol><li>‘온누리’ 메뉴 선택</li><li>경로 주변 가맹점 확인</li><li>매장 위치와 이동 동선 확인</li><li>경유지로 추가해 편리하게 방문</li></ol></div>
+    <div class="gas"><h4>⛽ 경로상 주유소</h4><ol><li>‘주유소’ 메뉴 선택</li><li>이동 경로 주변 주유소 확인</li><li>위치와 유가정보 비교</li><li>원하는 주유소를 경유지로 설정</li></ol></div>
+  </div>
+  <div class="tip">💡 <b>이용 TIP</b> 가맹점 정보는 데이터 갱신 시점에 따라 실제 운영 상태와 다를 수 있습니다. 방문 전 영업 여부와 상품권 사용 가능 여부를 확인해 주세요.</div>
+</section>
+
+<section id="s4">
+  <h2><span class="no">04</span>AI 스마트 검색 및 추천</h2>
+  <h3>자연어로 검색하기</h3>
+  <p class="lead">원하는 조건을 문장으로 입력해 탐색할 수 있습니다.</p>
+  <div class="ex">“세종시청 가는 길에 온누리 식당 5분 이내”</div>
+  <div class="ex">“대전 가는 길에 저렴한 주유소”</div>
+  <div class="ex">“목적지 근처에서 지역사랑상품권 사용 가능한 음식점”</div>
+  <h3>AI 경로 비교</h3>
+  <p>‘세 경로 AI 비교’로 경로별 소요시간, 이동거리, 통행료 등을 비교해 목적에 맞는 경로를 고를 수 있습니다.</p>
+  <h3>AI 추천 설명</h3>
+  <p>길안내 중 ‘AI 추천 설명’을 선택하면 실제 조회된 추천 후보를 바탕으로 경유지 추천 이유를 확인할 수 있습니다.</p>
+  <p class="note">※ AI 결과는 참고용이며, 실시간 교통상황이나 매장 운영 여부를 보증하지 않습니다.</p>
+</section>
+
+<section id="s5">
+  <h2><span class="no">05</span>주변 편의시설 및 실시간 유가</h2>
+  <p class="lead">홈 화면의 ‘내 주변 편의시설’에서 시설 유형을 선택하세요.</p>
+  <div class="tbl"><table>
+    <tr><th>메뉴</th><th>주요 기능</th></tr>
+    <tr><td>⛽ 주유소</td><td>주변 주유소 검색</td></tr>
+    <tr><td>🛒 마트</td><td>가까운 마트 검색</td></tr>
+    <tr><td>🏪 편의점</td><td>주변 편의점 검색</td></tr>
+    <tr><td>🅿️ 주차장</td><td>주변 주차장 검색</td></tr>
+    <tr><td>🔌 충전소</td><td>전기차 충전소 검색</td></tr>
+  </table></div>
+  <h3>주변 최저가 주유소 찾기</h3>
+  <ol class="steps">
+    <li>홈 화면의 ‘주변 실시간 유가’를 확인합니다.</li>
+    <li>휘발유·경유·고급·LPG 중 유종을 선택합니다.</li>
+    <li>현재 위치 주변 주유소의 가격정보를 확인합니다.</li>
+    <li>원하는 주유소를 선택해 이동 경로를 탐색합니다.</li>
+  </ol>
+  <p class="note">유가정보는 한국석유공사 오피넷 자료를 활용하며, 실제 판매가격은 현장과 다를 수 있습니다.</p>
+</section>
+
+<section id="s6">
+  <h2><span class="no">06</span>실시간 교통정보 확인</h2>
+  <div class="tbl"><table>
+    <tr><th>교통상태</th><th>의미</th></tr>
+    <tr><td>🟢 원활</td><td>교통 흐름이 원활한 상태</td></tr>
+    <tr><td>🟡 서행</td><td>차량 속도가 감소한 상태</td></tr>
+    <tr><td>🟠 지체</td><td>이동이 지연되는 상태</td></tr>
+    <tr><td>🔴 정체</td><td>차량 흐름이 혼잡한 상태</td></tr>
+    <tr><td>🔴 극심정체</td><td>매우 낮은 속도로 이동하는 상태</td></tr>
+    <tr><td>⛔ 통제</td><td>사고 등으로 통행이 불가능한 상태</td></tr>
+  </table></div>
+  <h3>관심지역 교통정보 설정</h3>
+  <ol class="steps">
+    <li>메뉴에서 ‘실시간 교통정보 상세’를 선택합니다.</li>
+    <li>관심지역 추가 기능을 선택합니다.</li>
+    <li>확인하고 싶은 지역의 선택 버튼을 누릅니다.</li>
+    <li>‘완료’ 버튼을 눌러 설정을 확정합니다.</li>
+    <li>등록한 관심지역의 교통정보를 확인합니다.</li>
+  </ol>
+  <p class="note">※ 교통정보는 연결된 데이터의 제공 범위와 갱신 시점에 따라 차이가 있을 수 있습니다.</p>
+</section>
+
+<section id="s7">
+  <h2><span class="no">07</span>다른 시간에 출발하면?</h2>
+  <p class="lead">출발 예정시간에 따른 예상 소요시간을 확인할 수 있습니다.</p>
+  <ol class="steps">
+    <li>메뉴에서 ‘다른시간 출발’을 선택합니다.</li>
+    <li>출발지와 목적지를 입력합니다.</li>
+    <li>오늘·내일 또는 원하는 날짜를 선택합니다.</li>
+    <li>오전·오후 및 출발 시간을 설정합니다.</li>
+    <li>‘AI 소요시간 예측’ 버튼을 누릅니다.</li>
+    <li>예상 소요시간을 확인합니다.</li>
+  </ol>
+  <div class="tip">💡 <b>활용 예시</b> 내일 오전 출근시간과 점심시간의 예상 이동시간을 비교해 출발 계획을 세울 수 있습니다.</div>
+  <p class="note">※ 예측값은 시간대·요일별 혼잡도 등을 활용한 것으로 실제 소요시간과 다를 수 있습니다.</p>
+</section>
+
+<section id="s8">
+  <h2><span class="no">08</span>집·회사·즐겨찾기 등록</h2>
+  <p class="lead">자주 가는 장소를 등록하면 반복 검색 없이 바로 길안내를 받을 수 있습니다.</p>
+  <h3>집 또는 회사 등록</h3>
+  <ol class="steps">
+    <li>홈에서 ‘집등록’ 또는 ‘회사등록’을 선택합니다.</li>
+    <li>장소명·주소를 검색하거나 현재 위치를 선택합니다.</li>
+    <li>등록할 위치를 확인합니다.</li>
+    <li>‘등록’ 버튼을 눌러 저장합니다.</li>
+  </ol>
+  <h3>즐겨찾기 및 최근 목적지</h3>
+  <ul class="dots">
+    <li>자주 방문하는 장소를 즐겨찾기로 관리할 수 있습니다.</li>
+    <li>최근 검색하거나 방문한 목적지를 다시 선택할 수 있습니다.</li>
+    <li>하단 ‘저장’ 메뉴 및 목적지 관리 메뉴를 활용하세요.</li>
+  </ul>
+</section>
+
+<section id="s9">
+  <h2><span class="no">09</span>길안내 중 편의기능</h2>
+  <h3>🔀 다른 경로로 변경</h3>
+  <ol class="steps"><li>길안내 화면에서 ‘다른경로’를 선택합니다.</li><li>현재 위치 기준으로 다시 계산된 경로를 확인합니다.</li><li>원하는 경로를 선택합니다.</li></ol>
+  <h3>🔊 음성 및 주행 설정</h3>
+  <ol class="steps"><li>‘주행설정’ 또는 MY 메뉴의 관련 설정을 선택합니다.</li><li>길안내 볼륨을 조절합니다.</li><li>라디오 볼륨을 별도로 조절할 수 있습니다.</li><li>음성 가이드 및 주행 캐릭터 설정을 변경합니다.</li></ol>
+  <h3>🎙️ 음성 지시</h3>
+  <ol class="steps"><li>길안내 화면에서 ‘음성 지시’를 선택합니다.</li><li>마이크 권한이 요청되면 허용합니다.</li><li>원하는 목적지나 이동 조건을 말합니다.</li><li>인식된 내용을 확인하고 안내를 진행합니다.</li></ol>
+  <h3>📸 단속카메라 알림 설정</h3>
+  <p>메뉴의 ‘단속 카메라 알림 설정’에서 각각 켜고 끌 수 있습니다.</p>
+  <div class="chips"><span>과속 카메라 알림</span><span>신호위반 카메라 알림</span></div>
+  <p class="note">알림을 끄면 해당 유형의 주행 중 화면·음성 경고가 제외됩니다. 단속카메라 정보는 실제 설치 현황과 다를 수 있으며 모든 정보의 제공을 보장하지 않습니다.</p>
+</section>
+
+<section id="s10">
+  <h2><span class="no">10</span>모의주행으로 미리 확인</h2>
+  <p class="lead">출발하기 전에 경로를 미리 살펴볼 수 있습니다.</p>
+  <ol class="steps">
+    <li>목적지를 검색하고 경로를 선택합니다.</li>
+    <li>경로정보에서 ‘모의주행’을 선택합니다.</li>
+    <li>재생속도(1×·2×·4×·8×·10×)를 선택합니다.</li>
+    <li>‘모의주행 시작’을 누릅니다.</li>
+    <li>지도 이동과 경로 진행 상황을 확인합니다.</li>
+  </ol>
+  <div class="tip">💡 초행길이나 복잡한 교차로가 있는 경로를 미리 볼 때 유용합니다.</div>
+</section>
+
+<section id="s11">
+  <h2><span class="no">11</span>어디갈까? 명소·지역정보</h2>
+  <p class="lead">하단 ‘어디갈까’ 메뉴에서 주변 가맹점과 방문할 만한 장소를 탐색하세요.</p>
+  <div class="feat three">
+    <div><h4>🏷️ 주변 가맹점</h4><ol><li>지역사랑상품권 가맹점</li><li>온누리상품권 가맹점</li></ol></div>
+    <div class="on"><h4>🔥 길 위의 핫플</h4><ol><li>주변 맛집과 카페</li><li>SNS 및 방문 후기 검색</li><li>관심 장소 탐색</li></ol></div>
+    <div class="gas"><h4>🎪 가볼만한 축제</h4><ol><li>전국 지역축제 정보</li><li>축제 사진과 일정</li><li>주변 축제·외부 후기 검색</li></ol></div>
+  </div>
+  <p class="note">축제 정보는 한국관광공사 TourAPI 등을 활용하며, 실제 일정과 운영 여부는 주최 측에 확인해 주세요.</p>
+</section>
+
+<section id="s12">
+  <h2><span class="no">12</span>MY 메뉴와 개인 설정</h2>
+  <div class="tbl"><table>
+    <tr><th>메뉴</th><th>이용 내용</th></tr>
+    <tr><td>즐겨찾기</td><td>저장한 장소 확인</td></tr>
+    <tr><td>주행기록</td><td>최근 주행 내역 확인</td></tr>
+    <tr><td>앱 권한 / 개인정보</td><td>위치·카메라 등 권한 상태 확인</td></tr>
+    <tr><td>다른시간 출발</td><td>출발시간별 예상 소요시간 조회</td></tr>
+    <tr><td>음성 가이드 / 캐릭터</td><td>주행 음성과 캐릭터 설정</td></tr>
+    <tr><td>공지사항</td><td>업데이트 및 이용 안내 확인</td></tr>
+    <tr><td>앱정보 / 개인정보처리방침</td><td>서비스 정보와 개인정보 보호 안내</td></tr>
+  </table></div>
+  <p class="note">문의사항은 ‘1:1 문의’ 메뉴를 이용해 주세요.</p>
+</section>
+
+<section id="s13">
+  <h2><span class="no">13</span>자주 묻는 질문</h2>
+  <details><summary>Q1. 현재 위치가 표시되지 않아요.</summary><p>브라우저의 위치 접근 권한과 스마트폰 위치서비스(GPS)가 켜져 있는지 확인해 주세요. 실내나 지하에서는 위치 정확도가 떨어질 수 있습니다.</p></details>
+  <details><summary>Q2. 길안내 음성이 들리지 않아요.</summary><p>길안내 볼륨, 스마트폰 미디어 볼륨, 브라우저의 소리 설정을 확인해 주세요.</p></details>
+  <details><summary>Q3. 경로상 가맹점이 표시되지 않아요.</summary><p>지역에 따라 제공되는 가맹점 데이터의 범위가 다를 수 있습니다. 위치정보 권한과 네트워크 연결 상태를 확인한 후 다시 검색해 보세요.</p></details>
+  <details><summary>Q4. 실시간 교통정보가 실제 도로와 달라요.</summary><p>외부 데이터의 갱신 시점에 따라 차이가 날 수 있습니다. 실제 교통상황과 도로표지를 우선해 주세요.</p></details>
+  <details><summary>Q5. 로그인하지 않아도 사용할 수 있나요?</summary><p>기본 검색과 길안내 등 일부 기능은 로그인 없이 이용할 수 있습니다. 계정 기반 정보 저장·동기화는 Google 로그인이 필요할 수 있습니다.</p></details>
+  <details><summary>Q6. 단골로는 무료인가요?</summary><p>현재 웹에서 제공하는 기본 길안내 및 검색 기능을 이용할 수 있습니다. 모바일 데이터 요금은 이용자의 요금제에 따라 발생할 수 있으며, 외부 서비스나 개별 장소의 비용은 별도입니다.</p></details>
+  <details><summary>Q7. 운전 중 앱이 멈추거나 경로가 부정확해요.</summary><p>안전한 장소에 정차한 후 네트워크, GPS, 위치 권한을 확인하고 경로를 다시 탐색해 주세요. 문제가 계속되면 ‘1:1 문의’로 알려주세요.</p></details>
+</section>
+
+<section id="s14">
+  <h2><span class="no">14</span>안전하고 편리한 이용 안내</h2>
+  <ul class="dots safe">
+    <li>운전 중 스마트폰 조작은 삼가 주세요.</li>
+    <li>실제 교통신호와 도로표지를 최우선으로 준수해 주세요.</li>
+    <li>단속카메라 및 제한속도 정보는 참고용입니다.</li>
+    <li>상품권 가맹점의 결제 가능 여부는 방문 전에 확인해 주세요.</li>
+    <li>안정적인 인터넷 연결과 위치정보 권한을 유지해 주세요.</li>
+    <li>서비스 기능과 화면 구성은 개선 과정에서 변경될 수 있습니다.</li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  <div class="big">🚗 단골로와 함께 더 똑똑한 이동을 시작하세요!</div>
+  <p>빠른 길을 찾는 것에서, 좋은 가게를 발견하는 것까지.<br>우리 동네 상권과 소비자를 연결하는 새로운 내비게이션</p>
+  <p><b>단골로 — 가는 길이 단골이 되는 로컬 혜택 내비</b><br><a href="https://jofams-smartdrive.pages.dev/" target="_blank" rel="noopener">jofams-smartdrive.pages.dev</a></p>
+  <p>본 매뉴얼은 2026년 10월 기준 서비스 화면과 제공 기능을 바탕으로 작성되었습니다.</p>
+</footer>
+
+</body>
+</html>
